@@ -1,0 +1,21 @@
+{
+  "name": "solpouch",
+  "private": true,
+  "packageManager": "pnpm@12.4.1",
+  "scripts": {
+    "dev:backend": "pnpm --filter @solpouch/backend dev",
+    "dev:web": "pnpm --filter @solpouch/web dev",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
+    "@solana/spl-token": "^0.4.15",
+    "@solana/web3.js": "^1.99.0",
+    "@types/chai": "^4.3.20",
+    "@types/mocha": "^10.0.10",
+    "chai": "^4.5.0",
+    "mocha": "^12.0.3",
+    "ts-mocha": "^11.1.0",
+    "typescript": "^7.0.2"
+  }
+}

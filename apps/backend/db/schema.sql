@@ -1,0 +1,112 @@
+-- Solpouch Tiger Data schema (Postgres + TimescaleDB). Amounts are micro-USDC (bigint).
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+
+CREATE TABLE IF NOT EXISTS merchants (
+  id        text PRIMARY KEY,
+  name      text NOT NULL,
+  pay_to    text NOT NULL,
+  kind      text NOT NULL CHECK (kind IN ('grocery','food','building_supply','other'))
+);
+
+CREATE TABLE IF NOT EXISTS pouches (
+  id                    text PRIMARY KEY,
+  address               text NOT NULL UNIQUE,
+  name                  text NOT NULL,
+  max_per_order         bigint NOT NULL,
+  daily_limit           bigint NOT NULL,
+  confirm_above         bigint NOT NULL DEFAULT 0,
+  allowed_merchant_ids  text[] NOT NULL DEFAULT '{}',
+  frozen                boolean NOT NULL DEFAULT false,
+  created_at            timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+  id            text NOT NULL,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  pouch_id      text NOT NULL REFERENCES pouches(id),
+  merchant_id   text NOT NULL REFERENCES merchants(id),
+  request       text NOT NULL,
+  total         bigint NOT NULL,
+  status        text NOT NULL,
+  reject_reason text,
+  tx_signature  text,
+  PRIMARY KEY (id, created_at)
+);
+SELECT create_hypertable('orders', 'created_at', if_not_exists => TRUE);
+
+CREATE TABLE IF NOT EXISTS order_lines (
+  order_id       text NOT NULL,
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  line_no        int NOT NULL,
+  requested      text NOT NULL,
+  requested_qty  int NOT NULL,
+  product_id     text,
+  qty            int NOT NULL,
+  line_total     bigint NOT NULL,
+  match_score    real NOT NULL,
+  substitution   boolean NOT NULL DEFAULT false,
+  note           text,
+  PRIMARY KEY (order_id, line_no, created_at)
+);
+SELECT create_hypertable('order_lines', 'created_at', if_not_exists => TRUE);
+
+CREATE TABLE IF NOT EXISTS topups (
+  id          text NOT NULL,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  pouch_id    text NOT NULL REFERENCES pouches(id),
+  amount      bigint NOT NULL,
+  reason      text NOT NULL,
+  status      text NOT NULL,
+  ready_at    timestamptz NOT NULL,
+  PRIMARY KEY (id, created_at)
+);
+SELECT create_hypertable('topups', 'created_at', if_not_exists => TRUE);
+
+-- Written by the indexer from the program's PaymentMade events (the source of truth).
+CREATE TABLE IF NOT EXISTS payments (
+  time          timestamptz NOT NULL,
+  pouch_id      text NOT NULL,
+  merchant_id   text,
+  order_id      text NOT NULL,
+  amount        bigint NOT NULL,
+  tx_signature  text NOT NULL,
+  PRIMARY KEY (tx_signature, time)
+);
+SELECT create_hypertable('payments', 'time', if_not_exists => TRUE);
+
+-- Product price history per merchant catalog snapshot.
+CREATE TABLE IF NOT EXISTS prices (
+  time         timestamptz NOT NULL,
+  merchant_id  text NOT NULL,
+  product_id   text NOT NULL,
+  unit_price   bigint NOT NULL,
+  in_stock     boolean NOT NULL,
+  PRIMARY KEY (merchant_id, product_id, time)
+);
+SELECT create_hypertable('prices', 'time', if_not_exists => TRUE);
+
+-- Spend per pouch per day, maintained incrementally.
+CREATE MATERIALIZED VIEW IF NOT EXISTS spend_daily
+WITH (timescaledb.continuous) AS
+SELECT
+  time_bucket('1 day', time) AS bucket,
+  pouch_id,
+  sum(amount)  AS spent,
+  count(*)     AS orders
+FROM payments
+GROUP BY bucket, pouch_id
+WITH NO DATA;
+
+SELECT add_continuous_aggregate_policy('spend_daily',
+  start_offset      => INTERVAL '3 days',
+  end_offset        => INTERVAL '1 hour',
+  schedule_interval => INTERVAL '15 minutes',
+  if_not_exists     => TRUE);
+
+-- Compress old payments.
+ALTER TABLE payments SET (
+  timescaledb.compress,
+  timescaledb.compress_segmentby = 'pouch_id',
+  timescaledb.compress_orderby   = 'time DESC'
+);
+SELECT add_compression_policy('payments', INTERVAL '7 days', if_not_exists => TRUE);

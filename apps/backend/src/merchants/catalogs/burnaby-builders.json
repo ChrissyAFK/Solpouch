@@ -1,0 +1,17 @@
+[
+  { "id": "bb-2x4-8", "name": "2x4 Stud 8ft SPF", "size": "8ft", "price": 4.25, "inStock": true },
+  { "id": "bb-2x4-10", "name": "2x4 Stud 10ft SPF", "size": "10ft", "price": 6.1, "inStock": true },
+  { "id": "bb-2x6-8", "name": "2x6 Lumber 8ft SPF", "size": "8ft", "price": 8.9, "inStock": true },
+  { "id": "bb-2x6-12", "name": "2x6 Lumber 12ft SPF", "size": "12ft", "price": 13.5, "inStock": true },
+  { "id": "bb-deck-3", "name": "Deck Screws 3in box", "brand": "GRK", "size": "3in, 100 ct", "price": 14.99, "inStock": true },
+  { "id": "bb-deck-2", "name": "Deck Screws 2in box", "brand": "GRK", "size": "2in, 100 ct", "price": 11.99, "inStock": true },
+  { "id": "bb-drywall-screws", "name": "Drywall Screws 1-5/8in box", "brand": "Spax", "size": "1lb", "price": 9.49, "inStock": true },
+  { "id": "bb-plywood", "name": "Plywood 3/4in 4x8 sheet", "size": "4x8ft", "price": 62.0, "inStock": true },
+  { "id": "bb-osb", "name": "OSB Sheathing 7/16in 4x8 sheet", "size": "4x8ft", "price": 24.5, "inStock": true },
+  { "id": "bb-drywall", "name": "Drywall Sheet 1/2in 4x8", "size": "4x8ft", "price": 17.25, "inStock": true },
+  { "id": "bb-nails", "name": "Framing Nails 3-1/4in box", "brand": "Paslode", "size": "2000 ct", "price": 39.0, "inStock": false },
+  { "id": "bb-pt-4x4", "name": "Pressure Treated 4x4 8ft post", "size": "8ft", "price": 22.0, "inStock": true },
+  { "id": "bb-joist-hanger", "name": "Joist Hanger 2x6", "brand": "Simpson", "size": "each", "price": 2.15, "inStock": true },
+  { "id": "bb-concrete", "name": "Concrete Mix 30kg bag", "brand": "Quikrete", "size": "30kg", "price": 8.5, "inStock": true },
+  { "id": "bb-gloves", "name": "Work Gloves", "size": "L", "price": 12.0, "inStock": true }
+]

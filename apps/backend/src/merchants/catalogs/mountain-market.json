@@ -1,0 +1,17 @@
+[
+  { "id": "mm-oatly", "name": "Oatly Oat Milk", "brand": "Oatly", "size": "1.75L", "price": 5.49, "inStock": false },
+  { "id": "mm-silk-oat", "name": "Silk Oat Milk", "brand": "Silk", "size": "1.89L", "price": 5.99, "inStock": true },
+  { "id": "mm-silk-almond", "name": "Silk Almond Milk", "brand": "Silk", "size": "1.89L", "price": 5.79, "inStock": true },
+  { "id": "mm-milk", "name": "Dairyland 2% Milk", "brand": "Dairyland", "size": "4L", "price": 6.49, "inStock": true },
+  { "id": "mm-eggs", "name": "Large Eggs", "brand": "Burnbrae", "size": "12 ct", "price": 4.99, "inStock": true },
+  { "id": "mm-bread", "name": "Whole Wheat Bread", "brand": "Dempster's", "size": "675g", "price": 3.99, "inStock": true },
+  { "id": "mm-butter", "name": "Salted Butter", "brand": "Lactantia", "size": "454g", "price": 6.99, "inStock": true },
+  { "id": "mm-bananas", "name": "Bananas", "size": "per lb", "price": 0.69, "inStock": true },
+  { "id": "mm-apples", "name": "Gala Apples", "size": "3 lb bag", "price": 5.49, "inStock": true },
+  { "id": "mm-rice", "name": "Jasmine Rice", "brand": "Sunwing", "size": "2kg", "price": 8.99, "inStock": true },
+  { "id": "mm-pasta", "name": "Spaghetti Pasta", "brand": "Barilla", "size": "500g", "price": 2.99, "inStock": true },
+  { "id": "mm-chicken", "name": "Chicken Breast", "size": "per lb", "price": 7.99, "inStock": true },
+  { "id": "mm-cheese", "name": "Cheddar Cheese", "brand": "Black Diamond", "size": "400g", "price": 7.49, "inStock": true },
+  { "id": "mm-coffee", "name": "Ground Coffee", "brand": "Kicking Horse", "size": "340g", "price": 12.99, "inStock": true },
+  { "id": "mm-oj", "name": "Orange Juice", "brand": "Tropicana", "size": "1.54L", "price": 4.99, "inStock": true }
+]

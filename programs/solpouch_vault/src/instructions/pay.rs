@@ -1,0 +1,87 @@
+use anchor_lang::prelude::*;
+use anchor_spl::token::{transfer, Token, TokenAccount, Transfer};
+
+use crate::events::PaymentMade;
+use crate::logic::{check_pay, PayState};
+use crate::state::*;
+
+#[derive(Accounts)]
+#[instruction(amount: u64, order_id: [u8; 16])]
+pub struct Pay<'info> {
+    #[account(mut)]
+    pub agent: Signer<'info>,
+    #[account(
+        mut,
+        has_one = agent,
+        seeds = [b"pouch", pouch.owner.as_ref(), pouch.name.as_ref()],
+        bump = pouch.bump
+    )]
+    pub pouch: Account<'info, Pouch>,
+    #[account(
+        mut,
+        seeds = [b"vault", pouch.key().as_ref()],
+        bump = pouch.vault_bump,
+        token::mint = pouch.mint
+    )]
+    pub vault: Account<'info, TokenAccount>,
+    #[account(mut, token::mint = pouch.mint)]
+    pub merchant_token: Account<'info, TokenAccount>,
+    #[account(
+        init,
+        payer = agent,
+        space = 8 + Receipt::INIT_SPACE,
+        seeds = [b"receipt", pouch.key().as_ref(), order_id.as_ref()],
+        bump
+    )]
+    pub receipt: Account<'info, Receipt>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+pub fn handler(ctx: Context<Pay>, amount: u64, order_id: [u8; 16]) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    let merchant = ctx.accounts.merchant_token.owner;
+    let p = &ctx.accounts.pouch;
+    let (spent, day_start) = check_pay(
+        &PayState {
+            frozen: p.frozen,
+            allowed_merchants: &p.allowed_merchants,
+            max_per_order: p.max_per_order,
+            daily_limit: p.daily_limit,
+            spent_today: p.spent_today,
+            day_start: p.day_start,
+        },
+        &merchant,
+        amount,
+        ctx.accounts.vault.amount,
+        now,
+    )?;
+
+    let seeds: &[&[u8]] = &[b"pouch", p.owner.as_ref(), p.name.as_ref(), &[p.bump]];
+    transfer(
+        CpiContext::new_with_signer(
+            ctx.accounts.token_program.key(),
+            Transfer {
+                from: ctx.accounts.vault.to_account_info(),
+                to: ctx.accounts.merchant_token.to_account_info(),
+                authority: ctx.accounts.pouch.to_account_info(),
+            },
+            &[seeds],
+        ),
+        amount,
+    )?;
+
+    let pouch_key = ctx.accounts.pouch.key();
+    let p = &mut ctx.accounts.pouch;
+    p.spent_today = spent;
+    p.day_start = day_start;
+
+    let r = &mut ctx.accounts.receipt;
+    r.pouch = pouch_key;
+    r.merchant = merchant;
+    r.amount = amount;
+    r.time = now;
+
+    emit!(PaymentMade { pouch: pouch_key, merchant, amount, order_id, time: now });
+    Ok(())
+}

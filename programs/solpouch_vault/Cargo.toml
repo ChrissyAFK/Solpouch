@@ -1,0 +1,27 @@
+[package]
+name = "solpouch_vault"
+version = "0.1.0"
+description = "Budget-envelope vault: owner funds pouches, an agent key can only pay within on-chain limits"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "solpouch_vault"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = "1.2.0"
+anchor-spl = { version = "1.2.0", default-features = false, features = ["token", "token_2022"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

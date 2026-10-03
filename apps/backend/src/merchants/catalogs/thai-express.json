@@ -1,0 +1,7 @@
+[
+  { "id": "te-pad-thai", "name": "Pad Thai", "size": "regular", "price": 15.5, "inStock": true },
+  { "id": "te-green-curry", "name": "Green Curry with Rice", "size": "regular", "price": 16.25, "inStock": true },
+  { "id": "te-tom-yum", "name": "Tom Yum Soup", "size": "regular", "price": 9.75, "inStock": true },
+  { "id": "te-spring-rolls", "name": "Spring Rolls", "size": "4 pcs", "price": 6.5, "inStock": true },
+  { "id": "te-mango-rice", "name": "Mango Sticky Rice", "size": "regular", "price": 7.5, "inStock": false }
+]
