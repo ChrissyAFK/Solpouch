@@ -22,9 +22,9 @@ export function Footer() {
           </div>
           <nav className={styles.group} aria-label="Footer product">
             <h2>Product</h2>
-            <Link href="/">Overview</Link>
-            <Link href="/#pouches">Pouches</Link>
-            <Link href="/#activity">Orders</Link>
+            <Link href="/dashboard">Overview</Link>
+            <Link href="/dashboard#pouches">Pouches</Link>
+            <Link href="/dashboard#activity">Orders</Link>
             <Link href="/order">New order</Link>
           </nav>
           <nav className={styles.group} aria-label="Footer company">
@@ -37,6 +37,14 @@ export function Footer() {
               rel="noopener noreferrer"
             >
               GitHub <span aria-hidden="true">↗</span>
+              <span className="sr-only"> (opens in a new tab)</span>
+            </a>
+            <a
+              href="https://github.com/ChrissyAFK/Solpouch#readme"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Documentation <span aria-hidden="true">↗</span>
               <span className="sr-only"> (opens in a new tab)</span>
             </a>
           </nav>

@@ -138,7 +138,7 @@ function OrderWorkspace() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <Link href="/" className="text-sm text-[#a9a5b9] hover:underline">
+      <Link href="/dashboard" className="text-sm text-[#a9a5b9] hover:underline">
         ← Back to overview
       </Link>
       <div className="mt-5 mb-6">

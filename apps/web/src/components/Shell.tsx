@@ -13,7 +13,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     pathname === "/pouches" || pathname.startsWith("/pouches/");
   const orderRoute = pathname === "/order";
   const pageLabel =
-    pathname === "/"
+    pathname === "/dashboard"
       ? "Overview"
       : pouchRoute
         ? "Pouches"
@@ -59,14 +59,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
     icon: IconName;
     active: boolean;
   }[] = [
-    { href: "/", label: "Overview", icon: "grid", active: pathname === "/" },
+    { href: "/dashboard", label: "Overview", icon: "grid", active: pathname === "/dashboard" },
     {
-      href: "/#pouches",
+      href: "/dashboard#pouches",
       label: "Pouches",
       icon: "pouch",
       active: pouchRoute,
     },
-    { href: "/#activity", label: "Orders", icon: "receipt", active: false },
+    { href: "/dashboard#activity", label: "Orders", icon: "receipt", active: false },
     {
       href: "/order",
       label: "New order",
@@ -74,6 +74,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       active: orderRoute,
     },
   ];
+  if (pathname === "/") return <>{children}</>;
   return (
     <div className="app-shell">
       <a href="#main-content" className="skip-link">

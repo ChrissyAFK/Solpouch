@@ -1,325 +1,423 @@
-"use client";
 import Link from "next/link";
-import { StatePanel } from "@/components/StatePanel";
-import { MetricsSkeleton, RowsSkeleton } from "@/components/Skeletons";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { Merchant, Order, Pouch } from "@solpouch/shared";
-import { toUsdc } from "@solpouch/shared";
-import { api, errMsg } from "@/lib/api";
-import { useLiveRefresh } from "@/lib/useLiveRefresh";
-import { PouchForm } from "@/components/PouchForm";
-import {
-  ErrorBanner,
-  Notice,
-  Progress,
-  btnPrimary,
-  btnSecondary,
-  usd,
-} from "@/components/ui";
-import { Icon } from "@/components/Icons";
+import { LandingNav } from "@/components/LandingNav";
+import styles from "./landing.module.css";
 
-export default function PouchesPage() {
-  const [pouches, setPouches] = useState<Pouch[] | null>(null);
-  const [merchants, setMerchants] = useState<Merchant[]>([]);
-  const [orders, setOrders] = useState<Order[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [activityError, setActivityError] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
-  const [activityLoading, setActivityLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const formRef = useRef<HTMLElement>(null);
-  // quiet: background refresh, keeps what is on screen and skips loading states.
-  const load = useCallback(async (quiet = false) => {
-    if (!quiet) {
-      setLoading(true);
-      setActivityLoading(true);
-      setLoadError(false);
-      setError(null);
-    }
-    try {
-      const [p, m] = await Promise.all([api.pouches(), api.merchants()]);
-      setPouches(p);
-      setMerchants(m);
-      setLoadError(false);
-      setError(null);
-    } catch (e) {
-      if (!quiet) {
-        setLoadError(true);
-        setError(errMsg(e));
-      }
-    } finally {
-      if (!quiet) setLoading(false);
-    }
-    try {
-      setOrders(await api.orders());
-      setActivityError(false);
-    } catch {
-      if (!quiet) setActivityError(true);
-    } finally {
-      if (!quiet) setActivityLoading(false);
-    }
-  }, []);
-  useEffect(() => {
-    void load();
-  }, [load]);
-  useLiveRefresh(useCallback(() => load(true), [load]));
-  useEffect(() => {
-    if (showForm) {
-      formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      formRef.current?.querySelector("input")?.focus({ preventScroll: true });
-    }
-  }, [showForm]);
-  async function toggle(p: Pouch) {
-    setBusy(p.id);
-    setNotice(null);
-    try {
-      await (p.frozen ? api.unfreeze(p.id) : api.freeze(p.id));
-      await load();
-      setNotice(`${p.name} ${p.frozen ? "unfrozen" : "frozen"}.`);
-    } catch (e) {
-      setError(errMsg(e));
-    } finally {
-      setBusy(null);
-    }
-  }
-  const balance = pouches?.reduce((s, p) => s + p.balance, 0) ?? 0;
-  const spent = pouches?.reduce((s, p) => s + p.spentToday, 0) ?? 0;
-  const limit = pouches?.reduce((s, p) => s + p.dailyLimit, 0) ?? 0;
-  const active = pouches?.filter((p) => !p.frozen).length ?? 0;
-  const recent = [...(orders ?? [])]
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-    .slice(0, 8);
+function Arrow({ diagonal = false }: { diagonal?: boolean }) {
   return (
-    <div className="overview">
-      <div className="page-heading">
-        <h1>Overview</h1>
-        <Link href="/order" className={btnPrimary}>
-          <Icon name="plus" size={16} /> New order
-        </Link>
-      </div>
-      <ErrorBanner message={error} />
-      {error && !loadError && (
-        <button className={btnSecondary} onClick={() => void load()}>
-          Retry connection
-        </button>
-      )}
-      {notice && <Notice>{notice}</Notice>}
-      {loading ? (
-        <MetricsSkeleton />
-      ) : loadError ? (
-        <StatePanel
-          title="Pouches couldn’t be loaded"
-          retry={() => void load()}
-        >
-          Balances and spending controls are unavailable. Try reconnecting to
-          load your dashboard.
-        </StatePanel>
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      aria-hidden="true"
+    >
+      {diagonal ? (
+        <path d="M6 18 18 6M6 6h12v12" />
       ) : (
-        <section className="wallet-metrics" aria-label="Spending overview">
-          <div className="wallet-metric main-metric">
-            <p>
-              Balance <span>USDC</span>
+        <path d="M4 12h15m-6-6 6 6-6 6" />
+      )}
+    </svg>
+  );
+}
+
+export default function LandingPage() {
+  return (
+    <div className={styles.page}>
+      <a href="#main-content" className="skip-link">
+        Skip to content
+      </a>
+      <LandingNav />
+      <main id="main-content">
+        <section
+          className={`${styles.wrap} ${styles.hero}`}
+          aria-labelledby="hero-title"
+        >
+          <div className={styles.heroCopy}>
+            <p className={styles.eyebrow}>
+              <span aria-hidden="true" /> A spending wallet for Solana
             </p>
-            <strong>{pouches ? usd(toUsdc(balance)) : "—"}</strong>
-            <span>Across {pouches?.length ?? "—"} pouches</span>
+            <h1 id="hero-title">
+              Give every
+              <br />
+              purchase
+              <br />a <span>limit.</span>
+            </h1>
+            <p className={styles.intro}>
+              Separate your budgets. Set the rules. Get help with your shopping,
+              and review every order before you approve it.
+            </p>
+            <div className={styles.actions}>
+              <Link href="/dashboard" className={styles.primary}>
+                Open dashboard <Arrow />
+              </Link>
+              <a href="#how-it-works" className={styles.textLink}>
+                See how it works <span aria-hidden="true">↓</span>
+              </a>
+            </div>
+            <p className={styles.demoNote}>
+              Payments settle in USDC on Solana. Every order waits for your
+              approval.
+            </p>
           </div>
-          <div className="wallet-metric">
-            <p>Spent today</p>
-            <strong>{pouches ? usd(toUsdc(spent)) : "—"}</strong>
-            <span>{pouches ? usd(toUsdc(limit)) : "—"} daily limit</span>
-          </div>
-          <div className="wallet-metric">
-            <p>Active pouches</p>
-            <strong>
-              {pouches ? active : "—"}
-              <span> / {pouches?.length ?? "—"}</span>
-            </strong>
-            <span>
-              {pouches ? `${pouches.length - active} frozen` : "Loading"}
-            </span>
+          <div className={styles.heroVisual}>
+            <div className={styles.previewCaption}>
+              <span>YOUR BUDGET, YOUR RULES</span>
+              <span>Example</span>
+            </div>
+            <div className={styles.pouchPreview}>
+              <div className={styles.pouchHeading}>
+                <span className={styles.pouchMark} aria-hidden="true">
+                  <svg
+                    width="23"
+                    height="26"
+                    viewBox="0 0 24 28"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                  >
+                    <path d="M6 2h12l-2 6c5 4 6 7 6 11 0 5-4 7-10 7S2 24 2 19c0-4 1-7 6-11L6 2Z" />
+                    <path d="M7 8h10M8 17h8M12 13v8" />
+                  </svg>
+                </span>
+                <span>
+                  Groceries<small>Budget pouch</small>
+                </span>
+                <span className={styles.active}>Active</span>
+              </div>
+              <p className={styles.balanceLabel}>Available balance</p>
+              <p className={styles.balance}>
+                300<span>.00</span> <small>USDC</small>
+              </p>
+              <dl className={styles.limits}>
+                <div>
+                  <dt>Per order</dt>
+                  <dd>
+                    120 <span>USDC</span>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Daily limit</dt>
+                  <dd>
+                    150 <span>USDC</span>
+                  </dd>
+                </div>
+              </dl>
+              <div className={styles.storeRow}>
+                <span>Allowed store</span>
+                <strong>Mountain Market</strong>
+              </div>
+            </div>
+            <div className={styles.receipt}>
+              <div className={styles.receiptHeading}>
+                <span>ORDER REVIEW</span>
+                <span>01 / GROCERIES</span>
+              </div>
+              <p>“Eggs and bread for the week.”</p>
+              <div className={styles.receiptLine}>
+                <span>
+                  Eggs <small>× 2</small>
+                </span>
+                <span>7.98</span>
+              </div>
+              <div className={styles.receiptLine}>
+                <span>
+                  Bread <small>× 1</small>
+                </span>
+                <span>2.49</span>
+              </div>
+              <div className={styles.receiptTotal}>
+                <span>Example total</span>
+                <strong>
+                  10.47 <small>USDC</small>
+                </strong>
+              </div>
+              <div className={styles.reviewNotice}>
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 20 20"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  aria-hidden="true"
+                >
+                  <path d="m4 10 4 4 8-8" />
+                </svg>{" "}
+                Within limits. Waiting for your approval.
+              </div>
+            </div>
           </div>
         </section>
-      )}
-      <section id="pouches" className="wallet-section">
-        <div className="section-heading">
-          <h2>
-            Pouches{" "}
-            <span className="section-count">{pouches?.length ?? "—"}</span>
-          </h2>
-          <button
-            disabled={loading || loadError}
-            onClick={() => setShowForm(true)}
-            className={btnSecondary}
-          >
-            <Icon name="plus" size={15} /> Create pouch
-          </button>
-        </div>
-        {loading && <RowsSkeleton />}
-        {!loading && !loadError && pouches?.length === 0 && (
-          <p className="table-empty">
-            No pouches. Create one to set a budget and add funds.
-          </p>
-        )}
-        {!loading && !loadError && pouches && pouches.length > 0 && (
-          <div className="pouch-table">
-            <div className="pouch-table-head" aria-hidden="true">
-              <span>Pouch</span>
-              <span>Balance</span>
-              <span>Daily spending</span>
-              <span>Status</span>
-              <span />
-            </div>
-            {pouches.map((p) => (
-              <article className="pouch-row" key={p.id}>
-                <div className="pouch-identity">
-                  <h3>
-                    <Link href={`/pouches/${p.id}`}>{p.name}</Link>
-                  </h3>
-                  <span>
-                    {p.allowedMerchantIds.length}{" "}
-                    {p.allowedMerchantIds.length === 1 ? "store" : "stores"} ·{" "}
-                    {usd(toUsdc(p.maxPerOrder))} per order
-                  </span>
-                </div>
-                <div className="pouch-row-balance">
-                  <span className="mobile-label">Balance</span>
-                  <strong>{usd(toUsdc(p.balance))}</strong>
-                </div>
-                <div className="pouch-row-spending">
-                  <span className="mobile-label">Daily spending</span>
-                  <div>
-                    {usd(toUsdc(p.spentToday))}{" "}
-                    <span>/ {usd(toUsdc(p.dailyLimit))}</span>
-                  </div>
-                  <Progress value={p.spentToday} max={p.dailyLimit} />
-                </div>
-                <span className={`pouch-status ${p.frozen ? "is-frozen" : ""}`}>
-                  <span />
-                  {p.frozen ? "Frozen" : "Active"}
-                </span>
-                <div className="row-actions">
-                  <button
-                    disabled={busy === p.id}
-                    onClick={() => void toggle(p)}
-                    aria-label={`${p.frozen ? "Unfreeze" : "Freeze"} ${p.name}`}
-                  >
-                    {busy === p.id
-                      ? "Updating…"
-                      : p.frozen
-                        ? "Unfreeze"
-                        : "Freeze"}
-                  </button>
-                  <Link
-                    href={`/pouches/${p.id}`}
-                    aria-label={`Manage ${p.name}`}
-                  >
-                    Manage <Icon name="arrow" size={14} />
-                  </Link>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-        {showForm && !loading && !loadError && (
-          <section
-            className="sp-card create-form-panel"
-            ref={formRef}
-            aria-label="Create a pouch"
-          >
-            <div className="section-heading">
-              <h2>Create pouch</h2>
-              <button
-                className={btnSecondary}
-                onClick={() => setShowForm(false)}
-              >
-                Close
-              </button>
-            </div>
-            <PouchForm
-              merchants={merchants}
-              withName
-              submitLabel="Create pouch"
-              onSubmit={async (v) => {
-                try {
-                  await api.createPouch(v);
-                  setShowForm(false);
-                  await load();
-                  setNotice("Pouch created. Open it to add funds.");
-                } catch (e) {
-                  setError(errMsg(e));
-                  throw e;
-                }
-              }}
-            />
-          </section>
-        )}
-      </section>
-      <section id="activity" className="wallet-section orders-section">
-        <div className="section-heading">
-          <h2>Orders</h2>
-          <span className="section-note">
-            Most recent {recent.length > 0 ? recent.length : "orders"}
+
+        <div
+          className={`${styles.wrap} ${styles.principles}`}
+          aria-label="Product principles"
+        >
+          <span>
+            <b>01</b> Separate budgets
+          </span>
+          <span>
+            <b>02</b> Clear spending limits
+          </span>
+          <span>
+            <b>03</b> You approve the order
           </span>
         </div>
-        {activityLoading ? (
-          <RowsSkeleton kind="orders" />
-        ) : activityError ? (
-          <div className="table-empty">
-            <p>Orders couldn&apos;t be loaded.</p>
-            <button className={btnSecondary} onClick={() => void load()}>
-              Retry
-            </button>
+
+        <section
+          id="how-it-works"
+          className={`${styles.wrap} ${styles.how}`}
+          aria-labelledby="how-title"
+        >
+          <div className={styles.sectionIntro}>
+            <p className={styles.eyebrow}>HOW IT WORKS</p>
+            <h2 id="how-title">
+              A little structure.
+              <br />A lot more control.
+            </h2>
+            <p>
+              A pouch is a budget with its own rules. Keep the grocery run
+              separate from takeout or your next project.
+            </p>
+            <Link href="/dashboard#pouches" className={styles.textLink}>
+              Explore the pouches <Arrow />
+            </Link>
           </div>
-        ) : orders === null ? (
-          <RowsSkeleton kind="orders" />
-        ) : recent.length === 0 ? (
-          <div className="table-empty">
-            <p>No orders yet.</p>
-            <span>Use New order to build a cart.</span>
-          </div>
-        ) : (
-          <div className="orders-table">
-            <div className="order-table-head" aria-hidden="true">
-              <span>Store / Pouch</span>
-              <span>Date</span>
-              <span>Status</span>
-              <span>Amount</span>
-              <span />
+          <ol className={styles.steps}>
+            <li>
+              <span className={styles.stepNumber}>01</span>
+              <div>
+                <h3>Give it a purpose.</h3>
+                <p>
+                  Name your pouch and choose a budget. See what is available
+                  without mixing every expense together.
+                </p>
+              </div>
+            </li>
+            <li>
+              <span className={styles.stepNumber}>02</span>
+              <div>
+                <h3>Set the boundaries.</h3>
+                <p>
+                  Choose allowed stores and set per-order and daily limits.
+                  Freeze a pouch whenever you need to pause spending.
+                </p>
+              </div>
+            </li>
+            <li>
+              <span className={styles.stepNumber}>03</span>
+              <div>
+                <h3>Review. Then approve.</h3>
+                <p>
+                  Describe what you need. Check the matched items and total,
+                  then approve the order yourself.
+                </p>
+              </div>
+            </li>
+          </ol>
+        </section>
+
+        <section
+          className={styles.shoppingSection}
+          aria-labelledby="shopping-title"
+        >
+          <div className={`${styles.wrap} ${styles.shopping}`}>
+            <div className={styles.requestExample}>
+              <p className={styles.eyebrow}>FROM REQUEST TO REVIEW</p>
+              <div className={styles.requestQuote}>
+                <span aria-hidden="true">“</span>
+                <p>
+                  I need two cartons
+                  <br />
+                  of eggs and a loaf
+                  <br />
+                  of bread.
+                </p>
+              </div>
+              <div className={styles.requestFlow}>
+                <span>Your request</span>
+                <span aria-hidden="true">→</span>
+                <span>Matched items</span>
+                <span aria-hidden="true">→</span>
+                <strong>Your approval</strong>
+              </div>
             </div>
-            {recent.map((o) => (
-              <Link
-                key={o.id}
-                href={`/order?order=${encodeURIComponent(o.id)}`}
-                className="order-row"
-              >
-                <span className="order-identity">
-                  <strong>
-                    {merchants.find((m) => m.id === o.merchantId)?.name ??
-                      "Order"}
-                  </strong>
-                  <span>
-                    {pouches?.find((p) => p.id === o.pouchId)?.name ?? "Pouch"}
-                  </span>
-                </span>
-                <span className="order-date">
-                  {new Date(o.createdAt).toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                  })}
-                </span>
-                <span className={`order-status status-${o.status}`}>
-                  {o.status === "draft" ? "Awaiting review" : o.status}
-                </span>
-                <strong className="order-amount">{usd(toUsdc(o.total))}</strong>
-                <Icon name="arrow" size={15} />
+            <div className={styles.shoppingCopy}>
+              <p className={styles.eyebrow}>HELP WITH THE SHOPPING</p>
+              <h2 id="shopping-title">
+                Less searching.
+                <br />
+                Still your decision.
+              </h2>
+              <p>
+                Start with a shopping list in your own words. Solpouch prepares
+                a cart to review against your pouch&apos;s rules.
+              </p>
+              <p>
+                Ask the assistant about balances and limits by text or voice, or
+                have it build a cart for you. It can't move funds or approve
+                purchases on its own.
+              </p>
+              <Link href="/order" className={styles.textLink}>
+                Try a shopping request <Arrow />
               </Link>
-            ))}
+              <p className={styles.smallNote}>
+                Prices come from each store's catalog and are checked against
+                your pouch before you pay.
+              </p>
+            </div>
           </div>
-        )}
-      </section>
+        </section>
+
+        <section
+          id="questions"
+          className={`${styles.wrap} ${styles.faq}`}
+          aria-labelledby="faq-title"
+        >
+          <div>
+            <p className={styles.eyebrow}>A FEW THINGS TO KNOW</p>
+            <h2 id="faq-title">
+              Before you
+              <br />
+              jump in.
+            </h2>
+          </div>
+          <div className={styles.questions}>
+            <details>
+              <summary>
+                What do payments use?<span aria-hidden="true">+</span>
+              </summary>
+              <p>
+                Pouches hold USDC on Solana. Each pouch is its own on-chain
+                vault, so a payment can never take more than that pouch allows.
+              </p>
+            </details>
+            <details>
+              <summary>
+                Can I freeze a pouch?<span aria-hidden="true">+</span>
+              </summary>
+              <p>
+                Yes. Freeze any pouch from the dashboard and no order can be
+                paid from it until you unfreeze it.
+              </p>
+            </details>
+            <details>
+              <summary>
+                Can the AI spend for me?<span aria-hidden="true">+</span>
+              </summary>
+              <p>
+                No. Chat can explain your pouch information and help you start a
+                request. You review the cart and approve every order yourself.
+              </p>
+            </details>
+            <details>
+              <summary>
+                What happens when an order exceeds a limit?
+                <span aria-hidden="true">+</span>
+              </summary>
+              <p>
+                The order is blocked if it exceeds the pouch&apos;s balance or
+                spending limits, uses a store that is not allowed, or the pouch
+                is frozen. Review the order or update the pouch rules before
+                trying again.
+              </p>
+            </details>
+            <details>
+              <summary>
+                Is my history saved?<span aria-hidden="true">+</span>
+              </summary>
+              <p>
+                Pouches, orders, and balances are saved and waiting when you
+                come back. Chat history stays in the current page and clears
+                when you refresh.
+              </p>
+            </details>
+          </div>
+        </section>
+
+        <section
+          className={`${styles.wrap} ${styles.closing}`}
+          aria-labelledby="closing-title"
+        >
+          <div>
+            <p className={styles.eyebrow}>TAKE A LOOK AROUND</p>
+            <h2 id="closing-title">
+              Your next purchase.
+              <br />
+              <span>Your rules.</span>
+            </h2>
+          </div>
+          <div className={styles.closingAction}>
+            <Link href="/dashboard" className={styles.primary}>
+              Open dashboard <Arrow diagonal />
+            </Link>
+            <p>
+              Set up your first pouch
+              <br />
+              in under a minute.
+            </p>
+          </div>
+        </section>
+      </main>
+      <footer className={styles.footer}>
+        <div className={styles.wrap}>
+          <div className={styles.footerTop}>
+            <div className={styles.footerAbout}>
+              <Link
+                href="/"
+                className={styles.brand}
+                aria-label="Solpouch home"
+              >
+                <span className="brand-bars" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                solpouch
+              </Link>
+              <p>
+                A place for every budget.
+                <br />A limit for every purchase.
+              </p>
+            </div>
+            <nav aria-label="Footer product">
+              <h2>Explore</h2>
+              <a href="#how-it-works">How it works</a>
+              <Link href="/dashboard">Dashboard</Link>
+              <Link href="/order">Create an order</Link>
+            </nav>
+            <nav aria-label="Footer resources">
+              <h2>Project</h2>
+              <a
+                href="https://github.com/ChrissyAFK/Solpouch"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                GitHub <span aria-hidden="true">↗</span>
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+              <a
+                href="https://github.com/ChrissyAFK/Solpouch#readme"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Documentation <span aria-hidden="true">↗</span>
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+              <a href="#questions">Questions</a>
+            </nav>
+          </div>
+          <div className={styles.footerBottom}>
+            <span>© 2026 Solpouch</span>
+            <p>Budget pouches for USDC on Solana.</p>
+            <a href="#main-content">
+              Back to top <span aria-hidden="true">↑</span>
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

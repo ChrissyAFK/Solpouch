@@ -5,7 +5,7 @@ import { pageMetadata, siteDescription, siteUrl } from "@/lib/site";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  ...pageMetadata("Overview", siteDescription, false),
+  ...pageMetadata("Spending with limits", siteDescription, false),
   // Local fallback is only for development previews; canonical URLs require config.
   metadataBase: siteUrl ?? new URL("http://localhost:3000"),
   applicationName: "Solpouch",
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
     ? {
         alternates: { canonical: siteUrl.href },
         openGraph: {
-          ...pageMetadata("Overview", siteDescription, false).openGraph,
+          ...pageMetadata("Spending with limits", siteDescription, false).openGraph,
           url: siteUrl.href,
         },
       }

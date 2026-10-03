@@ -7,7 +7,8 @@ const get = (path, init) =>
   fetch(new URL(path, origin), { ...init, signal: AbortSignal.timeout(10000) });
 
 for (const [path, title, status] of [
-  ["/", "Overview", 200],
+  ["/", "Spending with limits", 200],
+  ["/dashboard", "Overview", 200],
   ["/order", "New order", 200],
   ["/pouches/groceries", "Pouch details", 200],
   ["/missing-smoke-page", "Page not found", 404],
