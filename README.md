@@ -4,7 +4,7 @@
 
 Give your AI a budget, connect your preferred assistant, and let it buy services, swap tokens and manage funds, with a receipt for every action. Big decisions get approved by voice.
 
-Built at StormHacks 2026.
+Built at StormHacks 2026 · [solpouch.tech](https://solpouch.tech)
 
 > **Status:** in development. Setup instructions will be added as the code lands.
 
