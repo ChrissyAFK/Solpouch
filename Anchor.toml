@@ -4,15 +4,17 @@
 resolution = true
 skip-lint = false
 
-[programs.localnet]
-solpouch_vault = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
-
 [programs.devnet]
-solpouch_vault = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+solpouch_vault = "AqixXTfd8n914z7QCsNmBuZcFbDsitbGrBfCHStmJT8F"
+
+[programs.localnet]
+solpouch_vault = "AqixXTfd8n914z7QCsNmBuZcFbDsitbGrBfCHStmJT8F"
 
 [provider]
 cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "pnpm ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+test = "npx ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+
+[hooks]

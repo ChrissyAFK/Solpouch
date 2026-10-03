@@ -91,7 +91,7 @@ describe("solpouch_vault", () => {
 
   it("creates a pouch", async () => {
     await program.methods
-      .createPouch(NAME, agent.publicKey, new BN(100_000), new BN(250_000), [merchant.publicKey])
+      .createPouch(Array.from(nameBytes(NAME)), agent.publicKey, new BN(100_000), new BN(250_000), [merchant.publicKey])
       .accounts({
         owner: owner.publicKey,
         mint,
@@ -107,15 +107,6 @@ describe("solpouch_vault", () => {
     assert.isFalse(p.frozen);
   });
 
-  it("rejects a name longer than 32 bytes", async () => {
-    await expectError(
-      program.methods
-        .createPouch("x".repeat(33), agent.publicKey, new BN(1), new BN(1), [])
-        .accounts({ owner: owner.publicKey, mint } as any)
-        .rpc(),
-      "NameTooLong"
-    );
-  });
 
   it("owner tops up the vault", async () => {
     await program.methods

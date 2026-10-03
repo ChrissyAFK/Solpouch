@@ -5,7 +5,7 @@ use crate::errors::VaultError;
 use crate::state::*;
 
 #[derive(Accounts)]
-#[instruction(name: String)]
+#[instruction(name: [u8; NAME_LEN])]
 pub struct CreatePouch<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
@@ -14,7 +14,7 @@ pub struct CreatePouch<'info> {
         init,
         payer = owner,
         space = 8 + Pouch::INIT_SPACE,
-        seeds = [b"pouch", owner.key().as_ref(), pad_name(&name).as_ref()],
+        seeds = [b"pouch", owner.key().as_ref(), name.as_ref()],
         bump
     )]
     pub pouch: Account<'info, Pouch>,
@@ -33,19 +33,18 @@ pub struct CreatePouch<'info> {
 
 pub fn handler(
     ctx: Context<CreatePouch>,
-    name: String,
+    name: [u8; NAME_LEN],
     agent: Pubkey,
     max_per_order: u64,
     daily_limit: u64,
     allowed_merchants: Vec<Pubkey>,
 ) -> Result<()> {
-    require!(name.len() <= NAME_LEN, VaultError::NameTooLong);
     require!(allowed_merchants.len() <= MAX_MERCHANTS, VaultError::TooManyMerchants);
     let p = &mut ctx.accounts.pouch;
     p.owner = ctx.accounts.owner.key();
     p.agent = agent;
     p.mint = ctx.accounts.mint.key();
-    p.name = pad_name(&name);
+    p.name = name;
     p.allowed_merchants = allowed_merchants;
     p.max_per_order = max_per_order;
     p.daily_limit = daily_limit;

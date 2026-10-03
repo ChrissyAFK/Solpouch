@@ -9,7 +9,7 @@ pub mod state;
 use instructions::*;
 
 // Placeholder id; `anchor keys sync` replaces it.
-declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+declare_id!("AqixXTfd8n914z7QCsNmBuZcFbDsitbGrBfCHStmJT8F");
 
 #[program]
 pub mod solpouch_vault {
@@ -17,7 +17,8 @@ pub mod solpouch_vault {
 
     pub fn create_pouch(
         ctx: Context<CreatePouch>,
-        name: String,
+        // UTF-8 name, zero-padded to 32 bytes by the client (it is also a PDA seed).
+        name: [u8; 32],
         agent: Pubkey,
         max_per_order: u64,
         daily_limit: u64,
