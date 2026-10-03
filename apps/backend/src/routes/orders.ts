@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { cancelOrder, confirmOrder, createDraft, HttpError, type Deps } from "../services/orders.js";
 
-const createBody = z.object({ request: z.string().min(1), pouchId: z.string().optional() });
+const createBody = z.object({ request: z.string().min(1).max(1000), pouchId: z.string().max(100).optional() });
 
 export function orderRoutes(deps: Deps) {
   const app = new Hono();

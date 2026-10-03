@@ -9,7 +9,7 @@ const { MemoryStore } = await import("./store/memory.js");
 const { createVaultClient } = await import("./vault/index.js");
 
 const { PostgresStore } = await import("./store/postgres.js");
-const store = process.env.DATABASE_URL ? await PostgresStore.connect(process.env.DATABASE_URL) : new MemoryStore();
+const store = process.env.DATABASE_URL ? await PostgresStore.connect(process.env.DATABASE_URL, []) : new MemoryStore([]);
 console.log(`store: ${process.env.DATABASE_URL ? "postgres (Tiger Data)" : "memory"}`);
 let vault = createVaultClient(store);
 if (process.env.VAULT_MODE === "chain") {

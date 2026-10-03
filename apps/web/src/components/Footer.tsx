@@ -16,19 +16,21 @@ export function Footer() {
               solpouch
             </Link>
             <p>
-              Manage budgets, set spending limits, and review purchases across
-              your pouches.
+              Budget pouches your assistant can shop from, paid in USDC on
+              Solana.
             </p>
           </div>
-          <nav className={styles.group} aria-label="Footer workspace">
-            <h2>Workspace</h2>
+          <nav className={styles.group} aria-label="Footer product">
+            <h2>Product</h2>
             <Link href="/">Overview</Link>
             <Link href="/#pouches">Pouches</Link>
             <Link href="/#activity">Orders</Link>
             <Link href="/order">New order</Link>
           </nav>
-          <nav className={styles.group} aria-label="Footer project">
-            <h2>Project</h2>
+          <nav className={styles.group} aria-label="Footer company">
+            <h2>Company</h2>
+            <Link href="/about">About</Link>
+            <Link href="/contact">Contact</Link>
             <a
               href="https://github.com/ChrissyAFK/Solpouch"
               target="_blank"
@@ -37,25 +39,16 @@ export function Footer() {
               GitHub <span aria-hidden="true">↗</span>
               <span className="sr-only"> (opens in a new tab)</span>
             </a>
-            <a
-              href="https://github.com/ChrissyAFK/Solpouch#readme"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Documentation <span aria-hidden="true">↗</span>
-              <span className="sr-only"> (opens in a new tab)</span>
-            </a>
+          </nav>
+          <nav className={styles.group} aria-label="Footer legal">
+            <h2>Legal</h2>
+            <Link href="/privacy">Privacy</Link>
+            <Link href="/terms">Terms</Link>
           </nav>
         </div>
         <div className={styles.bottom}>
           <span>© 2026 Solpouch</span>
-          <p>
-            <span className={styles.demo}>Demo workspace</span>
-            <span className={styles.separator} aria-hidden="true">
-              ·
-            </span>
-            Payments are simulated. No real funds are transferred.
-          </p>
+          <p>Spend with a budget. Approve every order.</p>
         </div>
       </div>
     </footer>

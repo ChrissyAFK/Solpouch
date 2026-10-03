@@ -7,7 +7,7 @@ Dashboard redesign from `codex/dashboard-design` is merged into `scaffold` (not 
 | Part | Where | Verified |
 |---|---|---|
 | API contract | `packages/shared/src/index.ts` | typecheck |
-| Backend (Hono, Postgres or in-memory store, chain or mock vault, Gemini + offline fallback, friction top-ups, voice webhooks) | `apps/backend` | typecheck, 30 vitest tests |
+| Backend (Hono, Postgres or in-memory store, chain or mock vault, Gemini + offline fallback, friction top-ups, voice webhooks) | `apps/backend` | typecheck, 37 vitest tests |
 | Vault program (Anchor 1.2), program ID `AqixXTfd8n914z7QCsNmBuZcFbDsitbGrBfCHStmJT8F` | `programs/solpouch_vault` | `anchor build` (IDL in `target/idl`), 8 unit tests, 10 integration tests on a local validator |
 | Voice agent config | `voice/` | n/a (set up in the ElevenLabs dashboard) |
 | Web dashboard (Next.js: pouches, rules, friction top-up, cart review, spend chart) | `apps/web` | production build, typecheck, local browser checks |
@@ -22,7 +22,15 @@ Dashboard redesign from `codex/dashboard-design` is merged into `scaffold` (not 
 - Backend runs on Tiger Postgres (`apps/backend/src/store/postgres.ts`, schema applied and seeded on start) with `VAULT_MODE=chain`: on start it creates any missing pouch PDAs on devnet and funds them from the owner wallet (`ensureOnChain`), and `vault/synced.ts` mirrors balance, spentToday and frozen back into the store after every write. Signers come from `.keys/owner.json` and `.keys/agent.json` (gitignored). The backend signs owner actions only for the demo; in production the owner signs in their wallet.
 - Verified end to end on 2026-10-03: a draft order is confirmed with a real devnet tx and the balance syncs; freeze and unfreeze work; the voice webhook via the tunnel answers with the secret and returns 401 without it. A voice call in the ElevenLabs Preview (Mock tools off) reads live balances.
 
+## Abuse protection (2026-10-03)
+
+- Backend (`apps/backend/src/security/rateLimit.ts`, `app.ts`): per-IP limits (all routes 120/min, writes 30/min, `/chat` and `POST /orders` 10/min and 200/day, top-ups 5/min, `/voice/*` 60/min), 64KB body limit, secure headers, CORS only for `WEB_ORIGINS` (default localhost:3000 and solpouch.tech). Requests that come through the Cloudflare tunnel can only reach `/health` and `/voice/*` unless `PUBLIC_API=all`. The voice secret is compared in constant time, and 10 wrong secrets lock an IP out for 10 minutes. Inputs are capped (names 60 chars, amounts 10,000 USDC, max 50 pouches).
+- ElevenLabs agent: origin allowlist (localhost, solpouch.tech, www.solpouch.tech), Origin header required, 5 concurrent calls, 300 a day, 5-minute calls, hang up after 30s of silence.
+- The backend no longer seeds placeholder pouches on start (tests still use `seedPouches()`).
+
 ## Not done yet
+
+- No sign-in yet: anyone who can reach the backend directly can manage pouches. Wallet sign-in is the real fix.
 
 - A permanent tunnel on solpouch.tech (the quick tunnel URL changes on restart).
 - Indexer is a stub; `confirmAbove` is stored but not used for auto-confirm.

@@ -145,7 +145,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <span className="status-dot" /> Demo workspace
+          <span className="status-dot" /> Personal
         </div>
       </aside>
       <div
@@ -157,7 +157,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Personal <span>/</span>
             <strong>{pageLabel}</strong>
           </div>
-          <span className="demo-label">Simulated payments</span>
+          <span className="demo-label">Payments on Solana</span>
         </header>
         <main
           id="main-content"

@@ -1,4 +1,6 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
+import { clientIp } from "../security/rateLimit.js";
 import { z } from "zod";
 import { toUsdc, type Order } from "@solpouch/shared";
 import { getMerchant } from "../merchants/index.js";
@@ -24,16 +26,39 @@ export function readback(order: Order): string {
   return `From ${merchant}: ${parts.join("; ")}. Total ${usd(order.total)}. Should I place it?`;
 }
 
-const requestBody = z.object({ request: z.string().min(1), pouchId: z.string().optional() });
-const orderIdBody = z.object({ orderId: z.string().min(1) });
+const requestBody = z.object({ request: z.string().min(1).max(1000), pouchId: z.string().max(100).optional() });
+const orderIdBody = z.object({ orderId: z.string().min(1).max(100) });
+
+const MAX_FAILS = 10;
+const LOCK_MS = 10 * 60_000;
+function safeEqual(a: string, b: string): boolean {
+  const ha = createHash("sha256").update(a).digest();
+  const hb = createHash("sha256").update(b).digest();
+  return timingSafeEqual(ha, hb);
+}
 
 export function voiceRoutes(deps: Deps) {
   const app = new Hono();
+  const fails = new Map<string, { count: number; windowStart: number; lockedUntil: number }>();
 
   app.post("/tools/:tool", async (c) => {
     const secret = process.env.ELEVENLABS_TOOL_SECRET;
     if (secret) {
-      if (c.req.header("X-Solpouch-Secret") !== secret) return c.json({ error: "Unauthorized" }, 401);
+      const ip = clientIp(c);
+      const now = Date.now();
+      const st = fails.get(ip);
+      if (st && st.lockedUntil > now) {
+        const secs = Math.ceil((st.lockedUntil - now) / 1000);
+        c.header("Retry-After", String(secs));
+        return c.json({ error: `Too many requests. Try again in ${secs} seconds.` }, 429);
+      }
+      if (!safeEqual(c.req.header("X-Solpouch-Secret") ?? "", secret)) {
+        const cur = st && st.windowStart + LOCK_MS > now ? st : { count: 0, windowStart: now, lockedUntil: 0 };
+        cur.count++;
+        if (cur.count >= MAX_FAILS) cur.lockedUntil = now + LOCK_MS;
+        fails.set(ip, cur);
+        return c.json({ error: "Unauthorized" }, 401);
+      }
     } else if (!warned) {
       warned = true;
       console.warn("[voice] ELEVENLABS_TOOL_SECRET is unset: voice tool calls are NOT authenticated");

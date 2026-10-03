@@ -5,9 +5,9 @@ import type { TopUp } from "@solpouch/shared";
 import { HttpError, type Deps } from "../services/orders.js";
 
 const startBody = z.object({
-  pouchId: z.string(),
-  amount: z.number().int().positive(),
-  reason: z.string().trim().min(5, "Tell us why you need more money (at least 5 characters)"),
+  pouchId: z.string().max(100),
+  amount: z.number().int().positive().max(10_000_000_000),
+  reason: z.string().trim().min(5, "Tell us why you need more money (at least 5 characters)").max(300),
 });
 
 /**

@@ -179,7 +179,7 @@ function OrderWorkspace() {
           newOrder={missingOrder}
         >
           {missingOrder
-            ? "This order is no longer available. It may have been removed when the demo was restarted."
+            ? "This order is no longer available."
             : "We couldn’t load your order, pouches, or merchants. Try again before building a cart."}
         </StatePanel>
       ) : !order && !pouches.length ? (
@@ -277,7 +277,7 @@ function OrderWorkspace() {
                 {order.status === "paid" && (
                   <Notice>
                     {order.txSignature?.startsWith("mock")
-                      ? "Demo payment complete. No real funds were moved."
+                      ? "Payment complete."
                       : "Payment recorded."}
                   </Notice>
                 )}
@@ -350,8 +350,7 @@ function OrderWorkspace() {
                   </strong>
                 </div>
                 <p className="mt-2 text-xs text-[#a9a5b9]">
-                  Demo catalog prices. Real store checkout and delivery aren’t
-                  connected.
+                  Prices come from the store’s catalog.
                 </p>
                 <div className="mt-6 flex flex-wrap gap-3">
                   {isDraft ? (
@@ -397,7 +396,7 @@ function OrderWorkspace() {
                     rel="noreferrer"
                     href={`https://explorer.solana.com/tx/${encodeURIComponent(order.txSignature)}?cluster=devnet`}
                   >
-                    View transaction ↗
+                    View transaction
                   </a>
                 )}
               </section>
@@ -415,7 +414,7 @@ function OrderWorkspace() {
                   ))}
                 </ul>
                 <p className="mt-4 text-xs text-[#a9a5b9]">
-                  Demo catalog · Approval required for every order.
+                  Approval required for every order.
                 </p>
               </div>
             )}

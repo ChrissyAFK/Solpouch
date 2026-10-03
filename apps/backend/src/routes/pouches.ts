@@ -5,13 +5,13 @@ import { fakeAddress } from "../store/memory.js";
 import { HttpError, type Deps } from "../services/orders.js";
 
 const rules = {
-  maxPerOrder: z.number().int().nonnegative(),
-  dailyLimit: z.number().int().nonnegative(),
-  confirmAbove: z.number().int().nonnegative(),
-  allowedMerchantIds: z.array(z.string()),
+  maxPerOrder: z.number().int().nonnegative().max(10_000_000_000),
+  dailyLimit: z.number().int().nonnegative().max(10_000_000_000),
+  confirmAbove: z.number().int().nonnegative().max(10_000_000_000),
+  allowedMerchantIds: z.array(z.string().max(100)).max(100),
 };
 const createBody = z.object({
-  name: z.string().min(1).max(32),
+  name: z.string().min(1).max(60),
   maxPerOrder: rules.maxPerOrder,
   dailyLimit: rules.dailyLimit,
   confirmAbove: rules.confirmAbove.optional(),
@@ -36,6 +36,7 @@ export function pouchRoutes(deps: Deps) {
 
   app.post("/", async (c) => {
     const b = createBody.parse(await c.req.json());
+    if ((await deps.store.listPouches()).length >= 50) throw new HttpError(409, "Pouch limit reached (50)");
     const pouch: Pouch = {
       id: b.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + Date.now().toString(36),
       address: fakeAddress(),

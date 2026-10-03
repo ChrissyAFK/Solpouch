@@ -46,8 +46,12 @@ function ChatPanel() {
   const [session, setSession] = useState<"text" | "voice" | null>(null);
   const queued = useRef<string | null>(null);
   const lastTyped = useRef<string | null>(null);
+  // The conversation including the queued message, so Gemini can answer it if the agent never connects.
+  const queuedNext = useRef<Message[] | null>(null);
+  const connected = useRef(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [retryMessages, setRetryMessages] = useState<Message[] | null>(null);
   const launcher = useRef<HTMLButtonElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -64,17 +68,21 @@ function ChatPanel() {
   function fallBack() {
     // ElevenLabs is unreachable: use the backend's Gemini helper instead.
     queued.current = null;
+    queuedNext.current = null;
     setSession(null);
     settle();
     setMode("checking");
   }
   const agent = useConversation({
     onConnect: () => {
+      connected.current = true;
       const text = queued.current;
       queued.current = null;
+      queuedNext.current = null;
       if (text) agent.sendUserMessage(text);
     },
     onDisconnect: () => {
+      connected.current = false;
       setSession(null);
       settle();
     },
@@ -88,8 +96,20 @@ function ChatPanel() {
       if (role === "agent") settle();
     },
     onError: () => {
-      setError("The voice agent couldn't connect. Switched to the text helper.");
+      if (connected.current) {
+        // A live session hit a problem (timeout, tool error). End it; the next message reconnects.
+        try {
+          agent.endSession();
+        } catch {}
+        setSession(null);
+        settle();
+        return;
+      }
+      // The agent never connected: answer with the Gemini helper instead.
+      const pendingNext = queuedNext.current;
       fallBack();
+      if (pendingNext) void askGemini(pendingNext);
+      else setError("The voice agent couldn't connect. Try Talk again in a moment.");
     },
   });
 
@@ -173,6 +193,7 @@ function ChatPanel() {
         agent.sendUserMessage(text);
       } else {
         queued.current = text;
+        queuedNext.current = next;
         setSession("text");
         agent.startSession({
           agentId: AGENT_ID,
@@ -182,6 +203,11 @@ function ChatPanel() {
       }
       return;
     }
+    await askGemini(next);
+  }
+  async function askGemini(next: Message[]) {
+    setPending(true);
+    busy.current = true;
     const id = ++sequence.current;
     const controller = new AbortController();
     request.current = controller;
@@ -247,13 +273,35 @@ function ChatPanel() {
       return;
     }
     setError(null);
-    try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
-      setError("Microphone access was blocked. Allow it in the browser to talk.");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError("Voice needs a secure (https) page and a browser with microphone support.");
       return;
     }
+    const permission = await navigator.permissions
+      ?.query({ name: "microphone" as PermissionName })
+      .then((p) => p.state)
+      .catch(() => "prompt");
+    if (permission === "denied") {
+      setError(
+        "Microphone is blocked for this site. Click the icon left of the address bar, set Microphone to Allow, then press Talk again.",
+      );
+      return;
+    }
+    if (permission !== "granted") setNotice("Allow microphone access in the browser prompt to start talking.");
+    try {
+      // Opens the browser's permission prompt; the agent opens its own stream once allowed.
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+    } catch {
+      setError(
+        "Solpouch needs your microphone to talk. Press Talk and choose Allow, or type your question instead.",
+      );
+      return;
+    } finally {
+      setNotice(null);
+    }
     if (session) agent.endSession();
+    setMode("agent");
     setSession("voice");
     agent.startSession({ agentId: AGENT_ID, connectionType: "websocket" });
   }
@@ -293,7 +341,7 @@ function ChatPanel() {
                   : mode === "checking"
                   ? "Checking connection…"
                   : mode === "demo"
-                    ? "Demo mode"
+                    ? "Assistant"
                     : mode === "gemini"
                       ? "Powered by Gemini"
                       : "Connection unavailable"}
@@ -318,11 +366,6 @@ function ChatPanel() {
               </button>
             </div>
           </header>
-          {mode === "demo" && (
-            <p className={styles.disclosure}>
-              Limited demo replies. Gemini is not connected.
-            </p>
-          )}
           <div
             className={styles.history}
             ref={history}
@@ -366,6 +409,11 @@ function ChatPanel() {
                 <p>{message.content}</p>
               </div>
             ))}
+            {notice && (
+              <p className={styles.pending} role="status">
+                {notice}
+              </p>
+            )}
             {pending && (
               <p className={styles.pending} role="status">
                 Waiting for a reply…
@@ -428,7 +476,7 @@ function ChatPanel() {
             />
             <div className={styles.composerBottom}>
               <span id="solpouch-chat-help">Shift + Enter for a new line</span>
-              {mode === "agent" && (
+              {AGENT_ID && (
                 <button
                   type="button"
                   className={styles.voice}
