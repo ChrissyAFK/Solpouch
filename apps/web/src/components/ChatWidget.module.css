@@ -1,0 +1,327 @@
+.widget {
+  position: fixed;
+  right: max(24px, env(safe-area-inset-right));
+  bottom: max(22px, env(safe-area-inset-bottom));
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 12px;
+}
+.launcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 11px 15px;
+  border: 1px solid #68428f;
+  border-radius: 6px;
+  background: #282032;
+  color: #ece5f6;
+  font-size: 13px;
+  font-weight: 550;
+  box-shadow: 0 4px 20px #0005;
+}
+.launcher:hover,
+.launcherOpen {
+  background: #38264b;
+  border-color: #995bcc;
+}
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  height: 530px;
+  max-height: calc(100dvh - 110px);
+  overflow: hidden;
+  background: #141417;
+  border: 1px solid #403648;
+  border-radius: 7px;
+  box-shadow: 0 12px 45px #0007;
+  color: #eeeaf4;
+}
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 17px;
+  border-bottom: 1px solid #302b36;
+  background: #19171e;
+  flex-shrink: 0;
+}
+.header h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 5px;
+}
+.mode {
+  display: block;
+  color: #aaa0b6;
+  font-size: 12px;
+}
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.headerActions button {
+  border: 0;
+  background: transparent;
+  color: #aaa0b6;
+  font-size: 12px;
+  min-height: 32px;
+  min-width: 32px;
+  border-radius: 3px;
+  padding: 5px;
+}
+.headerActions button:hover {
+  color: #f2eafa;
+  background: #2b2433;
+}
+.headerActions button:disabled {
+  opacity: 0.4;
+}
+.headerActions .close {
+  font-size: 25px;
+  line-height: 1;
+  font-weight: 300;
+}
+.disclosure {
+  margin: 0;
+  padding: 10px 17px;
+  background: #211b29;
+  border-bottom: 1px solid #382a46;
+  color: #c8b5dc;
+  font-size: 12px;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+.history {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 19px 17px;
+  scrollbar-width: thin;
+  scrollbar-color: #4b3c59 transparent;
+}
+.empty h3 {
+  font-size: 16px;
+  font-weight: 500;
+  margin: 0 0 9px;
+}
+.empty > p {
+  font-size: 13px;
+  color: #a49aad;
+  line-height: 1.65;
+  margin: 0 0 19px;
+}
+.presets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.presets button {
+  border: 1px solid #3b3344;
+  background: #1b1821;
+  color: #d0bfdc;
+  border-radius: 4px;
+  padding: 9px 11px;
+  min-height: 36px;
+  font-size: 12px;
+  text-align: left;
+  line-height: 1.4;
+}
+.presets button:hover {
+  background: #2b2037;
+  border-color: #755090;
+}
+.message {
+  font-size: 13px;
+  line-height: 1.65;
+  margin-bottom: 18px;
+  overflow-wrap: anywhere;
+}
+.message:last-child {
+  margin-bottom: 0;
+}
+.speaker {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #9e90ad;
+  margin-bottom: 5px;
+}
+.message p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.user {
+  background: #26202f;
+  padding: 10px 12px;
+  border: 1px solid #392e45;
+  border-radius: 5px;
+  margin-left: 21px;
+}
+.user .speaker {
+  color: #ba9bda;
+}
+.assistant {
+  padding-right: 12px;
+}
+.pending {
+  font-size: 12px;
+  color: #ac9eba;
+  margin: 8px 0;
+}
+.error {
+  border: 1px solid #613447;
+  background: #281921;
+  padding: 11px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #f0b1c1;
+  line-height: 1.5;
+}
+.error p {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+.error button {
+  border: 1px solid #855365;
+  background: #38212b;
+  padding: 6px 9px;
+  color: #f1cada;
+  border-radius: 3px;
+  font-size: 12px;
+  min-height: 32px;
+}
+.orderAction {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 11px 17px;
+  border-top: 1px solid #302a37;
+  flex-shrink: 0;
+}
+.orderAction a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #cfa5f4;
+  font-size: 12px;
+  font-weight: 600;
+  min-height: 25px;
+}
+.orderAction a:hover {
+  color: #eee0fa;
+}
+.orderAction > span {
+  font-size: 11px;
+  color: #a99ab6;
+}
+.composer {
+  padding: 12px 13px 10px;
+  border-top: 1px solid #332b3b;
+  flex-shrink: 0;
+}
+.composer textarea {
+  display: block;
+  resize: none;
+  max-height: 100px;
+  min-height: 64px;
+  width: 100%;
+  border: 1px solid #49404f;
+  background: #101014;
+  color: #eee7f5;
+  border-radius: 4px;
+  padding: 10px 11px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.composer textarea::placeholder {
+  color: #8e819e;
+}
+.composerBottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 9px;
+}
+.composerBottom > span {
+  font-size: 10px;
+  color: #9a8aa8;
+}
+.composerBottom button {
+  background: #9945ff;
+  border: 1px solid #ab65eb;
+  color: #fff;
+  border-radius: 4px;
+  padding: 7px 13px;
+  min-height: 33px;
+  font-size: 12px;
+  font-weight: 550;
+}
+.composerBottom button:hover {
+  background: #8538df;
+}
+.composerBottom button:disabled {
+  background: #392c47;
+  border-color: #4b385c;
+  color: #a091af;
+  opacity: 1;
+}
+.boundary {
+  font-size: 10px;
+  color: #9b8baa;
+  margin: 9px 0 0;
+  line-height: 1.4;
+}
+@media (max-width: 540px) {
+  .widget {
+    right: max(12px, env(safe-area-inset-right));
+    left: max(12px, env(safe-area-inset-left));
+    bottom: max(12px, env(safe-area-inset-bottom));
+    gap: 9px;
+  }
+  .panel {
+    width: 100%;
+    height: min(570px, calc(100dvh - 88px));
+    max-height: calc(100dvh - 88px);
+  }
+  .launcher {
+    min-height: 42px;
+    padding: 10px 13px;
+    font-size: 12px;
+  }
+  .header {
+    padding: 12px 14px;
+  }
+  .history {
+    padding: 16px 14px;
+  }
+  .composer textarea {
+    font-size: 16px;
+  }
+  .composerBottom > span,
+  .boundary {
+    font-size: 11px;
+  }
+  .speaker,
+  .orderAction > span {
+    font-size: 12px;
+  }
+  .headerActions button {
+    min-height: 36px;
+    min-width: 36px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .widget * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}

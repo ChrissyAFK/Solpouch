@@ -9,6 +9,7 @@ import { pouchRoutes } from "./routes/pouches.js";
 import { statsRoutes } from "./routes/stats.js";
 import { topupRoutes } from "./routes/topups.js";
 import { voiceRoutes } from "./routes/voice.js";
+import { chatRoutes } from "./routes/chat.js";
 
 export function createApp(deps: Deps) {
   const app = new Hono();
@@ -20,6 +21,7 @@ export function createApp(deps: Deps) {
   app.route("/merchants", merchantRoutes());
   app.route("/stats", statsRoutes(deps));
   app.route("/voice", voiceRoutes(deps));
+  app.route("/chat", chatRoutes(deps));
 
   app.onError((err, c) => {
     if (err instanceof HttpError) {
