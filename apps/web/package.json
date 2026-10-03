@@ -6,9 +6,12 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:security": "node --test test/security.test.mjs",
+    "test:smoke": "node --test test/smoke.test.mjs"
   },
   "dependencies": {
+    "@elevenlabs/react": "^1.16.0",
     "@solpouch/shared": "workspace:*",
     "next": "latest",
     "react": "latest",

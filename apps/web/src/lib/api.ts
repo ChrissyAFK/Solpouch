@@ -1,9 +1,18 @@
 import type {
-  Merchant, Pouch, Order, TopUp, SpendPoint, CreatePouchBody, UpdateRulesBody,
-  CreateOrderBody, StartTopUpBody, ApiError,
+  Merchant,
+  Pouch,
+  Order,
+  TopUp,
+  SpendPoint,
+  CreatePouchBody,
+  UpdateRulesBody,
+  CreateOrderBody,
+  StartTopUpBody,
+  ApiError,
 } from "@solpouch/shared";
 
-export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8787";
+export const BACKEND_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8787";
 
 export class ApiRequestError extends Error {
   code?: string;
@@ -17,49 +26,108 @@ export class ApiRequestError extends Error {
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
   try {
     res = await fetch(BACKEND_URL + path, {
       ...init,
       headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
       cache: "no-store",
+      signal: controller.signal,
     });
-  } catch {
-    throw new ApiRequestError(0, { error: `Cannot reach backend at ${BACKEND_URL}` });
+    const text = await res.text();
+    let data: unknown;
+    try {
+      data = text ? JSON.parse(text) : undefined;
+    } catch {
+      /* handled below */
+    }
+    if (!res.ok) {
+      const body =
+        data && typeof data === "object" ? (data as Partial<ApiError>) : {};
+      const message =
+        res.status >= 500
+          ? "Solpouch is having trouble right now. Try again in a moment."
+          : typeof body.error === "string"
+            ? body.error
+            : "This request could not be completed. Try again.";
+      throw new ApiRequestError(res.status, {
+        error: message,
+        code: body.code,
+      });
+    }
+    if (data === undefined)
+      throw new ApiRequestError(res.status, {
+        error: "We couldn't read the response. Try again.",
+      });
+    return data as T;
+  } catch (cause) {
+    if (cause instanceof ApiRequestError) throw cause;
+    const changingData = init?.method && init.method !== "GET";
+    throw new ApiRequestError(0, {
+      error: changingData
+        ? "We couldn't confirm the result. Refresh and check the latest status before trying again."
+        : controller.signal.aborted
+          ? "This is taking too long. Check your connection and try again."
+          : "We couldn't connect to Solpouch. Check your connection and try again.",
+    });
+  } finally {
+    clearTimeout(timeout);
   }
-  const text = await res.text();
-  let data: unknown = undefined;
-  try { data = text ? JSON.parse(text) : undefined; } catch { /* non-json */ }
-  if (!res.ok) {
-    const b = (data ?? {}) as Partial<ApiError>;
-    throw new ApiRequestError(res.status, { error: b.error ?? `Request failed (${res.status})`, code: b.code });
-  }
-  return data as T;
 }
 
 const post = <T>(p: string, body?: unknown) =>
-  req<T>(p, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
+  req<T>(p, {
+    method: "POST",
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
 
 export const api = {
   pouches: () => req<Pouch[]>("/pouches"),
   pouch: (id: string) => req<Pouch>(`/pouches/${id}`),
   createPouch: (b: CreatePouchBody) => post<Pouch>("/pouches", b),
   updateRules: (id: string, b: UpdateRulesBody) =>
-    req<Pouch>(`/pouches/${id}/rules`, { method: "PATCH", body: JSON.stringify(b) }),
+    req<Pouch>(`/pouches/${id}/rules`, {
+      method: "PATCH",
+      body: JSON.stringify(b),
+    }),
   freeze: (id: string) => post<Pouch>(`/pouches/${id}/freeze`),
   unfreeze: (id: string) => post<Pouch>(`/pouches/${id}/unfreeze`),
   merchants: () => req<Merchant[]>("/merchants"),
   createOrder: (b: CreateOrderBody) => post<Order>("/orders", b),
-  orders: (pouchId?: string) => req<Order[]>(`/orders${pouchId ? `?pouchId=${encodeURIComponent(pouchId)}` : ""}`),
+  orders: (pouchId?: string) =>
+    req<Order[]>(
+      `/orders${pouchId ? `?pouchId=${encodeURIComponent(pouchId)}` : ""}`,
+    ),
   order: (id: string) => req<Order>(`/orders/${id}`),
   confirm: (id: string) => post<Order>(`/orders/${id}/confirm`),
   cancel: (id: string) => post<Order>(`/orders/${id}/cancel`),
   startTopUp: (b: StartTopUpBody) => post<TopUp>("/topups", b),
   completeTopUp: (id: string) => post<TopUp>(`/topups/${id}/complete`),
   spend: (pouchId: string, bucket: "day" | "hour" = "day") =>
-    req<SpendPoint[]>(`/stats/spend?pouchId=${encodeURIComponent(pouchId)}&bucket=${bucket}`),
+    req<SpendPoint[]>(
+      `/stats/spend?pouchId=${encodeURIComponent(pouchId)}&bucket=${bucket}`,
+    ),
 };
 
 export function errMsg(e: unknown): string {
-  if (e instanceof ApiRequestError) return e.code ? `${e.message} (${e.code})` : e.message;
-  return e instanceof Error ? e.message : String(e);
+  if (e instanceof ApiRequestError) {
+    const messages: Record<string, string> = {
+      PouchFrozen: "This pouch is frozen. Unfreeze it before making a payment.",
+      MerchantNotAllowed:
+        "This store is not allowed for this pouch. Choose another pouch or update its allowed stores.",
+      OverPerOrderLimit:
+        "The total is above this pouch's limit per order. Reduce the order or update the limit.",
+      OverDailyLimit: "This payment would exceed the pouch's daily limit.",
+      InsufficientFunds:
+        "This pouch does not have enough funds for this payment.",
+      CooldownActive:
+        "The waiting period has not ended. Wait for the timer before completing the top-up.",
+      OrderAlreadyUsed:
+        "This order has already been paid. Refresh to see its latest status.",
+      Unauthorized: "You do not have permission to make this change.",
+    };
+    return (e.code && messages[e.code]) || e.message;
+  }
+  return "Something went wrong. Try again in a moment.";
 }
