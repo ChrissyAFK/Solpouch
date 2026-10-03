@@ -8,9 +8,23 @@ const { createApp } = await import("./app.js");
 const { MemoryStore } = await import("./store/memory.js");
 const { createVaultClient } = await import("./vault/index.js");
 
-// TODO: use a PostgresStore (Tiger Data) when DATABASE_URL is set.
-const store = new MemoryStore();
-const vault = createVaultClient(store);
+const { PostgresStore } = await import("./store/postgres.js");
+const store = process.env.DATABASE_URL ? await PostgresStore.connect(process.env.DATABASE_URL) : new MemoryStore();
+console.log(`store: ${process.env.DATABASE_URL ? "postgres (Tiger Data)" : "memory"}`);
+let vault = createVaultClient(store);
+if (process.env.VAULT_MODE === "chain") {
+  const { ensureOnChain, ChainVaultClient } = await import("./vault/index.js");
+  const { SyncedVaultClient } = await import("./vault/synced.js");
+  // Creates missing pouches on devnet and funds each vault up to its stored balance.
+  for (const p of await ensureOnChain(vault as InstanceType<typeof ChainVaultClient>, await store.listPouches())) {
+    await store.savePouch(p);
+  }
+  vault = new SyncedVaultClient(vault, store);
+  for (const p of await store.listPouches()) {
+    const { balance, spentToday } = await vault.getBalance(p.id);
+    await store.savePouch({ ...p, balance, spentToday });
+  }
+}
 const app = createApp({ store, vault });
 
 const port = Number(process.env.BACKEND_PORT ?? 8787);

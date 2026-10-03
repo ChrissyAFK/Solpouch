@@ -155,5 +155,6 @@ export const VAULT_ERRORS = [
   "NameTooLong",
   "TooManyMerchants",
   "VaultNotEmpty",
+  "OrderAlreadyUsed",
 ] as const;
 export type VaultError = (typeof VAULT_ERRORS)[number];

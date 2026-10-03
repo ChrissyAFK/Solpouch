@@ -6,6 +6,8 @@ import type { VaultClient } from "./types.js";
 
 export function createVaultClient(store: Store): VaultClient {
   const mode = process.env.VAULT_MODE ?? "mock";
-  if (mode === "chain") return new ChainVaultClient();
+  if (mode === "chain") return new ChainVaultClient((id) => getMerchant(id)?.payTo);
   return new MockVaultClient(store, (id) => getMerchant(id)?.payTo);
 }
+
+export { ensureOnChain, ChainVaultClient } from "./chain.js";

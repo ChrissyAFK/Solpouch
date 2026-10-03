@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Merchant, Pouch } from "@solpouch/shared";
 import { toUsdc } from "@solpouch/shared";
 import { api, errMsg } from "@/lib/api";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import { PouchForm } from "@/components/PouchForm";
 import { ErrorBanner, Progress, btnSecondary, card, usd } from "@/components/ui";
 
@@ -20,6 +21,7 @@ export default function PouchesPage() {
     } catch (e) { setError(errMsg(e)); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  useLiveRefresh(load);
 
   async function toggle(p: Pouch) {
     try {

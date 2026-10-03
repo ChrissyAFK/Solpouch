@@ -13,9 +13,9 @@ interface RawProduct {
 }
 
 export const merchants: Merchant[] = [
-  { id: "mountain-market", name: "Mountain Market", payTo: "MtnMkt4fR7eYq2vXk9Zp3LhNwB8sTcD5uJaGoV6xQ1Ez", kind: "grocery" },
+  { id: "mountain-market", name: "Mountain Market", payTo: "2Eh7wvgnA1MQu1hLnPHZAjrguvGzXgkaKF3tGqvxpFzK", kind: "grocery" },
   { id: "burnaby-builders", name: "Burnaby Builders Supply", payTo: "BbSupp9QxW3mKd7TnRz2VhYc5LuEoJ8aPgF4sXiN6vDr", kind: "building_supply" },
-  { id: "thai-express", name: "Thai Express (gift card)", payTo: "ThaiXp5NcH2wUb8RkTq7JzLs3VfMoD9eYaG4xPiE6vBn", kind: "food" },
+  { id: "thai-express", name: "Thai Express (gift card)", payTo: "DAqP69yePkq18Uv9AmGKaNUF7CuAsgwF1yhnCzwDaDj3", kind: "food" },
 ];
 
 function toProducts(merchantId: string, raw: RawProduct[]): Product[] {

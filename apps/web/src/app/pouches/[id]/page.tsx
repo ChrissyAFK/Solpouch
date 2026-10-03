@@ -5,6 +5,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import type { Merchant, Order, Pouch, SpendPoint, TopUp } from "@solpouch/shared";
 import { toMicros, toUsdc } from "@solpouch/shared";
 import { api, errMsg } from "@/lib/api";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import { PouchForm } from "@/components/PouchForm";
 import { ErrorBanner, Notice, Progress, btnPrimary, btnSecondary, card, input, label, usd } from "@/components/ui";
 
@@ -91,6 +92,7 @@ export default function PouchDetail() {
     } catch (e) { setError(errMsg(e)); }
   }, [id]);
   useEffect(() => { void load(); }, [load]);
+  useLiveRefresh(load);
 
   if (!pouch) return <div><ErrorBanner message={error} />{!error && <p className="text-lg">Loading...</p>}</div>;
   const mname = (mid: string) => merchants.find((m) => m.id === mid)?.name ?? mid;

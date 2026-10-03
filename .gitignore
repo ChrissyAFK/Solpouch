@@ -9,3 +9,6 @@ test-ledger/
 *.keypair.json
 **/keys/*.json
 .DS_Store
+
+# local devnet signers, never commit
+.keys/

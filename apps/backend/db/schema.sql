@@ -20,11 +20,17 @@ CREATE TABLE IF NOT EXISTS pouches (
   created_at            timestamptz NOT NULL DEFAULT now()
 );
 
+-- Balance and daily spend live on the pouch row for the app store.
+ALTER TABLE pouches ADD COLUMN IF NOT EXISTS balance     bigint NOT NULL DEFAULT 0;
+ALTER TABLE pouches ADD COLUMN IF NOT EXISTS spent_today bigint NOT NULL DEFAULT 0;
+ALTER TABLE pouches ADD COLUMN IF NOT EXISTS spent_day   date;
+
+-- Order lines are stored as JSONB in orders.lines (simple upserts); order_lines below is unused by the app.
 CREATE TABLE IF NOT EXISTS orders (
   id            text NOT NULL,
   created_at    timestamptz NOT NULL DEFAULT now(),
   pouch_id      text NOT NULL REFERENCES pouches(id),
-  merchant_id   text NOT NULL REFERENCES merchants(id),
+  merchant_id   text NOT NULL,
   request       text NOT NULL,
   total         bigint NOT NULL,
   status        text NOT NULL,
@@ -32,6 +38,8 @@ CREATE TABLE IF NOT EXISTS orders (
   tx_signature  text,
   PRIMARY KEY (id, created_at)
 );
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS lines jsonb NOT NULL DEFAULT '[]';
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_merchant_id_fkey;
 SELECT create_hypertable('orders', 'created_at', if_not_exists => TRUE);
 
 CREATE TABLE IF NOT EXISTS order_lines (
