@@ -1,8 +1,8 @@
 # Solpouch
 
-**A Solana wallet for your AI.**
+**Budget pouches your AI shops from, and can't refill.**
 
-Give your AI a budget, connect your preferred assistant, and let it buy services, swap tokens and manage funds, with a receipt for every action. Big decisions get approved by voice.
+Split your money into pouches (Uber Eats, groceries, fun money, job-site supplies), each a separate Solana wallet with its own limits. Tell Solpouch what you need, by voice or text. It finds the items, shows you exactly what it found, and buys only after you confirm. When a pouch is empty, it's empty: the AI can't top it up, and neither can you without deliberately going to the app and adding money.
 
 Built at StormHacks 2026 · [solpouch.tech](https://solpouch.tech)
 
@@ -10,102 +10,100 @@ Built at StormHacks 2026 · [solpouch.tech](https://solpouch.tech)
 
 ---
 
+## Who it's for
+
+**Students and anyone on a budget.** Budgeting apps only *track* overspending after it happens. Solpouch makes the budget real: the Uber Eats pouch holds $40 for the month, and when it's gone, the AI says no. Topping up takes a conscious, slightly annoying step, on purpose.
+
+**Trades, construction and small-business owners.** Ordering in bulk from supplier websites is slow and confusing, especially if you'd rather just make a phone call. Say *"200 2x4s, 8 feet, and ten boxes of 3-inch deck screws, delivered to the site Tuesday"* and Solpouch builds the order, reads it back line by line, and places it from the job's pouch once you say yes.
+
 ## How it works
 
-1. **Fund an agent wallet.** Connect your own wallet in the dashboard and fund a separate agent wallet. Its token holdings are the agent's portfolio. Connecting a normal wallet never grants spending authority; funding and authorizing the agent wallet is a separate, explicit step.
-2. **Set the rules.** For example: *"You have 20 USDC. Spend up to 2 USDC a day on approved APIs. Propose SOL/USDC swaps, but ask me before executing them."*
-3. **Connect your assistants.** Claude Code, Codex and Gemini CLI all connect to the same Solpouch MCP server, so they share one balance, one budget and one receipt history.
-4. **Talk to it normally.**
-   - "Show my balances and available spending budget."
-   - "Buy access to this dataset and analyze it."
-   - "Quote a swap of 5 USDC into SOL."
-   - "Show everything you purchased for this task."
-5. **Approve by voice.** When an action needs your OK, Solpouch says so out loud: *"Codex wants to swap 5 USDC for about 0.03 SOL, approve?"* Answer yes or no, ask what your agents spent today, or say "freeze everything."
+1. **Create pouches.** Each pouch is its own Solana wallet with its own rules: what it's for, where it can spend, the max per order, and whether purchases need your confirmation.
+2. **Fill them, deliberately.** Adding money only happens in the app, through a top-up flow with built-in friction: re-authenticate, type the amount, wait out a short cooldown, and say why. The AI has no way to add money or move it between pouches.
+3. **Ask for what you need.** "Get me Thai food under $20." "Restock the usual groceries." "Order the materials list for the Kim job."
+4. **Check what it found.** Before anything is bought, Solpouch shows and reads back each item: name, brand, size, quantity, unit price, total and store, with anything it changed flagged ("oat milk was out, I picked Silk instead").
+5. **Confirm, and it pays.** Say yes and it pays from the right pouch. Every purchase gets a receipt with a Solana Explorer link.
+6. **When it's empty, it's empty.** "Your fun money pouch has $3 left until the 1st. Want to open the app and top it up?"
+
+## Making sure it bought the right thing
+
+The AI never buys straight from your request. Every order goes through a check step:
+
+- **Structured match.** Gemini compares each found item to what you asked for, field by field (product, brand, size, quantity, unit price), and gives each line a match score.
+- **Flagged differences.** Substitutions, price jumps and anything below the match threshold are called out in red and read out loud.
+- **Explicit confirmation.** You approve the exact cart: the same items and total that will be paid. If anything changes after you approve, it asks again.
+- **After delivery (stretch goal).** Snap a photo of the receipt or the delivered items, and Gemini checks them against the order.
 
 ## Built with
 
 | Technology | Role |
 |---|---|
-| **Solana** | Agent wallet, USDC payments for paid APIs via [x402](https://www.x402.org), swap quotes via [Jupiter](https://dev.jup.ag/), on-chain receipts |
-| **ElevenLabs** | Voice agent for approvals, balance questions and the freeze command |
-| **Gemini** | Reviews every action and explains it in plain English; powers the voice agent; Gemini CLI is a supported assistant |
-| **Tiger Data** | Postgres + TimescaleDB: atomic budget reservations, action and receipt history, price and balance time-series, live spend charts from continuous aggregates |
-| **MCP** | One integration point for every assistant |
-| **TypeScript / Next.js** | Backend, MCP server and dashboard |
+| **Solana** | One wallet per pouch, USDC payments via Solana Pay, on-chain receipts |
+| **ElevenLabs** | Voice ordering and voice read-back of every cart, including a phone-call mode for people who'd rather just call |
+| **Gemini** | Understands requests, finds and matches products, scores how well each item matches, explains substitutions |
+| **Tiger Data** | Postgres + TimescaleDB: pouches and rules, orders and receipts, spending per pouch over time, price history for repeat bulk items |
+| **TypeScript / Next.js** | Backend and dashboard |
+| **MCP** | Optional: let Claude Code, Codex or another assistant shop from a pouch under the same rules |
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    A[Claude Code / Codex / Gemini CLI] -->|MCP| B[Solpouch MCP server]
-    B --> C[Policy engine]
-    V[ElevenLabs voice agent] --> C
-    D[Dashboard: budgets, approvals, activity] --> C
-    C --> R[Gemini reviewer]
-    C --> T[(Tiger Data)]
-    C --> E[x402 purchase + Jupiter swap adapters]
-    E --> F[Transaction validation + isolated signer]
-    F --> G[Solana]
-    G --> H[Confirmation tracking + receipts]
-    H --> T
+    U[You: voice, phone call or text] --> V[ElevenLabs voice agent]
+    V --> B[Solpouch backend]
+    D[Dashboard: pouches, carts, top-ups, history] --> B
+    B --> G[Gemini: request understanding + item matching]
+    G --> M[Merchant adapters]
+    B --> P[Policy engine: per-pouch rules]
+    P --> T[(Tiger Data)]
+    P --> S[Isolated signer: one wallet per pouch]
+    S --> SOL[Solana]
+    SOL --> R[Receipts]
+    R --> T
     T --> D
 ```
 
-**Life of one action**
+**Life of one order**
 
-1. An assistant calls `request_action` with a unique action ID.
-2. The policy engine checks the merchant, asset, limits, quote age, fees and slippage.
-3. The budget is reserved atomically in the database, so two agents can never spend the same remaining allowance.
-4. Gemini reviews the action against the task and recent history and adds a plain-English note and risk flag. This is advisory only; limits are enforced in code, never by a prompt.
-5. Small, in-policy purchases execute right away. Anything over the threshold, and every swap, waits for approval by voice or in the dashboard.
-6. On approval, the backend re-validates the exact transaction, signs, sends, records the receipt and settles the reservation. Denied or expired actions release their reservation.
+1. You ask for something. Gemini turns it into a structured shopping list and picks the pouch.
+2. Merchant adapters find candidate items. Gemini scores each one against your request.
+3. The policy engine checks that pouch's rules: allowed merchant, max per order, remaining balance.
+4. The amount is reserved atomically, so two orders can't spend the same money.
+5. Solpouch shows and reads the cart back. You confirm the exact cart.
+6. The backend re-validates, signs from that pouch's wallet only, pays, and stores the receipt.
 
-## MCP tools
+## Pouch rules
 
-| Tool | Purpose |
+| Rule | Example |
 |---|---|
-| `get_portfolio` | Balances, estimated values and remaining budget |
-| `quote_purchase` | Merchant, resource, price and payment details |
-| `quote_swap` | Expected output, fees and minimum received |
-| `request_action` | Submit a purchase, transfer or swap for policy checks |
-| `get_action_status` | Approval state, execution status and receipt |
-| `list_receipts` | Everything purchased for a task or session |
+| Purpose | "Uber Eats", "Groceries", "Fun money", "Kim job: materials" |
+| Allowed merchants | Uber Eats pouch can only buy Uber Eats |
+| Max per order | $25 for food, $2,000 for job materials |
+| Confirmation | Always, or only above an amount |
+| Refill | **User only**, through the friction top-up. The AI has no refill or transfer tool |
+| Moving money between pouches | User only, same friction |
+| Freeze | "Freeze my pouches" stops all spending immediately |
 
-Assistants get scoped access to these tools only. Private keys never enter an assistant's context or reachable filesystem.
+## Where it can buy
 
-## Spending controls
-
-Limits are enforced in code, independently of anything the assistant is told.
-
-| Control | Example |
+| Where | How |
 |---|---|
-| Purchase budget | Max 2 USDC per day across all connected agents |
-| Per-action limit | Anything over 1 USDC needs approval |
-| Trade limit | Max 5 USDC equivalent per swap, plus a turnover limit |
-| Allowed destinations | Registered merchants and approved recipients only |
-| Allowed assets | Specific SOL and USDC mint addresses |
-| Execution bounds | Max fees, slippage and quote age |
-| Approval | Swaps require approval of the exact proposed transaction |
-| Idempotency | Unique action IDs, so a retry can never charge twice |
-| Revocation | "Freeze everything" stops all future signing immediately |
-
-Revocation stops future actions; it can't undo completed transactions.
+| Merchants that accept Solana | Pays directly with Solana Pay, fully automatic after confirmation |
+| Stores that don't accept crypto (Uber Eats, grocery chains, hardware stores) | Buys a gift card for that store with crypto, then uses it |
+| Our demo merchants | A grocery store and a building-supply store that accept Solana Pay on devnet |
 
 ## Hackathon scope
 
-- Dashboard with balances, rules, pending approvals, activity and live spend charts
-- MCP server tested with Claude Code, Codex and Gemini CLI
-- A working paid-API purchase over x402 with devnet funds
-- SOL/USDC swap quotes with a clearly labelled paper-trading execution flow (Jupiter runs on mainnet only)
-- Voice approvals and a voice freeze switch
-- In the demo: a successful purchase, a blocked overspend and a receipt with a Solana Explorer link
+- Dashboard: create pouches, set rules, top up with friction, view carts and history
+- One Solana wallet per pouch on devnet, with the AI unable to refill or transfer
+- Voice ordering with cart read-back and voice confirmation
+- Gemini item matching with substitutions flagged
+- Two demo merchants (grocery, building supply) with Solana Pay checkout
+- Spending-per-pouch charts from Tiger Data
+- In the demo: a confirmed order, a caught substitution, an empty pouch refusing to spend, and a bulk order placed by voice
 
-**Stretch goals:** real-world spending through crypto gift cards, voice-confirmed grocery checkout, separate budgets per agent.
-
-## Demo story
-
-> I give Claude a small research budget. It buys a dataset and produces an analysis. I switch to Codex, which sees the same remaining balance and receipts. Codex proposes a token swap, and Solpouch asks me out loud to approve it. Gemini CLI tries to go over the budget and is rejected. I say "freeze everything" and all signing stops.
+**Stretch goals:** real gift-card purchases with real SOL, receipt-photo verification after delivery, a phone number you can call to place orders, MCP access for coding assistants.
 
 ## Security notes
 
-This is a **custodial prototype**: the backend holds the key for a disposable development wallet. A production version would use constrained signing infrastructure or an audited on-chain vault. Keep simulated trades separate from real on-chain balances.
+This is a **custodial prototype**: the backend holds disposable devnet keys for each pouch. A production version would use constrained signing infrastructure or an audited on-chain vault, and a regulated on-ramp for bank top-ups. Revocation stops future purchases; it can't undo completed ones.
