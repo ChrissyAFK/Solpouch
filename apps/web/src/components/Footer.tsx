@@ -22,9 +22,9 @@ export function Footer() {
           </div>
           <nav className={styles.group} aria-label="Footer workspace">
             <h2>Workspace</h2>
-            <Link href="/">Overview</Link>
-            <Link href="/#pouches">Pouches</Link>
-            <Link href="/#activity">Orders</Link>
+            <Link href="/dashboard">Overview</Link>
+            <Link href="/dashboard#pouches">Pouches</Link>
+            <Link href="/dashboard#activity">Orders</Link>
             <Link href="/order">New order</Link>
           </nav>
           <nav className={styles.group} aria-label="Footer project">

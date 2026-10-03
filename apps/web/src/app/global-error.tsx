@@ -48,7 +48,7 @@ export default function GlobalError({
             >
               Try again
             </button>
-            <a href="/" style={{ color: "#14f195", padding: "12px 0" }}>
+            <a href="/dashboard" style={{ color: "#14f195", padding: "12px 0" }}>
               Back to overview
             </a>
           </div>

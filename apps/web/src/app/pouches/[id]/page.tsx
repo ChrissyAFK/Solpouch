@@ -296,7 +296,7 @@ export default function PouchDetail() {
   return (
     <div className="space-y-7">
       <Link
-        href="/"
+        href="/dashboard"
         className="inline-flex items-center gap-2 text-sm font-medium text-[#14f195] hover:text-[#14f195]"
       >
         ← All pouches

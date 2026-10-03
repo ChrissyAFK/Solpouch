@@ -27,7 +27,7 @@ export function StatePanel({
           </button>
         )}
         {home && (
-          <Link href="/" className={btnSecondary}>
+          <Link href="/dashboard" className={btnSecondary}>
             Back to overview
           </Link>
         )}

@@ -29,7 +29,7 @@ const localHost =
     siteUrl.hostname === "127.0.0.1" ||
     siteUrl.hostname === "[::1]" ||
     siteUrl.hostname.endsWith(".localhost"));
-// This is an account dashboard: indexing requires a deliberate public-demo opt-in.
+// Public landing-page indexing requires an explicit deployment setting.
 export const allowIndexing =
   process.env.NODE_ENV === "production" &&
   !!siteUrl &&
