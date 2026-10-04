@@ -81,7 +81,7 @@ export function validateFind(raw: any, items: ParsedItem[], allowedDomains?: str
   for (const [i, it] of items.entries()) {
     const m =
       rawItems.find((r) => String(r?.requested ?? "").toLowerCase() === it.requested.toLowerCase()) ?? rawItems[i];
-    const price = Number(m?.unitPrice ?? m?.price);
+    const price = Number(String(m?.unitPrice ?? m?.price ?? "").replace(/[^0-9.]/g, ""));
     if (!m || !Number.isFinite(price) || price <= 0) continue;
     out.push({
       requested: it.requested,
