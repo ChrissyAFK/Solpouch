@@ -81,10 +81,10 @@ test('demo checkout requires preparation then a separate approval of converted a
  await page.route('**/orders/cartfixture/confirm',r=>{assert.equal(r.request().postDataJSON().version,5);payments++;return r.fulfill({json:{...converted,status:'paid'}});});
  await page.getByRole('tab',{name:/^Carts/}).click();
  const cards=page.getByRole('region',{name:'Recent carts and payments'});
- await cards.getByRole('button',{name:'Prepare devnet demo checkout'}).click();
- await cards.getByText('No retailer order is placed. Devnet test tokens only.').waitFor();
+ await cards.getByRole('button',{name:'Prepare checkout'}).click();
+ await cards.getByText('Checkout',{exact:true}).waitFor();
  await cards.getByText('Checkout wallet: FixtureDestinationWallet').waitFor();
  assert.equal(payments,0);
- await cards.getByRole('button',{name:'Pay demo checkout · 11.672700 test-USDC'}).click();
+ await cards.getByRole('button',{name:'Pay checkout · 11.67 USDC'}).click();
  await cards.getByText('paid',{exact:true}).waitFor();assert.equal(payments,1);
 });

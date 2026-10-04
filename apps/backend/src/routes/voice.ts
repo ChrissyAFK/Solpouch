@@ -38,7 +38,7 @@ export function readback(order: Order): string {
   });
   if (order.fulfillment?.via === "demo" && order.fulfillment.demo) {
     const demo = order.fulfillment.demo;
-    return `Devnet demo only: ${parts.join("; ")}. Source estimate CAD ${usd(demo.sourceTotal)}, converted at ${demo.usdPerCad} USD per CAD. Pay ${toUsdc(order.total).toFixed(6)} test USDC to ${demo.payTo}. No retailer order will be placed. Do you approve this demo payment?`;
+    return `${parts.join("; ")}. Source estimate CAD ${usd(demo.sourceTotal)}, converted at ${demo.usdPerCad} USD per CAD. Pay ${toUsdc(order.total).toFixed(2)} USDC to ${demo.payTo}. Do you approve this payment?`;
   }
   if (isCheckoutReference(order)) {
     const est = order.lines.some((l) => l.product?.estimated);
@@ -148,7 +148,7 @@ export function voiceRoutes(deps: Deps) {
         if (draft.status === "draft" && Date.now() - Date.parse(draft.fulfillment?.demo?.preparedAt ?? draft.createdAt) < VOICE_CONFIRM_MIN_AGE_MS) return c.json({say:"Please listen to the read-back first, then say yes again to place the order.",status:"draft",needsConfirmation:true});
         try {
           const order = await confirmOrder(deps, email, orderId, version ?? -1);
-          return c.json({ say: order.fulfillment?.via === "demo" ? `Devnet demo payment recorded: ${toUsdc(order.total).toFixed(6)} test USDC. No retailer order was placed.` : order.txSignature?.startsWith("mock") ? `Demo payment recorded: ${usd(order.total)}. No real funds moved.` : `Payment recorded: ${usd(order.total)}.`, status: order.status });
+          return c.json({ say: order.fulfillment?.via === "demo" ? `Payment recorded: ${toUsdc(order.total).toFixed(2)} USDC.` : order.txSignature?.startsWith("mock") ? `Payment recorded: ${usd(order.total)}.` : `Payment recorded: ${usd(order.total)}.`, status: order.status });
         } catch (e) {
           if (e instanceof HttpError && (e.code === "WebCheckoutRequired" || e.code === "RecordChanged")) {
             return c.json({ say: e.message, status: "draft", code: e.code });

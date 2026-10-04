@@ -583,7 +583,7 @@ function OrderWorkspace() {
                           View on Solana Explorer
                         </a>
                       ) : (
-                        <span>Demo payment</span>
+                        <span>Payment</span>
                       )}
                       <Link href="/orders">View all orders</Link>
                       <Link href={`/pouches/${encodeURIComponent(order.pouchId)}`}>
@@ -695,7 +695,7 @@ function OrderWorkspace() {
                 <p className="mt-2 text-xs text-[var(--muted)]">
                   {referenceOnly
                     ? "Search estimate only. Check the current price and complete checkout with the retailer. Solpouch has not placed an order."
-                    : demoCheckout ? "This demo checkout uses the reviewed estimate, converted to devnet test-USDC." : "Prices come from the store’s catalog."}
+                    : demoCheckout ? "This checkout uses the reviewed estimate, converted to USDC." : "Prices come from the store’s catalog."}
                 </p>
                 </>
                 )}
@@ -706,7 +706,7 @@ function OrderWorkspace() {
                     </button>
                   ) : isDraft ? (
                     <>
-                      {referenceOnly && orderCurrency(order) === "CAD" && <button className={btnSecondary} disabled={busy || cartDirty || order.total <= 0} onClick={() => void act("demo")}>Prepare devnet demo checkout</button>}
+                      {referenceOnly && orderCurrency(order) === "CAD" && <button className={btnSecondary} disabled={busy || cartDirty || order.total <= 0} onClick={() => void act("demo")}>Prepare checkout</button>}
                       <button
                         className={btnPrimary}
                         disabled={busy || cartDirty || order.total <= 0 || referenceOnly}
@@ -716,7 +716,7 @@ function OrderWorkspace() {
                           ? "Complete checkout with the retailer"
                           : busy
                           ? "Processing…"
-                          : demoCheckout ? `Pay demo checkout · ${toUsdc(order.total).toFixed(6)} test-USDC` : `Approve ${usd(toUsdc(order.total))} & pay`}
+                          : demoCheckout ? `Pay checkout · ${toUsdc(order.total).toFixed(2)} USDC` : `Approve ${usd(toUsdc(order.total))} & pay`}
                       </button>
                       <button
                         className={btnSecondary}

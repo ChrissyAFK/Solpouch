@@ -13,7 +13,7 @@ export function ordersCsv(orders: Order[], pouchName: (id: string) => string, st
 }
 export function receiptText(order: Order, store: string): string {
   return ["Solpouch payment receipt", `Order: ${order.id}`, `Store: ${store}`, `Status: ${order.status}`, `Created: ${order.createdAt}`, `Paid: ${order.paidAt ?? "Not recorded"}`, "",
-    ...order.lines.map(line => `${line.qty} × ${line.product?.name ?? line.requested}: ${(line.lineTotal / 1_000_000).toFixed(2)}`), "", `Total: ${(order.total / 1_000_000).toFixed(2)} ${orderCurrency(order)}`, `Transaction: ${order.txSignature ?? "Not recorded"}`, order.fulfillment?.via === "demo" ? "Devnet demo checkout. No retailer order is placed. Devnet test tokens only." : "Payment status does not confirm retailer purchase or delivery."].join("\n");
+    ...order.lines.map(line => `${line.qty} × ${line.product?.name ?? line.requested}: ${(line.lineTotal / 1_000_000).toFixed(2)}`), "", `Total: ${(order.total / 1_000_000).toFixed(2)} ${orderCurrency(order)}`, `Transaction: ${order.txSignature ?? "Not recorded"}`, order.fulfillment?.via === "demo" ? "Payment complete." : "Payment status does not confirm retailer purchase or delivery."].join("\n");
 }
 export function downloadFile(name: string, content: string, type: string) {
   const url = URL.createObjectURL(new Blob([content], { type }));

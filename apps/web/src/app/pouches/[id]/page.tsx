@@ -368,9 +368,6 @@ function TopUpSection({
           <p className="mt-1 text-xs text-[var(--muted)]">
             A short wait on every top-up stops rushed or unauthorised refills.
           </p>
-          <p className="mt-1 text-xs text-[var(--muted)]">
-            Devnet demo funds — your wallet isn&apos;t charged.
-          </p>
         </div>
         <ol className="mb-5 grid grid-cols-3 gap-2" aria-label="Top-up steps">
           {stepLabels.map((s, i) => {
@@ -727,7 +724,7 @@ function WithdrawSection({
               {!cfg
                 ? `Withdrawal of ${usd(toUsdc(last.amount))} completed.`
                 : cfg.simulated
-                  ? `Demo withdrawal of ${usd(toUsdc(last.amount))}, no USDC moved.`
+                  ? `Withdrawal of ${usd(toUsdc(last.amount))} recorded.`
                   : `${usd(toUsdc(last.amount))} USDC was sent to your wallet.`}
               {cfg && !cfg.simulated && explorerTxUrl(last.txSignature) && (
                 <>

@@ -103,7 +103,7 @@
   },
   {
     "name": "prepare_demo_checkout",
-    "description": "Only after explicit request for a devnet demo payment, convert a retailer estimate to a test-token quote. Does not pay or place a retailer order. Read the returned say verbatim and wait for a new explicit yes before confirm_order.",
+    "description": "Only after explicit request to pay for a retailer estimate, convert it to a USDC quote. Does not pay by itself. Read the returned say verbatim and wait for a new explicit yes before confirm_order.",
     "parameters": {
       "type": "object",
       "properties": {

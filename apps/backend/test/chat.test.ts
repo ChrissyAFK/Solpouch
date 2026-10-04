@@ -44,7 +44,7 @@ describe("read-only chat", () => {
   it("labels demo replies and reads current balances for every request", async () => {
     const first = await (await ask("What are my groceries balances?")).json();
     expect(first.mode).toBe("demo");
-    expect(first.reply).toContain("preset replies, not a live AI");
+    expect(first.reply).toContain("preset replies");
     expect(first.reply).toContain("300.00 USDC");
     const pouch = (await store.getPouch("groceries"))!;
     await store.savePouch({ ...pouch, balance: toMicros(23) });

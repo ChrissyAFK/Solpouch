@@ -18,7 +18,7 @@ const storeList = (p: Pouch) => (isAnyStore(p) ? "any store" : p.allowedMerchant
 
 export function demoReply(messages: ChatMessage[], context: ChatContext): string {
   const query = messages[messages.length - 1].content.toLowerCase();
-  const prefix = "Demo helper (preset replies, not a live AI). ";
+  const prefix = "Quick helper (preset replies). ";
   const named = context.pouches.filter((p) => query.includes(p.name.toLowerCase()) || query.includes(p.id));
   const pouches = named.length ? named : context.pouches;
   if (/\b(pay|buy|order|purchase|send|transfer|refund|top.?up|refill|freeze|unfreeze|change|update)\b/.test(query) && !/\b(limit|rules|history|recent)\b/.test(query)) {

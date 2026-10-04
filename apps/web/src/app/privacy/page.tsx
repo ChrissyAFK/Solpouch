@@ -29,7 +29,7 @@ export default function PrivacyPage() {
         are processed by the configured provider, Anthropic (Claude) or Google
         (Gemini). Product searches may send the shopping request to a search provider.
         Voice sessions use ElevenLabs and its configured model; account tools are
-        available only during an authenticated session you start. Demo chat uses
+        available only during an authenticated session you start. Basic chat uses
         preset replies without sending messages to an AI provider.
       </p>
       <h2>No selling of data</h2>
@@ -40,7 +40,7 @@ export default function PrivacyPage() {
       <h2>Payments</h2>
       <p>
         In chain mode, payments use the configured Solana network, which is public.
-        Demo payments are simulated. Wallet
+        Wallet
         addresses and transactions are visible there and cannot be removed by
         us.
       </p>

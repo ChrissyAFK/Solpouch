@@ -20,9 +20,9 @@ async function setup(t,{checkout,status,cfg=config,path='/funding'}={}){
 }
 test('Stripe quote, quick picks and invalid amount gate',async t=>{
  let calls=0;const page=await setup(t,{checkout:()=>{calls++;}});
- await page.getByText('You’ll get 18.250000 devnet test-USDC.').waitFor();
+ await page.getByText('You’ll get 18.250000 USDC.').waitFor();
  await page.getByRole('button',{name:'$10',exact:true}).click();
- await page.getByText('You’ll get 7.300000 devnet test-USDC.').waitFor();
+ await page.getByText('You’ll get 7.300000 USDC.').waitFor();
  await page.getByLabel('Amount · CAD',{exact:true}).fill('201');
  assert.equal(await page.getByRole('button',{name:'Continue to card checkout'}).isDisabled(),true);assert.equal(calls,0);
 });
@@ -37,7 +37,7 @@ test('checkout lost response persists one idempotency key through reload and rej
 test('return session is reconciled then confirmed only with a valid devnet transaction',async t=>{
  let calls=0;const page=await setup(t,{path:'/funding?session_id=cs_test_fixture',status:r=>{calls++;return r.fulfill({json:{...record,status:calls===1?'paid':'confirmed',txSignature:calls===1?undefined:'5'.repeat(88)}});}});
  await page.getByText('The wallet transfer is still being checked. No confirmed deposit yet.').waitFor();
- await page.getByText('Payment received, 18.250000 devnet test-USDC added',{exact:true}).waitFor();
+ await page.getByText('Payment received, 18.250000 USDC added',{exact:true}).waitFor();
  assert.equal(await page.getByRole('link',{name:'View mint transaction ↗'}).getAttribute('href'),`https://explorer.solana.com/tx/${'5'.repeat(88)}?cluster=devnet`);
  await page.getByRole('link',{name:'Top up a pouch'}).waitFor();
 });

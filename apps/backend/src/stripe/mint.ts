@@ -13,7 +13,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const MEMO = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 const COMMITMENT = 'confirmed' as const;
 export class MintPending extends Error {
-  constructor(message = 'Payment received. The devnet transfer is not confirmed yet; check this same request again.') { super(message); }
+  constructor(message = 'Payment received. The transfer is not confirmed yet; check this same request again.') { super(message); }
 }
 
 export function usdcMicros(value: string): bigint {
@@ -82,13 +82,13 @@ export function createDevnetMint(options: MintOptions = {}) {
     const status = (await connection.getSignatureStatuses([operation.signature], { searchTransactionHistory: true })).value[0];
     const durable = status?.confirmationStatus === 'confirmed' || status?.confirmationStatus === 'finalized';
     if (durable && !status?.err) return { txSignature: operation.signature };
-    if (durable && status?.err) throw new MintPending('Payment received, but its devnet transfer failed. It needs review; no replacement transfer was sent.');
-    if (await connection.getBlockHeight(COMMITMENT) > operation.lastValidBlockHeight) throw new MintPending('Payment received. The devnet transfer expired without a confirmed result and needs review; no replacement was sent.');
+    if (durable && status?.err) throw new MintPending('Payment received, but its transfer failed. It needs review; no replacement transfer was sent.');
+    if (await connection.getBlockHeight(COMMITMENT) > operation.lastValidBlockHeight) throw new MintPending('Payment received. The transfer expired without a confirmed result and needs review; no replacement was sent.');
     try {
       const returned = await connection.sendRawTransaction(bytes, { skipPreflight: false, maxRetries: 0 });
       if (returned !== operation.signature) throw new Error('RPC returned a different transaction signature');
       const result = await connection.confirmTransaction({ signature: operation.signature, blockhash: signed.recentBlockhash, lastValidBlockHeight: operation.lastValidBlockHeight, abortSignal: AbortSignal.timeout(20_000) }, COMMITMENT);
-      if (result.value.err) throw new MintPending('Payment received, but its devnet transfer failed. It needs review; no replacement transfer was sent.');
+      if (result.value.err) throw new MintPending('Payment received, but its transfer failed. It needs review; no replacement transfer was sent.');
       return { txSignature: operation.signature };
     } catch (error) {
       if (error instanceof MintPending) throw error;

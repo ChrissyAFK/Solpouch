@@ -51,7 +51,7 @@ export default function ListsPage() {
   return <div className="mx-auto max-w-5xl">
     <h1 className="text-3xl font-semibold">Shopping lists</h1>
     <p className="mt-3 mb-6 text-[var(--muted)]">Keep your usual groceries in one place. Reusing a list finds current matches and prices for a new cart.</p>
-    <p className="mb-4 text-sm text-[var(--muted)]">{temporary === true ? "Lists in this demo reset when the server restarts." : temporary === null && !loading ? "We could not check whether this server keeps lists after a restart." : ""}</p>
+    <p className="mb-4 text-sm text-[var(--muted)]">{temporary === true ? "Lists reset when the server restarts." : temporary === null && !loading ? "We could not check whether this server keeps lists after a restart." : ""}</p>
     <ErrorBanner message={error} />
     {notice && <p role="status" className="mb-4">{notice}</p>}
     {loading ? <div className={card} aria-busy="true" role="status">Loading shopping lists…</div> : <div className="grid gap-6 md:grid-cols-2">

@@ -16,7 +16,7 @@ export async function editDraft(deps: Deps, ownerEmail: string, id: string, inpu
     const order = await getOwnedOrder(deps,id,ownerEmail);
     if (order.status !== "draft") throw new HttpError(409,"Only an unpaid draft can be edited.");
     if (order.version !== body.version) throw new HttpError(409,"This cart changed. Refresh before editing.","RecordChanged");
-    if (order.fulfillment?.via === "demo") throw new HttpError(409,"Prepared demo quotes cannot be edited. Cancel and create a new estimate.");
+    if (order.fulfillment?.via === "demo") throw new HttpError(409,"Prepared quotes cannot be edited. Cancel and create a new estimate.");
     const indices = new Set<number>();
     const reference = isCheckoutReference(order);
     const catalog = getCatalog(order.merchantId);

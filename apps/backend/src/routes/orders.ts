@@ -30,7 +30,7 @@ export function orderRoutes(deps: Deps) {
     const order = await deps.store.withPouchLock(initial.pouchId, async () => {
       const order = await getOwnedOrder(deps, initial.id, email);
       if (order.status !== "draft") throw new HttpError(409, "Only an unpaid draft can be sent to Instacart.");
-      if (order.fulfillment?.via === "demo") throw new HttpError(409,"Demo quotes cannot become retailer checkout links.");
+      if (order.fulfillment?.via === "demo") throw new HttpError(409,"Prepared quotes cannot become retailer checkout links.");
       const saved = order.fulfillment;
       if (saved?.via === "instacart" && saved.linkStatus === "ready" && trustedInstacartUrl(saved.checkoutUrl) && Date.parse(saved.linkExpiresAt ?? "") > Date.now()) return order;
       const lines = order.lines.filter(line => line.product && line.qty > 0).map(line => ({ name: line.product!.name, quantity: line.qty }));

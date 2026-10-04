@@ -87,11 +87,11 @@ export function ChatOrderCards({ refreshKey, live = false, onUpdate }: { refresh
             <ul>{order.lines.map((line, index) => <li key={index}>{line.qty} × {line.product?.name ?? line.requested}{line.product ? ` · $${toUsdc(line.lineTotal).toFixed(2)}` : ""}{line.substitution ? " · substitution" : ""}{line.note ? ` — ${line.note}` : ""}</li>)}</ul>
             <b>{total} {currency}</b>
             <DemoCheckoutSummary order={order} />
-            {reference && order.status === "draft" && orderCurrency(order) === "CAD" && <button type="button" disabled={!!busy || order.total <= 0} onClick={() => void confirm(order, true)}>Prepare devnet demo checkout</button>}
+            {reference && order.status === "draft" && orderCurrency(order) === "CAD" && <button type="button" disabled={!!busy || order.total <= 0} onClick={() => void confirm(order, true)}>Prepare checkout</button>}
             {reference && <p>Check the retailer’s price and complete checkout there. No retailer purchase is confirmed.</p>}
             <Link href={`/order?order=${encodeURIComponent(order.id)}`}>Review cart and receipt</Link>
             {reference && order.fulfillment?.checkoutUrl && /^https?:\/\//i.test(order.fulfillment.checkoutUrl) && <a href={order.fulfillment.checkoutUrl} target="_blank" rel="noopener noreferrer">Open retailer checkout ↗</a>}
-            {!reference && (order.status === "draft" || order.status === "paying") && <button type="button" disabled={!!busy || order.total <= 0} onClick={() => void confirm(order)}>{busy === order.id ? "Checking…" : order.status === "paying" ? "Check payment status" : order.fulfillment?.via === "demo" ? `Pay demo checkout · ${toUsdc(order.total).toFixed(6)} test-USDC` : `Approve ${total} USDC & pay`}</button>}
+            {!reference && (order.status === "draft" || order.status === "paying") && <button type="button" disabled={!!busy || order.total <= 0} onClick={() => void confirm(order)}>{busy === order.id ? "Checking…" : order.status === "paying" ? "Check payment status" : order.fulfillment?.via === "demo" ? `Pay checkout · ${toUsdc(order.total).toFixed(2)} USDC` : `Approve ${total} USDC & pay`}</button>}
           </article>
         );
       })}

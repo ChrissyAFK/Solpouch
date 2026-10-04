@@ -41,8 +41,8 @@ test('order page separates demo preparation from payment and labels receipt',asy
  await page.route('**/orders/reference',r=>r.fulfill({json:state}));
  await page.route('**/orders/reference/demo-checkout',r=>{assert.equal(r.request().postDataJSON().version,2);state={...state,version:3,total:218992700,fulfillment:{via:'demo',label:'Devnet demo checkout',demo:{sourceCurrency:'CAD',sourceTotal:299990000,sourceLines:[],usdPerCad:'0.73',payTo:'FixtureCheckoutWallet',preparedAt:new Date().toISOString()}}};return r.fulfill({json:state});});
  await page.route('**/orders/reference/confirm',r=>{payments++;assert.equal(r.request().postDataJSON().version,3);state={...state,status:'paid',txSignature:'5'.repeat(88)};return r.fulfill({json:state});});
- await page.goto(origin+'/order?order=reference');await page.getByRole('button',{name:'Prepare devnet demo checkout'}).click();
- await page.getByText('No retailer order is placed. Devnet test tokens only.').waitFor();assert.equal(payments,0);
- await page.getByRole('button',{name:'Pay demo checkout · 218.992700 test-USDC'}).click();await page.locator('[aria-label="Receipt"]').waitFor();
- assert.equal(payments,1);await page.getByText('No retailer order is placed. Devnet test tokens only.').waitFor();
+ await page.goto(origin+'/order?order=reference');await page.getByRole('button',{name:'Prepare checkout'}).click();
+ await page.getByText('Source estimate',{exact:false}).first().waitFor();assert.equal(payments,0);
+ await page.getByRole('button',{name:'Pay checkout · 218.99 USDC'}).click();await page.locator('[aria-label="Receipt"]').waitFor();
+ assert.equal(payments,1);await page.getByText('Source estimate',{exact:false}).first().waitFor();
 });
