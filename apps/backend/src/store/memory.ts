@@ -1,6 +1,6 @@
 import { toMicros, type Order, type Pouch, type SpendPoint, type TopUp } from "@solpouch/shared";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { StoreConflictError, sameOperation, spendBucket, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredPouch, type UserProfile, type PaymentIndex, type VaultEventRecord, type PaymentRecord, type IndexerCursor } from "./types.js";
+import { StoreConflictError, WalletAlreadyLinkedError, sameOperation, spendBucket, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredPouch, type UserProfile, type PaymentIndex, type VaultEventRecord, type PaymentRecord, type IndexerCursor } from "./types.js";
 
 // TODO: PostgresStore backed by Tiger Data (see db/schema.sql). Swap in src/index.ts.
 
@@ -157,8 +157,12 @@ export class MemoryStore implements Store, PaymentIndex {
     return undefined;
   }
   async setWallet(email: string, wallet: string | null) {
-    const holder = wallet ? await this.findUserByWallet(wallet) : undefined;
-    if (holder && holder.email !== email) throw new StoreConflictError("This wallet is linked to another account");
+    // Check and write with no await in between, so concurrent links cannot both pass the checks.
+    if (wallet) {
+      for (const u of this.users.values()) if (u.wallet === wallet && u.email !== email) throw new StoreConflictError("This wallet is linked to another account");
+      const linked = this.users.get(email)?.wallet;
+      if (linked && linked !== wallet) throw new WalletAlreadyLinkedError();
+    }
     const now = new Date().toISOString();
     const { wallet: _old, ...current } = this.users.get(email) ?? { email, createdAt: now, updatedAt: now }; // eslint-disable-line @typescript-eslint/no-unused-vars
     const saved: UserProfile = { ...current, ...(wallet ? { wallet } : {}), updatedAt: now };

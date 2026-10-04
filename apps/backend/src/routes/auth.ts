@@ -5,7 +5,7 @@ import { GoogleAuthError, verifyGoogleIdToken } from "../auth/google.js";
 import { AuthUnavailableError, requireUser, signSession, signVoiceToken, type AuthEnv } from "../auth/session.js";
 import { rateLimit } from "../security/rateLimit.js";
 import { validSignature, validWallet } from "../security/wallet.js";
-import { StoreConflictError } from "../store/types.js";
+import { StoreConflictError, WalletAlreadyLinkedError } from "../store/types.js";
 import { mergedUser } from "./profile.js";
 import { HttpError, type Deps } from "../services/orders.js";
 const googleBody = z.object({ credential: z.string().min(1).max(4096) });
@@ -77,7 +77,11 @@ export function authRoutes(deps: Deps, origins: string[] = []) {
     const linked = (await deps.store.getUser(session.email))?.wallet;
     if (linked && linked !== challenge.wallet) throw new HttpError(409, "Unlink your current wallet before linking another");
     try { await deps.store.setWallet(session.email, challenge.wallet); }
-    catch (e) { if (e instanceof StoreConflictError) throw new HttpError(409, "This wallet is linked to another account"); throw e; }
+    catch (e) {
+      if (e instanceof WalletAlreadyLinkedError) throw new HttpError(409, "Unlink your current wallet before linking another");
+      if (e instanceof StoreConflictError) throw new HttpError(409, "This wallet is linked to another account");
+      throw e;
+    }
     return c.json({ user: await mergedUser(deps.store, c.get("user")) });
   });
   app.delete("/wallet", auth, async c => {

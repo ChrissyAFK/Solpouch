@@ -6,6 +6,13 @@ export class StoreConflictError extends Error {
     this.name = "StoreConflictError";
   }
 }
+/** setWallet refused because the account already links a different wallet. Unlink (setWallet null) first. */
+export class WalletAlreadyLinkedError extends StoreConflictError {
+  constructor() {
+    super("Unlink your current wallet before linking another");
+    this.name = "WalletAlreadyLinkedError";
+  }
+}
 export interface VaultOperation {
   id: string;
   kind: "pay" | "topup";
@@ -43,7 +50,11 @@ export interface Store {
   /** Saves profile fields. Never changes the linked wallet; use setWallet. */
   saveUser(user: UserProfile): Promise<UserProfile>;
   findUserByWallet(wallet: string): Promise<UserProfile | undefined>;
-  /** Links (or with null unlinks) the account's wallet, creating the user row if needed. StoreConflictError when another account holds it. */
+  /**
+   * Links (or with null unlinks) the account's wallet, creating the user row if needed. Linking is conditional and atomic:
+   * it succeeds only when the account has no wallet or already has this one, else WalletAlreadyLinkedError.
+   * StoreConflictError when another account holds the wallet.
+   */
   setWallet(email: string, wallet: string | null): Promise<UserProfile>;
   saveChallenge(challenge: AuthChallenge): Promise<void>;
   /** Deletes and returns the challenge if it exists and has not expired. */

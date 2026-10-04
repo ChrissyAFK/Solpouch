@@ -62,4 +62,17 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("PostgresStore", () => {
     expect(await store.getIndexerCursor(`test-${id}`)).toEqual({ signature: id, slot: 5 });
     await store.close();
   });
+  it("links a wallet only when the account is unlinked or relinks the same wallet, even concurrently", async () => {
+    const store = await PostgresStore.connect(process.env.TEST_DATABASE_URL!, []);
+    const email = `wallet-${Date.now()}@example.com`;
+    const [a, b] = [`wa-${Date.now()}`, `wb-${Date.now()}`];
+    const results = await Promise.allSettled([store.setWallet(email, a), store.setWallet(email, b)]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(results.find((r) => r.status === "rejected")).toMatchObject({ reason: { name: "WalletAlreadyLinkedError" } });
+    const linked = (await store.getUser(email))!.wallet!;
+    await expect(store.setWallet(email, linked)).resolves.toMatchObject({ wallet: linked });
+    await store.setWallet(email, null);
+    await expect(store.setWallet(email, linked === a ? b : a)).resolves.toBeTruthy();
+    await store.close();
+  });
 });

@@ -122,6 +122,29 @@ describe("wallet linking", () => {
     expect((await link(Keypair.generate())).status).toBe(200);
   });
 
+  it("two challenges issued while unlinked cannot both link: the second verify gets 409", async () => {
+    const first = Keypair.generate(), second = Keypair.generate();
+    const c1 = await (await challenge(first)).json();
+    const c2 = await (await challenge(second)).json();
+    expect((await call("/auth/wallet/verify", auth, { id: c1.id, signature: signText(first, c1.message) })).status).toBe(200);
+    // Model the race: the second verify's pre-check read the account before the first link landed.
+    vi.spyOn(store, "getUser").mockResolvedValueOnce(undefined);
+    const r2 = await call("/auth/wallet/verify", auth, { id: c2.id, signature: signText(second, c2.message) });
+    expect(r2.status).toBe(409);
+    expect((await r2.json()).error).toContain("Unlink your current wallet");
+    expect((await store.getUser(TEST_USER))?.wallet).toBe(first.publicKey.toBase58());
+  });
+
+  it("the store links conditionally: only when unlinked or relinking the same wallet", async () => {
+    const a = Keypair.generate().publicKey.toBase58(), b = Keypair.generate().publicKey.toBase58();
+    await store.setWallet(TEST_USER, a);
+    await expect(store.setWallet(TEST_USER, a)).resolves.toMatchObject({ wallet: a });
+    await expect(store.setWallet(TEST_USER, b)).rejects.toMatchObject({ name: "WalletAlreadyLinkedError" });
+    expect((await store.getUser(TEST_USER))?.wallet).toBe(a);
+    await store.setWallet(TEST_USER, null);
+    await expect(store.setWallet(TEST_USER, b)).resolves.toMatchObject({ wallet: b });
+  });
+
   it("a wallet claimed between challenge and verify is refused", async () => {
     const kp = Keypair.generate();
     const c = await (await challenge(kp)).json();

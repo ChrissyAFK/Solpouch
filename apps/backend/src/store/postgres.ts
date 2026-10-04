@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import type { Order, Pouch, SpendPoint, TopUp } from "@solpouch/shared";
-import { StoreConflictError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredPouch, type UserProfile, type PaymentIndex, type VaultEventRecord, type PaymentRecord, type IndexerCursor } from "./types.js";
+import { StoreConflictError, WalletAlreadyLinkedError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredPouch, type UserProfile, type PaymentIndex, type VaultEventRecord, type PaymentRecord, type IndexerCursor } from "./types.js";
 
 const iso = (v: Date | string) => (v instanceof Date ? v.toISOString() : new Date(v).toISOString());
 type Row = Record<string, any>;
@@ -196,9 +196,12 @@ export class PostgresStore implements Store, PaymentIndex {
   async findUserByWallet(wallet: string) { const { rows } = await this.query("SELECT * FROM users WHERE wallet=$1", [wallet]); return rows[0] ? toUser(rows[0]) : undefined; }
   async setWallet(email: string, wallet: string | null) {
     try {
+      // Conditional upsert: a link only lands when the account has no wallet or already has this one.
       const { rows } = await this.query(
         `INSERT INTO users (email, wallet, created_at, updated_at) VALUES ($1,$2,now(),now())
-         ON CONFLICT (email) DO UPDATE SET wallet=$2, updated_at=now() RETURNING *`, [email, wallet]);
+         ON CONFLICT (email) DO UPDATE SET wallet=$2, updated_at=now()
+         WHERE $2::text IS NULL OR users.wallet IS NULL OR users.wallet = $2::text RETURNING *`, [email, wallet]);
+      if (!rows[0]) throw new WalletAlreadyLinkedError();
       return toUser(rows[0]);
     } catch (error) {
       if ((error as { code?: string }).code === "23505") throw new StoreConflictError("This wallet is linked to another account");
