@@ -10,6 +10,7 @@ import { ownedSeed, TEST_USER } from "./helpers.js";
 
 vi.mock("../src/ai/findOnline.js", () => ({ findOnline: vi.fn() }));
 delete process.env.GEMINI_API_KEY;
+delete process.env.ANTHROPIC_API_KEY;
 const fixtureFind = {
   store: { name: "Fixture Store", domain: "a.example", url: "https://a.example" },
   onInstacart: false,

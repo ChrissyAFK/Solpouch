@@ -21,6 +21,7 @@ let app: ReturnType<typeof createApp>;
 let auth: Record<string, string>;
 beforeEach(async () => {
   vi.stubEnv("GEMINI_API_KEY", "");
+  vi.stubEnv("ANTHROPIC_API_KEY", "");
   vi.stubEnv("GEMINI_MODEL", "");
   vi.clearAllMocks();
   store = new MemoryStore(ownedSeed());

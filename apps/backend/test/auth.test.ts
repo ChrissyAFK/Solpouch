@@ -8,6 +8,7 @@ import { MockVaultClient } from "../src/vault/mock.js";
 import { authHeaders, ownedSeed, sessionToken, voiceToken } from "./helpers.js";
 
 delete process.env.GEMINI_API_KEY;
+delete process.env.ANTHROPIC_API_KEY;
 delete process.env.ELEVENLABS_TOOL_SECRET;
 
 const A = "a@example.com";

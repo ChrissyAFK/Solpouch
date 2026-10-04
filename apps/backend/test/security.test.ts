@@ -6,6 +6,7 @@ import { MockVaultClient } from "../src/vault/mock.js";
 import { authHeaders, ownedSeed } from "./helpers.js";
 
 delete process.env.GEMINI_API_KEY;
+delete process.env.ANTHROPIC_API_KEY;
 
 let app: ReturnType<typeof createApp>;
 let auth: Record<string, string>;

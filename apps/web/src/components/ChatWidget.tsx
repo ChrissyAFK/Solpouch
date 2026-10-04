@@ -9,7 +9,7 @@ import { ChatOrderCards } from "./ChatOrderCards";
 import styles from "./ChatWidget.module.css";
 
 type Message = { role: "user" | "assistant"; content: string };
-type Mode = "agent" | "checking" | "gemini" | "demo" | "unavailable";
+type Mode = "agent" | "checking" | "claude" | "gemini" | "demo" | "unavailable";
 // Public agent id, not a secret. The agent's tools reach the backend with a server-side secret.
 const AGENT_ID =
   process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID ??
@@ -164,7 +164,7 @@ function ChatPanel() {
       .then(async (response) => {
         if (!response.ok) throw new Error();
         const data = await response.json();
-        if (data.mode !== "demo" && data.mode !== "gemini") throw new Error();
+        if (data.mode !== "demo" && data.mode !== "gemini" && data.mode !== "claude") throw new Error();
         if (!controller.signal.aborted) setMode(data.mode);
       })
       .catch(() => {
@@ -333,7 +333,7 @@ function ChatPanel() {
         );
       if (
         typeof data?.reply !== "string" ||
-        (data.mode !== "demo" && data.mode !== "gemini")
+        (data.mode !== "demo" && data.mode !== "gemini" && data.mode !== "claude")
       )
         throw new Error(
           "The assistant returned an invalid reply. Please retry.",
@@ -460,7 +460,9 @@ function ChatPanel() {
                     ? "Assistant"
                     : mode === "gemini"
                       ? "Powered by Gemini"
-                      : "Connection unavailable"}
+                      : mode === "claude"
+                        ? "Powered by Claude"
+                        : "Connection unavailable"}
               </span>
             </div>
             <div className={styles.headerActions}>
