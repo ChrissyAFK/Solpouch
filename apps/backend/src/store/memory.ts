@@ -33,7 +33,7 @@ export function seedPouches(): Pouch[] {
       balance: toMicros(300),
       maxPerOrder: toMicros(120),
       dailyLimit: toMicros(150),
-      confirmAbove: toMicros(30),
+      confirmAbove: 0,
       allowedMerchantIds: [],
     },
     {

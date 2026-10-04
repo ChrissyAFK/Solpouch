@@ -23,9 +23,13 @@ const RULE_MESSAGES = {
  * Checked outside zod so the response is a 422 with the vault program's error code, not a generic 400.
  * Always pass the full rules a pouch will have (for PATCH, existing values merged with the patch).
  */
-function assertRules(r: Pick<Pouch, "maxPerOrder" | "dailyLimit" | "allowedMerchantIds">) {
+function assertRules(r: Pick<Pouch, "maxPerOrder" | "dailyLimit" | "allowedMerchantIds"> & { confirmAbove?: number }) {
   const code = pouchRuleError(r);
   if (code) throw new HttpError(422, RULE_MESSAGES[code], code);
+  // Backend-only rule: an auto-pay amount above the per-order limit could never apply.
+  if ((r.confirmAbove ?? 0) > r.maxPerOrder) {
+    throw new HttpError(422, "The automatic payment amount cannot be higher than the limit per order.", "ConfirmAboveTooHigh");
+  }
 }
 const createBody = z.object({
   name: z.string().min(1).max(60),

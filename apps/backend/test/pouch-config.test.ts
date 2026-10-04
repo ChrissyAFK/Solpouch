@@ -155,3 +155,28 @@ describe("pouch rules mirror the vault program's check_rules", () => {
     await expect(vault.updateRules(p)).resolves.toMatchObject({ txSignature: expect.any(String) });
   });
 });
+
+describe("confirmAbove (auto-pay amount)", () => {
+  it("seeds always ask before paying", () => {
+    expect(ownedSeed().every((p) => p.confirmAbove === 0)).toBe(true);
+  });
+
+  it("must not exceed the per-order limit, on create and on the merged PATCH rules", async () => {
+    const store = new MemoryStore(ownedSeed());
+    const app = createApp({ store, vault: new MockVaultClient(store, () => undefined) });
+    const headers = { "Content-Type": "application/json", ...await authHeaders(store) };
+    const tooHigh = await app.request("/pouches", { method: "POST", headers, body: JSON.stringify({ name: "P", maxPerOrder: 5, dailyLimit: 10, confirmAbove: 6, allowedMerchantIds: [] }) });
+    expect(tooHigh.status).toBe(422);
+    expect(await tooHigh.json()).toMatchObject({ code: "ConfirmAboveTooHigh" });
+    const atLimit = await app.request("/pouches", { method: "POST", headers, body: JSON.stringify({ name: "P", maxPerOrder: 5, dailyLimit: 10, confirmAbove: 5, allowedMerchantIds: [] }) });
+    expect(atLimit.status).toBe(201);
+    // uber-eats maxPerOrder is $25: set $20, then lowering maxPerOrder to $10 alone must fail.
+    const set = await app.request("/pouches/uber-eats/rules", { method: "PATCH", headers, body: JSON.stringify({ confirmAbove: 20_000_000 }) });
+    expect(await set.json()).toMatchObject({ confirmAbove: 20_000_000 });
+    const lower = await app.request("/pouches/uber-eats/rules", { method: "PATCH", headers, body: JSON.stringify({ maxPerOrder: 10_000_000 }) });
+    expect(lower.status).toBe(422);
+    expect(await lower.json()).toMatchObject({ code: "ConfirmAboveTooHigh" });
+    const clear = await app.request("/pouches/uber-eats/rules", { method: "PATCH", headers, body: JSON.stringify({ maxPerOrder: 10_000_000, confirmAbove: 0 }) });
+    expect(await clear.json()).toMatchObject({ maxPerOrder: 10_000_000, confirmAbove: 0 });
+  });
+});
