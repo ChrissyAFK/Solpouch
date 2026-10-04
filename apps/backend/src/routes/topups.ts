@@ -6,6 +6,8 @@ import type { TopUp } from "@solpouch/shared";
 import type { AuthEnv } from "../auth/session.js";
 import { getOwnedPouch, HttpError, type Deps } from "../services/orders.js";
 
+export const FAILED_TOPUP_VISIBLE_MS = 10 * 60_000;
+
 const startBody = z.object({
   pouchId: z.string().max(100),
   amount: z.number().int().positive().max(10_000_000_000),

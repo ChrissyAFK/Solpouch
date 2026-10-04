@@ -21,11 +21,14 @@ export default function PrivacyPage() {
         Sign-in uses Google. Solpouch stores your email, name and profile
         picture to identify your pouches.
       </p>
-      <h2>Voice and chat</h2>
+      <h2>Voice, chat and orders</h2>
       <p>
-        Voice is currently unavailable. When live text chat is configured, your
-        messages and your pouch context are processed by Google Gemini.
-        Demo mode uses preset replies without sending chat to an AI provider.
+        When live AI is enabled, chat messages, order requests and pouch context
+        are processed by the configured provider, Anthropic (Claude) or Google
+        (Gemini). Product searches may send the shopping request to a search provider.
+        Voice sessions use ElevenLabs and its configured model; account tools are
+        available only during an authenticated session you start. Demo chat uses
+        preset replies without sending messages to an AI provider.
       </p>
       <h2>No selling of data</h2>
       <p>

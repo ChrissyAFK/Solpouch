@@ -62,13 +62,8 @@ export function profileRoutes(deps: Deps) {
     const g = c.get("user");
     const body = patchBody.parse(await c.req.json());
     const now = new Date().toISOString();
-    const prev = (await store.getUser(g.email)) ?? { email: g.email, createdAt: now, updatedAt: now };
-    const next = { ...prev, updatedAt: now };
-    if (body.displayName === null) delete next.displayName;
-    else if (body.displayName !== undefined) next.displayName = body.displayName;
-    if (body.avatar === null) delete next.avatar;
-    else if (body.avatar !== undefined) next.avatar = body.avatar;
-    return c.json(shape(g, await store.saveUser(next)));
+    // Only this route's own fields are written, so a concurrent wallet link is never overwritten.
+    return c.json(shape(g, await store.updateUser(g.email, { displayName: body.displayName, avatar: body.avatar }, now)));
   });
 
   return app;

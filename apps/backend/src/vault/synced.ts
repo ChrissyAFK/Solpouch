@@ -11,12 +11,16 @@ export class SyncedVaultClient implements VaultClient {
 
   get authorizedOwner() { return this.inner.authorizedOwner; }
 
-  get getState() { return this.inner.getState?.bind(this.inner); }
+  get getState() {
+    const inner = this.inner;
+    if (!inner.getState) return undefined;
+    return async (pouchId: string, stored?: Pouch) => inner.getState!(pouchId, stored ?? await this.store.getPouch(pouchId));
+  }
 
   private async refresh(pouchId: string, patch: Partial<Pouch> = {}) {
     const p = await this.store.getPouch(pouchId);
     if (!p) return;
-    const state = this.inner.getState ? await this.inner.getState(pouchId) : await this.inner.getBalance(pouchId);
+    const state = this.inner.getState ? await this.inner.getState(pouchId, p) : await this.inner.getBalance(pouchId);
     await this.store.savePouch({ ...p, ...patch, ...state });
   }
 
@@ -38,14 +42,24 @@ export class SyncedVaultClient implements VaultClient {
 
   async freeze(pouchId: string) {
     const r = await this.inner.freeze(pouchId);
-    await this.refresh(pouchId, { frozen: true });
+    await this.markFrozen(pouchId, true);
     return r;
   }
 
   async unfreeze(pouchId: string) {
     const r = await this.inner.unfreeze(pouchId);
-    await this.refresh(pouchId, { frozen: false });
+    await this.markFrozen(pouchId, false);
     return r;
+  }
+
+  /** The chain write already landed; a failed refresh must still record the new frozen flag. */
+  private async markFrozen(pouchId: string, frozen: boolean) {
+    try {
+      await this.refresh(pouchId, { frozen });
+    } catch {
+      const p = await this.store.getPouch(pouchId);
+      if (p) await this.store.savePouch({ ...p, frozen }).catch(() => { /* a later reconcile repairs the mirror */ });
+    }
   }
 
   getBalance(pouchId: string) {

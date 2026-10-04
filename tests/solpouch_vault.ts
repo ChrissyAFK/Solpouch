@@ -1,5 +1,4 @@
-// NOT RUN in the scaffold environment (no Solana/Anchor CLI available). Written against the
-// design in programs/solpouch_vault; run with `anchor test` once the toolchain is installed.
+// Local-validator integration tests. Never run these mint/transfer fixtures on a public cluster.
 import * as anchor from "@coral-xyz/anchor";
 import { Program, AnchorError, BN } from "@coral-xyz/anchor";
 import { Keypair, PublicKey, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web3.js";
@@ -7,6 +6,7 @@ import {
   createMint,
   createAccount,
   mintTo,
+  transfer,
   getAccount,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
@@ -15,6 +15,7 @@ import { SolpouchVault } from "../target/types/solpouch_vault";
 
 describe("solpouch_vault", () => {
   const provider = anchor.AnchorProvider.env();
+  if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(provider.connection.rpcEndpoint).hostname)) throw new Error("Vault tests require an isolated local validator");
   anchor.setProvider(provider);
   const program = anchor.workspace.solpouchVault as Program<SolpouchVault>;
   const owner = (provider.wallet as anchor.Wallet).payer;
@@ -117,16 +118,18 @@ describe("solpouch_vault", () => {
   });
 
   it("agent cannot top up", async () => {
+    let failed = false;
     try {
       await program.methods
         .topUp(new BN(1))
         .accounts({ owner: agent.publicKey, pouch, vault, ownerToken, tokenProgram: TOKEN_PROGRAM_ID })
         .signers([agent])
         .rpc();
-      assert.fail("expected failure");
     } catch (e) {
-      assert.notInclude(String(e), "expected failure");
+      failed = true;
+      assert.match(String(e), /ConstraintHasOne|Unauthorized|2001/);
     }
+    assert.isTrue(failed, "expected agent top up to fail");
   });
 
   it("agent pays an allowed merchant", async () => {
@@ -144,16 +147,18 @@ describe("solpouch_vault", () => {
 
   it("rejects a reused order_id", async () => {
     const id = orderId(1);
+    let failed = false;
     try {
       await program.methods
         .pay(new BN(1_000), id)
         .accounts(payAccounts(id))
         .signers([agent])
         .rpc();
-      assert.fail("expected failure");
     } catch (e) {
-      assert.notInclude(String(e), "expected failure");
+      failed = true;
+      assert.match(String(e), /already in use/i);
     }
+    assert.isTrue(failed, "expected reused order_id to fail");
   });
 
   it("rejects over the per-order limit", async () => {
@@ -198,16 +203,99 @@ describe("solpouch_vault", () => {
     await program.methods.pay(new BN(1_000), id).accounts(payAccounts(id)).signers([agent]).rpc();
   });
 
-  it("owner withdraws and closes the pouch", async () => {
+  it("rejects a zero-amount payment", async () => {
+    const id = orderId(7);
+    await expectError(
+      program.methods.pay(new BN(0), id).accounts(payAccounts(id)).signers([agent]).rpc(),
+      "ZeroAmount"
+    );
+  });
+
+  it("rejects create_pouch when the agent is an allowed merchant", async () => {
+    const name2 = "badagent";
+    const pouch2 = PublicKey.findProgramAddressSync(
+      [Buffer.from("pouch"), owner.publicKey.toBuffer(), nameBytes(name2)],
+      program.programId
+    )[0];
+    const vault2 = PublicKey.findProgramAddressSync(
+      [Buffer.from("vault"), pouch2.toBuffer()],
+      program.programId
+    )[0];
+    await expectError(
+      program.methods
+        .createPouch(Array.from(nameBytes(name2)), agent.publicKey, new BN(100_000), new BN(250_000), [
+          merchant.publicKey,
+          agent.publicKey,
+        ])
+        .accounts({
+          owner: owner.publicKey,
+          mint,
+          pouch: pouch2,
+          vault: vault2,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc(),
+      "AgentIsMerchant"
+    );
+  });
+
+  it("rejects zero top-ups and withdrawals without changing balances", async () => {
+    const before = (await getAccount(provider.connection, vault)).amount;
+    const accounts = { owner: owner.publicKey, pouch, vault, ownerToken, tokenProgram: TOKEN_PROGRAM_ID };
+    await expectError(program.methods.topUp(new BN(0)).accounts(accounts).rpc(), "ZeroAmount");
+    await expectError(program.methods.withdraw(new BN(0)).accounts(accounts).rpc(), "ZeroAmount");
+    assert.equal((await getAccount(provider.connection, vault)).amount.toString(), before.toString());
+  });
+
+  it("rejects unsafe merchant rule updates atomically", async () => {
+    const accounts = { owner: owner.publicKey, pouch };
+    await expectError(
+      program.methods.setRules(null, null, null, [merchant.publicKey, merchant.publicKey]).accounts(accounts).rpc(),
+      "DuplicateMerchant"
+    );
+    await expectError(
+      program.methods.setRules(merchant.publicKey, null, null, null).accounts(accounts).rpc(),
+      "AgentIsMerchant"
+    );
+    const saved = await program.account.pouch.fetch(pouch);
+    assert.ok(saved.agent.equals(agent.publicKey));
+    assert.deepEqual(saved.allowedMerchants.map((key) => key.toBase58()), [merchant.publicKey.toBase58()]);
+  });
+
+  it("rejects closing into someone else's token account", async () => {
+    await expectError(
+      program.methods.closePouch().accounts({ owner: owner.publicKey, pouch, vault, ownerToken: strangerToken, tokenProgram: TOKEN_PROGRAM_ID }).rpc(),
+      "ConstraintTokenOwner"
+    );
+    assert.isNotNull(await provider.connection.getAccountInfo(pouch));
+    assert.isNotNull(await provider.connection.getAccountInfo(vault));
+  });
+
+  it("rejects a non-owner closing the pouch", async () => {
+    await expectError(
+      program.methods.closePouch().accounts({ owner: stranger.publicKey, pouch, vault, ownerToken: strangerToken, tokenProgram: TOKEN_PROGRAM_ID }).signers([stranger]).rpc(),
+      "ConstraintHasOne"
+    );
+    assert.isNotNull(await provider.connection.getAccountInfo(pouch));
+  });
+
+  it("owner closes the pouch even with dust left in the vault", async () => {
     const left = (await getAccount(provider.connection, vault)).amount;
     await program.methods
       .withdraw(new BN(left.toString()))
       .accounts({ owner: owner.publicKey, pouch, vault, ownerToken, tokenProgram: TOKEN_PROGRAM_ID })
       .rpc();
+    // anyone can send dust to the vault; close must still succeed and sweep it to the owner
+    await transfer(provider.connection, owner, ownerToken, vault, owner, 5);
+    const before = (await getAccount(provider.connection, ownerToken)).amount;
     await program.methods
       .closePouch()
-      .accounts({ owner: owner.publicKey, pouch, vault, tokenProgram: TOKEN_PROGRAM_ID })
+      .accounts({ owner: owner.publicKey, pouch, vault, ownerToken, tokenProgram: TOKEN_PROGRAM_ID })
       .rpc();
     assert.isNull(await provider.connection.getAccountInfo(pouch));
+    assert.isNull(await provider.connection.getAccountInfo(vault));
+    const after = (await getAccount(provider.connection, ownerToken)).amount;
+    assert.equal((after - before).toString(), "5");
   });
 });

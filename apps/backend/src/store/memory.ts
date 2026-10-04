@@ -1,6 +1,6 @@
-import { toMicros, type Order, type Pouch, type TopUp } from "@solpouch/shared";
+import { toMicros, type Order, type Pouch, type SpendPoint, type TopUp } from "@solpouch/shared";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { StoreConflictError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredShoppingList, type StoredPouch, type UserProfile } from "./types.js";
+import { StoreConflictError, spendWindowStart, windowedSpend, type PaymentRecord, type PriceRecord, type UserPatch, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredShoppingList, type StoredPouch, type UserProfile } from "./types.js";
 
 // TODO: PostgresStore backed by Tiger Data (see db/schema.sql). Swap in src/index.ts.
 
@@ -105,11 +105,36 @@ export class MemoryStore implements Store {
     if (!current || current.ownerEmail !== ownerEmail || current.version !== version) throw new StoreConflictError();
     this.shoppingLists.delete(id);
   }
-  async listPouches(ownerEmail?: string) { return structuredClone([...this.pouches.values()].filter(p => !ownerEmail || p.ownerEmail === ownerEmail)); }
-  async getPouch(id: string) { return structuredClone(this.pouches.get(id)); }
-  async savePouch(p: StoredPouch) { return this.save(this.pouches, p); }
+  async listPouches(ownerEmail?: string) { return [...this.pouches.values()].filter(p => !ownerEmail || p.ownerEmail === ownerEmail).map(p=>this.read(p)!); }
+  private read(p: StoredPouch | undefined) { if (!p) return undefined; const c=structuredClone(p); if(c.spentSince && windowedSpend(c.spentToday,c.spentSince)===0) {c.spentToday=0; delete c.spentSince;} return c; }
+  async getPouch(id: string) { return this.read(this.pouches.get(id)); }
+  async savePouch(p: StoredPouch) { return this.save(this.pouches, {...p, spentSince: spendWindowStart(p)}); }
   async listOrders(pouchId?: string) {
     return structuredClone([...this.orders.values()].filter((o) => !pouchId || o.pouchId === pouchId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+  }
+  private payments: PaymentRecord[] = [];
+  private prices = new Map<string, PriceRecord>();
+  async recordPayment(p: PaymentRecord) {
+    if (this.payments.some((x) => x.txSignature === p.txSignature)) return;
+    this.payments.push({ ...p });
+  }
+  async recordPrices(rows: PriceRecord[]) {
+    for (const r of rows) { const k = `${r.merchantId}|${r.productId}|${r.time}`; if (!this.prices.has(k)) this.prices.set(k, { ...r }); }
+  }
+  async spendSeries(pouchIds: string[], bucket: "hour" | "day", since: string): Promise<SpendPoint[]> {
+    const ids = new Set(pouchIds);
+    const from = Date.parse(since);
+    const points = new Map<string, SpendPoint>();
+    for (const p of this.payments) {
+      if (!ids.has(p.pouchId) || Date.parse(p.time) < from) continue;
+      const d = new Date(p.time);
+      if (bucket === "day") d.setUTCHours(0, 0, 0, 0); else d.setUTCMinutes(0, 0, 0);
+      const key = `${p.pouchId}|${d.toISOString()}`;
+      const pt = points.get(key) ?? { bucket: d.toISOString(), pouchId: p.pouchId, spent: 0, orders: 0 };
+      pt.spent += p.amount; pt.orders += 1;
+      points.set(key, pt);
+    }
+    return [...points.values()].sort((a, b) => a.bucket.localeCompare(b.bucket));
   }
   async getOrder(id: string) { return structuredClone(this.orders.get(id)); }
   async saveOrder(o: Order) { return this.save(this.orders, o); }
@@ -159,6 +184,18 @@ export class MemoryStore implements Store {
   async saveUser(user: UserProfile) {
     if (user.wallet && [...this.users.values()].some(u => u.wallet === user.wallet && u.email !== user.email)) throw new StoreConflictError("This wallet is linked to another account");
     this.users.set(user.email, structuredClone(user)); return structuredClone(user);
+  }
+  async updateUser(email: string, patch: UserPatch, now: string) {
+    const prev = this.users.get(email) ?? { email, createdAt: now, updatedAt: now };
+    const next: UserProfile = { ...prev, updatedAt: now };
+    for (const k of ["displayName", "avatar", "wallet"] as const) {
+      if (patch[k] === undefined) continue;
+      if (patch[k] === null) delete next[k];
+      else next[k] = patch[k] as string;
+    }
+    if (next.wallet && [...this.users.values()].some(u=>u.wallet===next.wallet && u.email!==email)) throw new StoreConflictError("This wallet is linked to another account");
+    this.users.set(email, structuredClone(next));
+    return structuredClone(next);
   }
   async saveChallenge(record: AuthChallenge) {
     this.cleanupExpired();

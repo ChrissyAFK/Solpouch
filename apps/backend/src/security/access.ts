@@ -23,6 +23,10 @@ export function ownedStore(base: Store, email: string): Store {
         const owned = new Set((await base.listPouches(email)).map(p => p.id));
         return (await base.listOrders(id)).filter(o => owned.has(o.pouchId));
       };
+      case 'spendSeries': return async (ids: string[], bucket: 'hour' | 'day', since: string) => {
+        const owned = new Set((await base.listPouches(email)).map(p => p.id));
+        return base.spendSeries(ids.filter(id => owned.has(id)), bucket, since);
+      };
       case 'listTopUps': return async (id: string) => { await requirePouch(id); return base.listTopUps(id); };
       case 'getOrder': return async (id: string) => { const o = await base.getOrder(id); return o && await pouch(o.pouchId) ? o : undefined; };
       case 'getTopUp': return async (id: string) => { const t = await base.getTopUp(id); return t && await pouch(t.pouchId) ? t : undefined; };

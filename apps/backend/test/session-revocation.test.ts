@@ -64,7 +64,7 @@ describe("storage conflict API boundary", () => {
   it("returns a safe 409 for a concurrent write conflict", async () => {
     const { store, app } = setup();
     const headers = await authHeaders(store);
-    vi.spyOn(store, "saveUser").mockRejectedValueOnce(new StoreConflictError("private storage detail"));
+    vi.spyOn(store, "updateUser").mockRejectedValueOnce(new StoreConflictError("private storage detail"));
     const response = await app.request("/profile", {
       method: "PATCH", headers: { ...headers, "Content-Type": "application/json" },
       body: JSON.stringify({ displayName: "New name" }),

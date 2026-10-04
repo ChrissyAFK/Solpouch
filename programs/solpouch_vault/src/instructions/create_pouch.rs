@@ -40,6 +40,7 @@ pub fn handler(
     allowed_merchants: Vec<Pubkey>,
 ) -> Result<()> {
     require!(allowed_merchants.len() <= MAX_MERCHANTS, VaultError::TooManyMerchants);
+    crate::logic::check_merchants(&agent, &allowed_merchants).map_err(|e| error!(e))?;
     let p = &mut ctx.accounts.pouch;
     p.owner = ctx.accounts.owner.key();
     p.agent = agent;

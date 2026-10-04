@@ -5,7 +5,7 @@ import { verifyVoiceToken } from "../auth/session.js";
 import { z } from "zod";
 import { isCheckoutReference, toUsdc, type Order } from "@solpouch/shared";
 import { getMerchant } from "../merchants/index.js";
-import { cancelOrder, confirmOrder, createDraft, HttpError, type Deps } from "../services/orders.js";
+import { cancelOrder, confirmOrder, createDraft, getOwnedOrder, HttpError, type Deps } from "../services/orders.js";
 
 /**
  * ElevenLabs server-tool webhook.
@@ -16,6 +16,7 @@ export const VOICE_TOOLS = ["get_pouches", "create_order", "confirm_order", "can
 
 const usd = (m: number) => `$${toUsdc(m).toFixed(2)}`;
 let warned = false;
+export const VOICE_CONFIRM_MIN_AGE_MS = 4000;
 
 export function readback(order: Order): string {
   const merchant = getMerchant(order.merchantId)?.name ?? "the merchant";
@@ -76,14 +77,22 @@ export function voiceRoutes(deps: Deps) {
       }
       case "create_order": {
         const b = requestBody.parse(body);
-        const order = await createDraft(deps, email, b.request, b.pouchId);
-        return c.json({ say: readback(order), orderId: order.id, version: order.version, total: usd(order.total), needsConfirmation: !isCheckoutReference(order), checkoutRequired: isCheckoutReference(order) });
+        try {
+          const order = await createDraft(deps, email, b.request, b.pouchId);
+          return c.json({ say: readback(order), orderId: order.id, version: order.version, total: usd(order.total), needsConfirmation: !isCheckoutReference(order), checkoutRequired: isCheckoutReference(order) });
+        } catch (e) {
+          if (e instanceof HttpError) return c.json({say:e.message,needsConfirmation:false,...(e.code ? {code:e.code}: {})});
+          throw e;
+        }
       }
       case "confirm_order": {
         const { orderId, version } = orderIdBody.extend({version:z.number().int().positive().optional()}).parse(body);
+        const draft = await getOwnedOrder(deps, orderId, email);
+        if (draft.status === "draft" && draft.version !== (version ?? -1)) return c.json({say:"This cart changed. Review it again before approving.",status:"draft",code:"RecordChanged"});
+        if (draft.status === "draft" && Date.now() - Date.parse(draft.createdAt) < VOICE_CONFIRM_MIN_AGE_MS) return c.json({say:"Please listen to the read-back first, then say yes again to place the order.",status:"draft",needsConfirmation:true});
         try {
           const order = await confirmOrder(deps, email, orderId, version ?? -1);
-          return c.json({ say: `Done. Paid ${usd(order.total)}.`, status: order.status });
+          return c.json({ say: order.txSignature?.startsWith("mock") ? `Demo payment recorded: ${usd(order.total)}. No real funds moved.` : `Payment recorded: ${usd(order.total)}.`, status: order.status });
         } catch (e) {
           if (e instanceof HttpError && e.code === "PaymentPending") return c.json({say:e.message,status:"paying",code:e.code});
           if (e instanceof HttpError && (e.code === "WebCheckoutRequired" || e.code === "RecordChanged")) {
@@ -102,8 +111,10 @@ export function voiceRoutes(deps: Deps) {
       }
       case "freeze_all": {
         const pouches = await deps.store.listPouches(email);
-        for (const p of pouches) await deps.store.withPouchLock(p.id, () => deps.vault.freeze(p.id));
-        return c.json({ say: `Frozen. All ${pouches.length} pouches are locked until you unfreeze them in the app.` });
+        const failed: string[] = [];
+        for (const p of pouches) { try { await deps.store.withPouchLock(p.id, () => deps.vault.freeze(p.id)); } catch { failed.push(p.name); } }
+        const frozen = pouches.length - failed.length;
+        return c.json({say: failed.length ? `Frozen ${frozen} of ${pouches.length} pouches. These could not be frozen: ${failed.join(", ")}. Check them in the app.` : `Frozen. All ${frozen} pouches are locked until you unfreeze them in the app.`,frozen,failed});
       }
       default:
         return c.json({ error: `Unknown tool: ${tool}` }, 404);

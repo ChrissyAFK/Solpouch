@@ -12,3 +12,6 @@ test-ledger/
 
 # local devnet signers, never commit
 .keys/
+
+# database CA certs
+certs/

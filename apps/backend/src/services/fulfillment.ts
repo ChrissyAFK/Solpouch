@@ -35,3 +35,5 @@ export async function buildFulfillment(
   }
   return { via: "service", label: "Retailer checkout", checkoutUrl: store.url };
 }
+
+export function assertCheckoutPayTo(): string { return checkoutPayTo("chain"); }

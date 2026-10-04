@@ -2,7 +2,10 @@ import Link from "next/link";
 import { LandingNav } from "@/components/LandingNav";
 import { HeroSequence } from "@/components/HeroSequence";
 import { PouchGlyph } from "@/components/PouchGlyph";
+import { pageMetadata, siteDescription } from "@/lib/site";
 import styles from "./landing.module.css";
+
+export const metadata = pageMetadata("Spending with limits", siteDescription, false);
 
 function Arrow({ diagonal = false }: { diagonal?: boolean }) {
   return (

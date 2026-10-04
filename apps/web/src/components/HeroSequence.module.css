@@ -3,6 +3,9 @@
   gap: 12px;
   min-width: 0;
 }
+.pending {
+  visibility: hidden;
+}
 .tabs {
   display: flex;
   gap: 4px;

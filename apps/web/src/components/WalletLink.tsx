@@ -86,10 +86,15 @@ export function WalletLink() {
       );
       updateUser({ wallet: next.wallet ?? address }, token);
     } catch (cause) {
+      const rejected =
+        (cause as { code?: unknown } | null)?.code === 4001 ||
+        (cause instanceof Error && /reject|cancel|denied/i.test(cause.message));
       setError(
-        cause instanceof Error && !("status" in cause)
+        rejected
           ? "Linking was cancelled. Try again."
-          : errMsg(cause),
+          : cause instanceof Error
+            ? cause.message
+            : errMsg(cause),
       );
     } finally {
       linking.current = false;

@@ -99,6 +99,28 @@ describe.skipIf(!url)("isolated real PostgreSQL (relational schema; fixture RPC)
     }
   });
 
+  it("deduplicates concurrent metrics with different timestamps across pools", async () => {
+    const record = {time:"2026-10-03T12:00:00.000Z",pouchId:"metrics",merchantId:"m",orderId:"o",amount:123,txSignature:"same-real-signature-fixture"};
+    await Promise.all([a.recordPayment(record),b.recordPayment({...record,time:"2026-10-03T12:00:05.000Z"})]);
+    const rows=await admin.query(`SELECT count(*)::int AS n FROM ${schema}.payments WHERE tx_signature=$1`,[record.txSignature]);
+    expect(rows.rows[0].n).toBe(1);
+  });
+  it("patches profile and wallet concurrently without overwriting unrelated fields", async () => {
+    const email="concurrent-profile@example.com", now=new Date().toISOString();
+    await Promise.all([a.updateUser(email,{displayName:"Alice"},now),b.updateUser(email,{wallet:"fixture-wallet"},now)]);
+    expect(await a.getUser(email)).toMatchObject({displayName:"Alice",wallet:"fixture-wallet"});
+    await b.updateUser(email,{wallet:null},now);
+    expect(await a.getUser(email)).toMatchObject({displayName:"Alice"});
+    expect((await a.getUser(email))!.wallet).toBeUndefined();
+  });
+  it("persists rolling spend windows and top-up failure reasons",async()=>{
+    const p=await a.savePouch({...fixturePouch("window-fixture"),spentToday:100,spentSince:new Date(Date.now()-25*3600_000).toISOString()});
+    expect(p.spentToday).toBe(0);
+    expect((await b.getPouch(p.id))!.spentToday).toBe(0);
+    const now=new Date().toISOString();
+    await a.saveTopUp({id:"failed-fixture",pouchId:p.id,amount:100,reason:"fixture",status:"failed",failReason:"TxFailed",readyAt:now,createdAt:now});
+    expect(await b.getTopUp("failed-fixture")).toMatchObject({status:"failed",failReason:"TxFailed"});
+  });
   it("rejects stale concurrent writes across independent pools", async () => {
     const saved = await a.savePouch(fixturePouch("cas"));
     const results = await Promise.allSettled([a.savePouch({ ...saved, balance: 7 }), b.savePouch({ ...saved, balance: 9 })]);

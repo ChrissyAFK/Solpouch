@@ -1,4 +1,6 @@
-import type { Order, Pouch, TopUp, ShoppingList } from "@solpouch/shared";
+import type { Order, Pouch, SpendPoint, TopUp, ShoppingList } from "@solpouch/shared";
+
+export type UserPatch = { displayName?: string | null; avatar?: string | null; wallet?: string | null };
 
 export class StoreConflictError extends Error {
   constructor(message = "Record changed; reload it before retrying") {
@@ -21,6 +23,10 @@ export interface AuthSession { id: string; email: string; name: string; picture:
 export interface AuthChallenge { id: string; wallet: string; email: string; message: string; expiresAt: string }
 export type StoredShoppingList = ShoppingList & { ownerEmail: string };
 export interface Store {
+  updateUser(email: string, patch: UserPatch, now: string): Promise<UserProfile>;
+  recordPayment(p: PaymentRecord): Promise<void>;
+  recordPrices(rows: PriceRecord[]): Promise<void>;
+  spendSeries(pouchIds: string[], bucket: "hour" | "day", since: string): Promise<SpendPoint[]>;
   readonly persistentLists?: boolean;
   listShoppingLists(ownerEmail: string): Promise<StoredShoppingList[]>;
   getShoppingList(id: string): Promise<StoredShoppingList | undefined>;
@@ -52,6 +58,9 @@ export interface Store {
   consumeRateLimit(key: string, windowMs: number, max: number): Promise<{ allowed: boolean; retryAfterSeconds: number }>;
 }
 
+export interface PaymentRecord { time: string; pouchId: string; merchantId: string; orderId: string; amount: number; txSignature: string }
+export interface PriceRecord { time: string; merchantId: string; productId: string; unitPrice: number; inStock: boolean }
+
 export function sameOperation(a: VaultOperation, b: VaultOperation): boolean {
   return a.id === b.id && a.kind === b.kind && a.pouchId === b.pouchId && a.txSignature === b.txSignature && a.signedTransaction === b.signedTransaction && a.lastValidBlockHeight === b.lastValidBlockHeight && a.createdAt === b.createdAt;
 }
@@ -69,3 +78,14 @@ export function publicPouch(p: StoredPouch): Pouch {
 }
 
 export type UserProfile = { email: string; displayName?: string; avatar?: string; wallet?: string; createdAt: string; updatedAt: string };
+
+const SPEND_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** Spend counted inside the chain's rolling 24h window: lapsed windows read as zero. */
+export function windowedSpend(spentToday: number, spentSince: string | undefined, now = Date.now()): number {
+  if (!spentSince) return spentToday;
+  return now - Date.parse(spentSince) < SPEND_WINDOW_MS ? spentToday : 0;
+}
+/** The window start to persist: the known one, else now when there is spend, else none. */
+export function spendWindowStart(p: { spentToday: number; spentSince?: string }, now = Date.now()): string | undefined {
+  return p.spentSince ?? (p.spentToday > 0 ? new Date(now).toISOString() : undefined);
+}

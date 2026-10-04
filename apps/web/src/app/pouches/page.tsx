@@ -121,15 +121,11 @@ export default function PouchesPage() {
               withName
               submitLabel="Create pouch"
               onSubmit={async (v) => {
-                try {
-                  await api.createPouch(v);
-                  setShowForm(false);
-                  await load();
-                  setNotice("Pouch created. Open it to add funds.");
-                } catch (e) {
-                  setError(errMsg(e));
-                  throw e;
-                }
+                // A failed create is shown by the form itself, so no page-level error here.
+                await api.createPouch(v);
+                setShowForm(false);
+                await load();
+                setNotice("Pouch created. Open it to add funds.");
               }}
             />
           </section>

@@ -10,7 +10,7 @@ import { SyncedVaultClient } from "../src/vault/synced.js";
 import { getMerchant } from "../src/merchants/index.js";
 import { confirmOrder, getOwnedOrder, listOwnedOrders } from "../src/services/orders.js";
 import { completeTopUp } from "../src/services/topups.js";
-import { recoverTransaction, type RecoveryTransport } from "../src/vault/recovery.js";
+import { PaymentPending, recoverTransaction, type RecoveryTransport } from "../src/vault/recovery.js";
 import type { VaultOperation } from "../src/store/types.js";
 import { ensureOnChain, ChainVaultClient } from "../src/vault/chain.js";
 
@@ -131,6 +131,18 @@ describe("durable signed transaction recovery", () => {
     expect(rpc.broadcast).not.toHaveBeenCalled();
     expect(prepare).not.toHaveBeenCalled();
   });
+  it("keeps processed errors recoverable until confirmed failure", async () => {
+    const chain = Object.create(ChainVaultClient.prototype) as ChainVaultClient;
+    const status = vi.fn().mockResolvedValue({value:[{err:{InstructionError:[0,"Custom"]},confirmationStatus:"processed"}]});
+    const connection = { getGenesisHash:async()=>"EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",getSignatureStatuses:status,getBlockHeight:async()=>101,sendRawTransaction:vi.fn() };
+    Object.assign(chain,{store,connection});
+    await store.saveOperation(operation);
+    const submit = (chain as unknown as {submit(id:string,kind:string,pouchId:string,build:unknown,signers:unknown[]):Promise<unknown>}).submit.bind(chain);
+    await expect(submit(operation.id,"pay",operation.pouchId,vi.fn(),[])).rejects.toBeInstanceOf(PaymentPending);
+    status.mockResolvedValue({value:[{err:{InstructionError:[0,"Custom"]},confirmationStatus:"confirmed"}]});
+    await expect(submit(operation.id,"pay",operation.pouchId,vi.fn(),[])).rejects.toMatchObject({code:"TxFailed"});
+    expect(connection.sendRawTransaction).not.toHaveBeenCalled();
+  });
   it("does not broadcast if journal persistence fails", async () => {
     vi.spyOn(store, "saveOperation").mockRejectedValue(new Error("database offline"));
     const rpc = transport();
@@ -150,7 +162,17 @@ describe("durable signed transaction recovery", () => {
     await store.saveOperation(operation);
     const rpc = transport();
     rpc.status = vi.fn().mockResolvedValue({ confirmed: false, failed: true });
-    await expect(recoverTransaction(store, operation.id, rpc, vi.fn(), operation)).rejects.toThrow("failed on chain");
+    await expect(recoverTransaction(store, operation.id, rpc, vi.fn(), operation)).rejects.toMatchObject({ code: "TxFailed" });
+    expect(rpc.broadcast).not.toHaveBeenCalled();
+  });
+  it("keeps expired transactions recoverable when RPC has no signature history", async () => {
+    await store.saveOperation(operation);
+    const rpc = transport();
+    rpc.blockHeight = vi.fn().mockResolvedValue(101);
+    rpc.status = vi.fn().mockResolvedValue({ confirmed: false, failed: false, found: false });
+    await expect(recoverTransaction(store, operation.id, rpc, vi.fn(), operation)).rejects.toBeInstanceOf(PaymentPending);
+    rpc.status = vi.fn().mockResolvedValue({ confirmed: false, failed: false, found: true });
+    await expect(recoverTransaction(store, operation.id, rpc, vi.fn(), operation)).rejects.toThrow("expired");
     expect(rpc.broadcast).not.toHaveBeenCalled();
   });
 });
@@ -168,7 +190,9 @@ describe("payment service recovery", () => {
       payToOf: (id: string) => getMerchant(id)?.payTo,
       program: { account: { pouch: { fetch: vi.fn().mockResolvedValue(account) } } },
     }) as ChainVaultClient;
-    expect(await fake.getState("uber-eats")).toEqual({ balance: 10, spentToday: 2, frozen: true, maxPerOrder: 3, dailyLimit: 4, allowedMerchantIds: ["thai-express"] });
+    expect(await fake.getState("uber-eats")).toEqual({ balance: 10, spentToday: 2, spentSince: new Date(account.dayStart.toNumber() * 1000).toISOString(), frozen: true, maxPerOrder: 3, dailyLimit: 4, allowedMerchantIds: ["thai-express"] });
+    // An unknown key is skipped with a warning instead of breaking the listing.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     account.allowedMerchants = [Keypair.generate().publicKey];
     await expect(fake.getState("uber-eats")).rejects.toThrow("differ from the chain");
   });
@@ -206,6 +230,8 @@ describe("payment service recovery", () => {
   });
   it("keeps uncertain payments paying instead of allowing a new draft", async () => {
     await draft();
+    // A journal entry means a transaction may have been sent, so the order must stay paying.
+    await store.saveOperation({ id: "pay:one", kind: "pay", pouchId: "uber-eats", txSignature: "sig", signedTransaction: "tx", lastValidBlockHeight: 1, createdAt: new Date().toISOString() });
     vi.spyOn(vault, "pay").mockRejectedValue(new Error("timeout"));
     await expect(confirmOrder({ store, vault }, TEST_USER, "one")).rejects.toMatchObject({ status: 503 });
     expect((await store.getOrder("one"))!.status).toBe("paying");

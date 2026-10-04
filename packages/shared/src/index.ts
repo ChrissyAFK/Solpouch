@@ -32,6 +32,7 @@ export interface Pouch {
   maxPerOrder: Micros;
   dailyLimit: Micros;
   spentToday: Micros;
+  spentSince?: string;
   /** Orders at or below this amount skip confirmation. 0 = always confirm. */
   confirmAbove: Micros;
   allowedMerchantIds: string[];
@@ -104,10 +105,12 @@ export function orderCurrency(order: Order): "CAD" | "USDC" {
   return order.merchantId.startsWith(WEB_PREFIX) || !!order.store || order.lines.some(l=>l.product?.estimated) ? "CAD" : "USDC";
 }
 
-export type TopUpStatus = "started" | "cooling_down" | "processing" | "completed" | "cancelled";
+export type TopUpStatus = "started" | "cooling_down" | "processing" | "completed" | "cancelled" | "failed";
 
 export interface TopUp {
   version?: number;
+  /** Set when status is "failed": the vault rejection code. */
+  failReason?: string;
   txSignature?: string;
   completedAt?: string;
   id: string;
@@ -191,7 +194,16 @@ export const VAULT_ERRORS = [
   "NameTooLong",
   "TooManyMerchants",
   "VaultNotEmpty",
+  "ZeroAmount",
+  "AgentIsMerchant",
+  "DuplicateMerchant",
   "OrderAlreadyUsed",
+  "PouchNotOnChain",
+  "AgentKeyMismatch",
+  "SignerOutOfSol",
+  "ChainRejected",
+  "TxFailed",
+  "TxExpired",
 ] as const;
 export type VaultError = (typeof VAULT_ERRORS)[number];
 

@@ -52,3 +52,22 @@ test('expired agent session closes without replaying an action',async t=>{
  for(let i=0;i<20&&closed<1;i++)await page.waitForTimeout(50);
  assert.equal(sockets,1);assert.equal(closed,1);
 });
+test('silent agent reply times out without replaying the request', async t => {
+ let messages=0;let sockets=0;
+ const page=await setup(t,[],async page=>{
+  await page.route('**/auth/voice-status',r=>r.fulfill({json:{enabled:true}}));
+  await page.route('**/auth/voice-session',r=>r.fulfill({json:{token:'timeout-fixture',signedUrl:'wss://api.elevenlabs.io/v1/convai/conversation?agent_id=fixture',expiresAt:new Date(Date.now()+600000).toISOString()}}));
+  await page.routeWebSocket(/api\.elevenlabs\.io/,ws=>{
+   sockets++;
+   ws.onMessage(raw=>{const msg=JSON.parse(raw);if(msg.type==='conversation_initiation_client_data')ws.send(JSON.stringify({type:'conversation_initiation_metadata',conversation_initiation_metadata_event:{conversation_id:'timeout-fixture',agent_output_audio_format:'pcm_16000',user_input_audio_format:'pcm_16000'}}));if(msg.type==='user_message')messages++;});
+  });
+ });
+ await page.clock.install();
+ await page.getByRole('textbox',{name:'Message Solpouch'}).fill('What is my balance?');
+ await page.getByRole('button',{name:'Send',exact:true}).click();
+ for(let i=0;i<30&&messages===0;i++)await new Promise(resolve=>setTimeout(resolve,50));
+ assert.equal(messages,1);
+ await page.clock.fastForward(46000);
+ await page.getByText('The agent reply timed out. Check your orders before repeating a payment request.',{exact:true}).waitFor();
+ assert.equal(sockets,1);assert.equal(messages,1);
+});

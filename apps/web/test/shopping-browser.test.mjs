@@ -52,3 +52,34 @@ test('handed-off cart remains editable and hides stale checkout while editing',a
  await page.goto(`${origin}/order?order=cart`);await page.getByRole('link',{name:'Open Instacart cart',exact:true}).waitFor();assert.equal(await page.getByLabel('Product 1',{exact:true}).count(),0);
  await page.getByLabel('Cart quantity 1',{exact:true}).fill('2');assert.equal(await page.getByRole('link',{name:'Open Instacart cart',exact:true}).count(),0);await page.getByRole('button',{name:'Save cart changes',exact:true}).click();await page.getByText('The shopping link is unavailable. Try creating it again.',{exact:true}).waitFor();assert.equal(await page.getByRole('link',{name:'Open Instacart cart',exact:true}).count(),0);assert.equal(await page.getByRole('button',{name:'Complete checkout with the retailer',exact:true}).isDisabled(),true);
 });
+test('live cart refresh updates the reviewed total but preserves unsaved edits', async t => {
+ const page = await setup(t); let order = draft; let reads = 0;
+ await page.route('**/orders/cart', r => { reads++; return r.fulfill({json:order}); });
+ await page.goto(`${origin}/order?order=cart`);
+ await page.getByRole('button',{name:'Approve $5.00 & pay',exact:true}).waitFor();
+ order = {...draft,version:2,total:10000000,lines:[{...draft.lines[0],qty:2,lineTotal:10000000}]};
+ await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+ await page.getByRole('button',{name:'Approve $10.00 & pay',exact:true}).waitFor();
+ assert.equal(await page.getByLabel('Cart quantity 1',{exact:true}).inputValue(),'2');
+ await page.getByLabel('Cart quantity 1',{exact:true}).fill('3');
+ await page.getByText(/Unsaved changes\. Save the cart/).waitFor();
+ const before = reads;
+ order = {...draft,version:3,total:20000000,lines:[{...draft.lines[0],qty:4,lineTotal:20000000}]};
+ await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+ await page.waitForTimeout(100);
+ assert.equal(reads,before);
+ assert.equal(await page.getByLabel('Cart quantity 1',{exact:true}).inputValue(),'3');
+ assert.equal(await page.getByRole('button',{name:/Approve .* & pay/}).isDisabled(),true);
+});
+test('successful payment stays successful when balance refresh fails', async t => {
+ const page=await setup(t);
+ await page.route('**/orders/cart',r=>r.fulfill({json:draft}));
+ await page.route('**/orders/cart/confirm',async r=>{
+   await page.route('**/pouches',p=>p.fulfill({status:503,json:{error:'Balance refresh unavailable'}}));
+   return r.fulfill({json:{...draft,status:'paid',paidAt:new Date().toISOString(),txSignature:'mock'}});
+ });
+ await page.goto(`${origin}/order?order=cart`);
+ await page.getByRole('button',{name:'Approve $5.00 & pay',exact:true}).click();
+ await page.getByText('Paid',{exact:true}).waitFor();
+ assert.equal(await page.getByText('Balance refresh unavailable',{exact:true}).count(),0);
+});

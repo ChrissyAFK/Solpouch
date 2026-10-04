@@ -4,20 +4,20 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import type { Order, Pouch, TopUp } from "@solpouch/shared";
-import { StoreConflictError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredShoppingList, type StoredPouch, type UserProfile } from "./types.js";
+import type { Order, Pouch, SpendPoint, TopUp } from "@solpouch/shared";
+import { StoreConflictError, spendWindowStart, windowedSpend, type PaymentRecord, type PriceRecord, type UserPatch, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredShoppingList, type StoredPouch, type UserProfile } from "./types.js";
 
 const iso = (v: Date | string) => (v instanceof Date ? v.toISOString() : new Date(v).toISOString());
 type Row = Record<string, any>;
 function toShoppingList(r: Row): StoredShoppingList { return { id:r.id, ownerEmail:r.owner_email, version:Number(r.version), name:r.name, items:structuredClone(r.items), createdAt:iso(r.created_at), updatedAt:iso(r.updated_at) }; }
 function toPouch(r: Row): StoredPouch {
-  return { id: r.id, address: r.address, name: r.name, balance: Number(r.balance), maxPerOrder: Number(r.max_per_order), dailyLimit: Number(r.daily_limit), spentToday: Number(r.spent_today), confirmAbove: Number(r.confirm_above), allowedMerchantIds: structuredClone(r.allowed_merchant_ids), frozen: r.frozen, version: Number(r.version), ...(r.owner_email ? { ownerEmail: r.owner_email } : {}) };
+  return { id: r.id, address: r.address, name: r.name, balance: Number(r.balance), maxPerOrder: Number(r.max_per_order), dailyLimit: Number(r.daily_limit), spentToday: windowedSpend(Number(r.spent_today),r.spent_since ? iso(r.spent_since) : undefined), ...(r.spent_since && windowedSpend(1,iso(r.spent_since)) ? {spentSince:iso(r.spent_since)} : {}), confirmAbove: Number(r.confirm_above), allowedMerchantIds: structuredClone(r.allowed_merchant_ids), frozen: r.frozen, version: Number(r.version), ...(r.owner_email ? { ownerEmail: r.owner_email } : {}) };
 }
 function toOrder(r: Row): Order {
   return { id: r.id, pouchId: r.pouch_id, merchantId: r.merchant_id, request: r.request, lines: structuredClone(r.lines), total: Number(r.total), status: r.status, createdAt: iso(r.created_at), version: Number(r.version), ...(r.reject_reason ? { rejectReason: r.reject_reason } : {}), ...(r.tx_signature ? { txSignature: r.tx_signature } : {}), ...(r.store ? {store:r.store}:{}), ...(r.fulfillment ? {fulfillment:r.fulfillment}:{}), ...(r.paid_at ? {paidAt:iso(r.paid_at)}:{}) };
 }
 function toTopUp(r: Row): TopUp {
-  return { id: r.id, pouchId: r.pouch_id, amount: Number(r.amount), reason: r.reason, status: r.status, ...(r.completed_at ? {completedAt:iso(r.completed_at)}:{}), ...(r.from_wallet ? { fromWallet: r.from_wallet } : {}), readyAt: iso(r.ready_at), createdAt: iso(r.created_at), version: Number(r.version), ...(r.tx_signature ? { txSignature: r.tx_signature } : {}) };
+  return { id: r.id, pouchId: r.pouch_id, amount: Number(r.amount), reason: r.reason, status: r.status, ...(r.fail_reason ? {failReason:r.fail_reason}:{}), ...(r.completed_at ? {completedAt:iso(r.completed_at)}:{}), ...(r.from_wallet ? { fromWallet: r.from_wallet } : {}), readyAt: iso(r.ready_at), createdAt: iso(r.created_at), version: Number(r.version), ...(r.tx_signature ? { txSignature: r.tx_signature } : {}) };
 }
 function toOperation(r: Row): VaultOperation {
   return { id: r.id, kind: r.kind, pouchId: r.pouch_id, txSignature: r.tx_signature, signedTransaction: r.signed_transaction, lastValidBlockHeight: Number(r.last_valid_block_height), createdAt: iso(r.created_at) };
@@ -166,13 +166,33 @@ export class PostgresStore implements Store {
   async listPouches(ownerEmail?: string) { return (await this.query(`SELECT * FROM pouches ${ownerEmail ? "WHERE owner_email=$1 " : ""}ORDER BY created_at, id`, ownerEmail ? [ownerEmail] : undefined)).rows.map(toPouch); }
   async getPouch(id: string) { const { rows } = await this.query("SELECT * FROM pouches WHERE id=$1", [id]); return rows[0] ? toPouch(rows[0]) : undefined; }
   async savePouch(p: StoredPouch) {
-    return toPouch(await this.save("pouches", p, { address: p.address, name: p.name, balance: p.balance, max_per_order: p.maxPerOrder, daily_limit: p.dailyLimit, spent_today: p.spentToday, confirm_above: p.confirmAbove, allowed_merchant_ids: p.allowedMerchantIds, frozen: p.frozen, owner_email: p.ownerEmail ?? null }));
+    return toPouch(await this.save("pouches", p, { address: p.address, name: p.name, balance: p.balance, max_per_order: p.maxPerOrder, daily_limit: p.dailyLimit, spent_today: p.spentToday, spent_since: spendWindowStart(p) ?? null, confirm_above: p.confirmAbove, allowed_merchant_ids: p.allowedMerchantIds, frozen: p.frozen, owner_email: p.ownerEmail ?? null }));
   }
   async listOrders(pouchId?: string) { return (await this.query(`SELECT * FROM orders ${pouchId ? "WHERE pouch_id=$1 " : ""}ORDER BY created_at DESC`, pouchId ? [pouchId] : undefined)).rows.map(toOrder); }
+  async recordPayment(p: PaymentRecord) {
+    return this.lock(`payment:${p.txSignature}`, async () => {
+    // The primary key includes time, and the app and the indexer stamp different times, so dedupe on tx_signature.
+    await this.query(
+      "INSERT INTO payments (time, pouch_id, merchant_id, order_id, amount, tx_signature) SELECT $1, $2, $3, $4, $5, $6 WHERE NOT EXISTS (SELECT 1 FROM payments WHERE tx_signature = $6) ON CONFLICT DO NOTHING",
+      [p.time, p.pouchId, p.merchantId, p.orderId, p.amount, p.txSignature],
+    );
+    });
+  }
+  async recordPrices(rows: PriceRecord[]) {
+    for (const r of rows) await this.query("INSERT INTO prices (time, merchant_id, product_id, unit_price, in_stock) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING", [r.time, r.merchantId, r.productId, r.unitPrice, r.inStock]);
+  }
+  async spendSeries(pouchIds: string[], bucket: "hour" | "day", since: string): Promise<SpendPoint[]> {
+    if (!pouchIds.length) return [];
+    const { rows } = await this.query(
+      `SELECT time_bucket($1::interval, time) AS bucket, pouch_id, sum(amount)::bigint AS spent, count(*)::int AS orders FROM payments WHERE pouch_id = ANY($2::text[]) AND time >= $3 GROUP BY 1, 2 ORDER BY 1, 2`,
+      [bucket === "day" ? "1 day" : "1 hour", pouchIds, since],
+    );
+    return rows.map((r: Row) => ({ bucket: iso(r.bucket), pouchId: r.pouch_id, spent: Number(r.spent), orders: Number(r.orders) }));
+  }
   async getOrder(id: string) { const { rows } = await this.query("SELECT * FROM orders WHERE id=$1 ORDER BY created_at DESC LIMIT 1", [id]); return rows[0] ? toOrder(rows[0]) : undefined; }
   async saveOrder(o: Order) { return toOrder(await this.save("orders", o, { created_at: o.createdAt, pouch_id: o.pouchId, merchant_id: o.merchantId, request: o.request, lines: JSON.stringify(o.lines), total: o.total, status: o.status, reject_reason: o.rejectReason ?? null, tx_signature: o.txSignature ?? null, store: o.store ? JSON.stringify(o.store) : null, fulfillment: o.fulfillment ? JSON.stringify(o.fulfillment) : null, paid_at: o.paidAt ?? null })); }
   async getTopUp(id: string) { const { rows } = await this.query("SELECT * FROM topups WHERE id=$1 ORDER BY created_at DESC LIMIT 1", [id]); return rows[0] ? toTopUp(rows[0]) : undefined; }
-  async saveTopUp(t: TopUp) { return toTopUp(await this.save("topups", t, { created_at: t.createdAt, pouch_id: t.pouchId, amount: t.amount, reason: t.reason, status: t.status, ready_at: t.readyAt, tx_signature: t.txSignature ?? null, completed_at: t.completedAt ?? null, from_wallet: t.fromWallet ?? null })); }
+  async saveTopUp(t: TopUp) { return toTopUp(await this.save("topups", t, { created_at: t.createdAt, pouch_id: t.pouchId, amount: t.amount, reason: t.reason, status: t.status, ready_at: t.readyAt, tx_signature: t.txSignature ?? null, fail_reason: t.failReason ?? null, completed_at: t.completedAt ?? null, from_wallet: t.fromWallet ?? null })); }
 
   async applyMockOperation(pouch: StoredPouch, operation: VaultOperation) {
     await this.withPouchLock(pouch.id,async()=> {
@@ -223,6 +243,25 @@ export class PostgresStore implements Store {
     return u;
   }
 
+  async updateUser(email: string, patch: UserPatch, now: string) {
+    const has = (v: unknown) => v !== undefined;
+    try {
+      const { rows } = await this.query(
+        `INSERT INTO users (email, display_name, avatar, wallet, created_at, updated_at) VALUES ($1,$2::text,$3::text,$4::text,$8::timestamptz,$8::timestamptz)
+         ON CONFLICT (email) DO UPDATE SET
+           display_name = CASE WHEN $5::boolean THEN $2::text ELSE users.display_name END,
+           avatar = CASE WHEN $6::boolean THEN $3::text ELSE users.avatar END,
+           wallet = CASE WHEN $7::boolean THEN $4::text ELSE users.wallet END,
+           updated_at = $8::timestamptz
+         RETURNING *`,
+        [email, patch.displayName ?? null, patch.avatar ?? null, patch.wallet ?? null, has(patch.displayName), has(patch.avatar), has(patch.wallet), now],
+      );
+      return toUser(rows[0]);
+    } catch (error) {
+      if ((error as { code?: string }).code === "23505") throw new StoreConflictError("This wallet is linked to another account");
+      throw error;
+    }
+  }
   async saveChallenge(c: AuthChallenge) {
     await this.cleanupExpired();
     const { rowCount } = await this.query("INSERT INTO auth_challenges (id,wallet,email,message,expires_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING", [c.id, c.wallet, c.email, c.message, c.expiresAt]);

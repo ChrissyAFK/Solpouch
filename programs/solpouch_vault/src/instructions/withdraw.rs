@@ -30,6 +30,7 @@ pub struct Withdraw<'info> {
 }
 
 pub fn handler(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
+    require!(amount > 0, crate::errors::VaultError::ZeroAmount);
     let p = &ctx.accounts.pouch;
     let seeds: &[&[u8]] = &[b"pouch", p.owner.as_ref(), p.name.as_ref(), &[p.bump]];
     transfer(

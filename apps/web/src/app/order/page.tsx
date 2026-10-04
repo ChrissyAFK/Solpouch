@@ -10,6 +10,7 @@ import { isCheckoutReference, orderCurrency, toUsdc } from "@solpouch/shared";
 import { api, ApiRequestError, errMsg } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import { getToken } from "@/lib/session";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import { downloadFile, receiptText } from "@/lib/orderExport";
 import { PouchGlyph } from "@/components/PouchGlyph";
 import s from "./order.module.css";
@@ -126,6 +127,11 @@ function OrderWorkspace() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [missingOrder, setMissingOrder] = useState(false);
   const loadVersion = useRef(0);
+  const refreshRunning = useRef(false);
+  const openedAt = useRef(Date.now());
+  const liveState = useRef({ order, busy, cartDirty, loading, request });
+  liveState.current = { order, busy, cartDirty, loading, request };
+
 
   const load = useCallback(async () => {
     const version = ++loadVersion.current;
@@ -176,6 +182,38 @@ function OrderWorkspace() {
     };
   }, [load]);
 
+  // Refresh only an unchanged view. Unsaved carts and in-flight actions own their state.
+  const liveRefresh = useCallback(async () => {
+    const before = liveState.current;
+    if (refreshRunning.current || before.loading || before.busy || before.cartDirty || !currentSession()) return;
+    if (!before.order && before.request.trim()) return;
+    const version = loadVersion.current;
+    const current = () => currentSession() && version === loadVersion.current &&
+      !liveState.current.busy && !liveState.current.cartDirty && !liveState.current.loading &&
+      liveState.current.order === before.order && liveState.current.request === before.request;
+    refreshRunning.current = true;
+    try {
+      if (before.order) {
+        if (!["draft", "confirmed", "paying"].includes(before.order.status)) return;
+        const latest = await api.order(before.order.id);
+        if (!current()) return;
+        // A changed draft version must replace both displayed lines and approved total.
+        if (JSON.stringify(latest) !== JSON.stringify(before.order)) setOrder(latest);
+      } else {
+        const orders = await api.orders();
+        if (!current()) return;
+        const latest = orders.filter(o => o.status === "draft" && Date.parse(o.createdAt) > openedAt.current)
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+        if (latest) {
+          setOrder(latest);
+          window.history.replaceState(null, "", `/order?order=${encodeURIComponent(latest.id)}`);
+        }
+      }
+    } catch { /* Keep the visible cart on transient refresh failures. */ }
+    finally { refreshRunning.current = false; }
+  }, [sessionKey]);
+  useLiveRefresh(liveRefresh);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (busy || !currentSession()) return;
@@ -220,8 +258,10 @@ function OrderWorkspace() {
       const next = action === "confirm" ? await api.confirm(order.id, order.version ?? 0) : await api.cancel(order.id);
       if (!current()) return;
       setOrder(next);
-      const freshPouches = await api.pouches();
-      if (current()) setPouches(freshPouches);
+      try {
+        const freshPouches = await api.pouches();
+        if (current()) setPouches(freshPouches);
+      } catch { /* The completed payment remains successful when balance refresh fails. */ }
     } catch (e) {
       if (!current()) return;
       setError(errMsg(e));

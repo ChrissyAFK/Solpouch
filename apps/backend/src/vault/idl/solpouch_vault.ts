@@ -85,6 +85,10 @@ export type SolpouchVault = {
           }
         },
         {
+          "name": "ownerToken",
+          "writable": true
+        },
+        {
           "name": "tokenProgram",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         }
@@ -818,6 +822,21 @@ export type SolpouchVault = {
       "code": 6008,
       "name": "vaultNotEmpty",
       "msg": "Vault must be empty to close the pouch"
+    },
+    {
+      "code": 6009,
+      "name": "zeroAmount",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6010,
+      "name": "agentIsMerchant",
+      "msg": "The agent key cannot be an allowed merchant"
+    },
+    {
+      "code": 6011,
+      "name": "duplicateMerchant",
+      "msg": "Duplicate merchant in the allowlist"
     }
   ],
   "types": [

@@ -93,7 +93,7 @@ function TopUpSection({
 
   const readyAt = topup ? new Date(topup.readyAt).getTime() : 0;
   const remaining = topup ? Math.max(0, readyAt - now) : 0;
-  const ready = topup != null && remaining === 0;
+  const ready = topup != null && now >= readyAt + 2000;
   const processing = topup?.status === "processing";
   const seconds = Math.ceil(remaining / 1000);
   const total = topup
@@ -124,9 +124,19 @@ function TopUpSection({
         await onDone();
       } catch (err) {
         setAutoFailed(true);
-        setError(
-          auto ? `Could not add automatically. ${errMsg(err)}` : errMsg(err),
-        );
+        setError(auto ? `Could not add automatically. ${errMsg(err)}` : errMsg(err));
+        try {
+          const latest = await api.topUp(topup.id);
+          if (latest.status === "completed") {
+            setTopup(null);
+            setAdded(`Added ${usd(toUsdc(latest.amount))} USDC to ${pouch.name}`);
+            setError(null);
+            await onDone();
+          } else if (latest.status === "failed" || latest.status === "cancelled") {
+            setTopup(null);
+            setError(`This top-up is ${latest.status}. You can start a new request.`);
+          } else setTopup(latest);
+        } catch { /* Preserve the request identity until its result can be checked. */ }
       } finally {
         completing.current = false;
         setBusy(false);

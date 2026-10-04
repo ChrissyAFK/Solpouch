@@ -20,6 +20,7 @@ import {
 import { allowedPayTos } from "./allow.js";
 import { checkoutPayTo } from "../services/fulfillment.js";
 import { merchants } from "../merchants/index.js";
+import { WEB_PREFIX, isAnyStore } from "@solpouch/shared";
 import type { Store } from "../store/types.js";
 import { recoverTransaction } from "./recovery.js";
 import type { Micros, Pouch } from "@solpouch/shared";
@@ -61,11 +62,14 @@ const PROGRAM_ERRORS = new Set([
   "NameTooLong",
   "TooManyMerchants",
   "VaultNotEmpty",
+  "ZeroAmount",
+  "AgentIsMerchant",
+  "DuplicateMerchant",
 ]);
 
-function mapError(e: unknown): never {
+export function mapError(e: unknown): never {
   if (e instanceof VaultRejected) throw e;
-  const anyE = e as { error?: { errorCode?: { code?: string } }; message?: string; logs?: string[] };
+  const anyE = e as { error?: { errorCode?: { code?: string; number?: number } }; message?: string; logs?: string[] };
   const code = anyE?.error?.errorCode?.code;
   if (code && PROGRAM_ERRORS.has(code)) throw new VaultRejected(code as VaultRejectCode);
   const text = `${anyE?.message ?? ""} ${(anyE?.logs ?? []).join(" ")}`;
@@ -78,7 +82,46 @@ function mapError(e: unknown): never {
     if (entry && PROGRAM_ERRORS.has(entry.name)) throw new VaultRejected(entry.name as VaultRejectCode);
   }
   if (/already in use/i.test(text)) throw new VaultRejected("OrderAlreadyUsed");
+  // Anchor framework errors (2000-3999), System-program lamport shortfalls and SPL token insufficient funds.
+  if (/insufficient lamports|insufficient funds for fee|no record of a prior credit/i.test(text)) throw new VaultRejected("SignerOutOfSol");
+  const num = anyE?.error?.errorCode?.number ?? (/Error Number: (\d+)/.exec(text) ? Number(/Error Number: (\d+)/.exec(text)![1]) : custom ? parseInt(custom[1], 16) : undefined);
+  if (num !== undefined && num >= 2000 && num <= 3999) {
+    if (num === 3012 || num === 3007) throw new VaultRejected("PouchNotOnChain");
+    if (num === 2001) throw new VaultRejected("AgentKeyMismatch");
+    throw new VaultRejected("ChainRejected");
+  }
+  if (custom && parseInt(custom[1], 16) === 1) throw new VaultRejected("InsufficientFunds");
   throw e;
+}
+
+/** Resolve a pouch's pay-to addresses to at most 10 unique keys. Never truncates silently. */
+export function resolveMerchantKeys(addresses: string[]): PublicKey[] {
+  const unique = [...new Set(addresses)];
+  if (unique.length > 10) throw new VaultRejected("TooManyMerchants");
+  return unique.map((s) => new PublicKey(s));
+}
+
+/**
+ * Map on-chain allowlist keys back to catalog ids. The shared checkout key stands for every web: entry,
+ * and for any-store pouches (which also list every catalog merchant) it means "no restriction".
+ */
+export function mapAllowedKeys(keys: string[], payToOf: (id: string) => string | undefined, stored?: Pouch): string[] {
+  const checkout = checkoutPayTo();
+  if (stored && isAnyStore(stored) && keys.includes(checkout)) return [];
+  const out: string[] = [];
+  for (const key of keys) {
+    if (key === checkout) {
+      for (const id of stored?.allowedMerchantIds ?? []) if (id.startsWith(WEB_PREFIX)) out.push(id);
+      continue;
+    }
+    const matches = merchants.filter((merchant) => payToOf(merchant.id) === key);
+    if (matches.length !== 1) {
+      console.warn(`[chain] Skipping unknown or ambiguous merchant address ${key}${stored ? ` on pouch ${stored.id}` : ""}.`);
+      continue;
+    }
+    out.push(matches[0].id);
+  }
+  return [...new Set(out)];
 }
 
 /**
@@ -151,7 +194,7 @@ export class ChainVaultClient implements VaultClient {
     return recoverTransaction(this.store, id, {
       status: async (signature) => {
         const value = (await this.connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
-        return { confirmed: !!value && !value.err && (value.confirmationStatus === "confirmed" || value.confirmationStatus === "finalized"), failed: !!value?.err };
+        return { confirmed: !!value && !value.err && (value.confirmationStatus === "confirmed" || value.confirmationStatus === "finalized"), failed: !!value?.err && (value?.confirmationStatus === "confirmed" || value?.confirmationStatus === "finalized"), found: !!value };
       },
       blockHeight: () => this.connection.getBlockHeight(COMMITMENT),
       broadcast: async (bytes) => { try { return await this.connection.sendRawTransaction(bytes, { skipPreflight: false, maxRetries: 0 }); } catch (e) { return programRejection(e); } },
@@ -256,7 +299,7 @@ export class ChainVaultClient implements VaultClient {
     return { balance, spentToday };
   }
 
-  async getState(pouchId: string): Promise<VaultState> {
+  async getState(pouchId: string, _stored?: Pouch): Promise<VaultState> {
     const pda = this.pouchPda(pouchId);
     const [acct, vault] = await Promise.all([
       this.program.account.pouch.fetch(pda, COMMITMENT),
@@ -276,7 +319,9 @@ export class ChainVaultClient implements VaultClient {
     const allowedMerchantIds = stored.allowedMerchantIds;
     const balance = Number(vault.amount);
     if (!Number.isSafeInteger(balance)) throw new Error("Chain balance exceeds supported precision");
+    const dayStart = acct.dayStart.toNumber();
     return { balance, spentToday: expired ? 0 : acct.spentToday.toNumber(), frozen: acct.frozen,
+      ...(dayStart > 0 && !expired ? { spentSince: new Date(dayStart * 1000).toISOString() } : {}),
       maxPerOrder: acct.maxPerOrder.toNumber(), dailyLimit: acct.dailyLimit.toNumber(), allowedMerchantIds };
   }
 
@@ -300,7 +345,7 @@ export async function ensureOnChain(vault: ChainVaultClient, pouches: Pouch[]): 
   const out: Pouch[] = [];
   for (const pouch of pouches) {
     try {
-      const state = await vault.getState(pouch.id);
+      const state = await vault.getState(pouch.id, pouch);
       out.push({ ...pouch, ...state });
     } catch {
       throw new Error(`Cannot read chain pouch ${pouch.id}. Check the account and RPC; startup will not create or fund it.`);

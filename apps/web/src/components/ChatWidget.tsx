@@ -70,12 +70,14 @@ function ChatPanel() {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sequence = useRef(0);
   const agentSequence = useRef(-1);
+  const agentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const busy = useRef(false);
   const mounted = useRef(true);
   const isCurrent = () => mounted.current && getToken() === sessionKey;
   const endAgent = useRef<() => Promise<void>>(async () => {});
 
   function settle() {
+    if (agentTimer.current) clearTimeout(agentTimer.current);
     busy.current = false;
     setPending(false);
   }
@@ -87,6 +89,14 @@ function ChatPanel() {
     settle();
     setMode("checking");
   }
+  function waitForReply() {
+    if (agentTimer.current) clearTimeout(agentTimer.current);
+    agentTimer.current = setTimeout(() => {
+      if (!isCurrent()) return;
+      stopVoice();
+      setNotice("The agent reply timed out. Check your orders before repeating a payment request.");
+    }, 45000);
+  }
   const agent = useConversation({
     onConnect: () => {
       if (!isCurrent() || agentSequence.current !== sequence.current) {
@@ -97,7 +107,7 @@ function ChatPanel() {
       const text = queued.current;
       queued.current = null;
       queuedNext.current = null;
-      if (text) agent.sendUserMessage(text);
+      if (text) { agent.sendUserMessage(text); waitForReply(); }
     },
     onDisconnect: () => {
       if (!isCurrent() || agentSequence.current !== sequence.current) return;
@@ -108,7 +118,7 @@ function ChatPanel() {
     onMessage: ({ message, role }) => {
       if (!isCurrent() || agentSequence.current !== sequence.current) return;
       // Typed messages are already on screen; only voice transcripts come back as user messages.
-      if (role === "user" && message === lastTyped.current) return;
+      if (role === "user" && message === lastTyped.current) { lastTyped.current = null; return; }
       setMessages((m) => [
         ...m,
         { role: role === "user" ? "user" : "assistant", content: message },
@@ -148,6 +158,7 @@ function ChatPanel() {
       request.current?.abort();
       voiceRequest.current?.abort();
       if (voiceExpiry.current) clearTimeout(voiceExpiry.current);
+      if (agentTimer.current) clearTimeout(agentTimer.current);
       if (timer.current) clearTimeout(timer.current);
     };
   }, []);
@@ -206,7 +217,7 @@ function ChatPanel() {
     settle();
     setNotice(null);
     setSession(null);
-    agent.endSession();
+    void endAgent.current().catch(() => {});
   }
   function close() {
     if (session === "voice" || voiceSetup.current) stopVoice();
@@ -214,7 +225,8 @@ function ChatPanel() {
     launcher.current?.focus();
   }
   function clear() {
-    if (session) agent.endSession();
+    if (session) void endAgent.current().catch(() => {});
+    if (agentTimer.current) clearTimeout(agentTimer.current);
     queued.current = null;
     queuedNext.current = null;
     setSession(null);
@@ -251,6 +263,7 @@ function ChatPanel() {
       lastTyped.current = text;
       if (session) {
         agent.sendUserMessage(text);
+        waitForReply();
       } else {
         queued.current = text;
         queuedNext.current = next;
@@ -262,7 +275,7 @@ function ChatPanel() {
           queuedNext.current = null;
           setSession(null);
           settle();
-          setError(errMsg(cause));
+          setError("The agent could not connect. Try again or use the text helper.");
         });
       }
       return;
@@ -277,7 +290,11 @@ function ChatPanel() {
     voiceRequest.current?.abort();
     if (voiceExpiry.current) clearTimeout(voiceExpiry.current);
     voiceRequest.current = controller;
-    const { token, expiresAt, signedUrl } = await api.voiceSession(controller.signal);
+    const setupTimeout = setTimeout(() => controller.abort(), 15000);
+    let credentials;
+    try { credentials = await api.voiceSession(controller.signal); }
+    finally { clearTimeout(setupTimeout); }
+    const { token, expiresAt, signedUrl } = credentials;
     if (!isCurrent() || generation !== sequence.current) return;
     const expiry = new Date(expiresAt).getTime();
     if (!Number.isFinite(expiry) || expiry <= Date.now()) throw new Error("Voice session expired. Reconnect to continue.");
@@ -287,12 +304,19 @@ function ChatPanel() {
       setNotice("Voice session expired. Press Talk or send a new message to reconnect. No payment will be retried automatically.");
     }, Math.min(expiry - Date.now(), 15 * 60_000));
     agentSequence.current = generation;
-    await agent.startSession({
+    let connectTimeout: ReturnType<typeof setTimeout> | undefined;
+    try { await Promise.race([agent.startSession({
       signedUrl,
       connectionType: "websocket",
       dynamicVariables: { secret__solpouch_voice_token: `Bearer ${token}` },
       ...(textOnly ? { textOnly: true } : {}),
-    });
+    }), new Promise<never>((_, reject) => {
+      connectTimeout = setTimeout(() => reject(new Error("The agent connection timed out.")), 15000);
+    })]);
+    } catch {
+      if (isCurrent() && generation === sequence.current) { stopVoice(); setError("The agent could not connect. Try again in a moment."); }
+      throw new Error("The agent could not connect. Try again in a moment.");
+    } finally { if (connectTimeout) clearTimeout(connectTimeout); }
     if (!isCurrent() || generation !== sequence.current) await agent.endSession();
   }
   async function askGemini(next: Message[]) {

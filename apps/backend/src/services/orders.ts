@@ -7,6 +7,7 @@ import { findOnline } from "../ai/findOnline.js";
 import { catalogFit, fallbackMatch, matchItems, parseRequest, type ParsedItem } from "../ai/gemini.js";
 import { getCatalog, getMerchant, merchants, registerWebMerchant } from "../merchants/index.js";
 import { buildFulfillment, checkoutPayTo } from "./fulfillment.js";
+import { recordPaidOrder } from "./metrics.js";
 import type { GoogleUser } from "../auth/google.js";
 import type { Store } from "../store/types.js";
 import { VaultRejected, type VaultClient } from "../vault/types.js";
@@ -216,7 +217,7 @@ export async function confirmOrder(deps: Deps, ownerEmail: string, id: string, e
   const initial = await getOwnedOrder(deps, id, ownerEmail);
   return deps.store.withPouchLock(initial.pouchId, async () => {
     let order = await getOwnedOrder(deps, id, ownerEmail);
-    if (order.status === "paid") return order;
+    if (order.status === "paid") { await recordPaidOrder(deps.store, order); return order; }
     if (order.status !== "draft" && order.status !== "paying") throw new HttpError(409, `Order is ${order.status}`);
     if (order.status === "draft" && expectedVersion !== undefined && order.version !== expectedVersion) throw new HttpError(409, "This cart changed. Review it again before approving.", "RecordChanged");
     const pouch = await getOwnedPouch(deps, order.pouchId, ownerEmail);
@@ -237,9 +238,13 @@ export async function confirmOrder(deps: Deps, ownerEmail: string, id: string, e
         await deps.store.saveOrder({...order,status:"rejected",rejectReason:e.code});
         throw new HttpError(422,`Payment refused: ${e.code}`,e.code);
       }
+      if (!(e instanceof PaymentPending) && !(await deps.store.getOperation(`pay:${order.id}`))) {
+        await deps.store.saveOrder({...order,status:"draft"});
+        throw new HttpError(503,"The payment could not be started. Nothing was charged; try again.","PaymentNotSent");
+      }
       throw new HttpError(503,e instanceof PaymentPending ? e.message : "Payment is not confirmed yet. Retry this order to check its status.","PaymentPending");
     }
-    try { return await deps.store.saveOrder({...order,status:"paid",txSignature,paidAt:new Date().toISOString()}); }
+    try { const paid = await deps.store.saveOrder({...order,status:"paid",txSignature,paidAt:new Date().toISOString()}); await recordPaidOrder(deps.store,paid); return paid; }
     catch { throw new HttpError(503,"Payment was submitted. Retry this order to recover its receipt.","PaymentPending"); }
   });
 }

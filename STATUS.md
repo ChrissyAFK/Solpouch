@@ -1,5 +1,7 @@
 # Status
 
+Current local integration: `codex/integrate-audit` combines shopping/funding work with `fix/audit-2`. See [AUDIT_INTEGRATION.md](docs/AUDIT_INTEGRATION.md) for corrections and current verification. Nothing from this integration has been pushed or deployed.
+
 US/Canada wallet funding has a gated staging integration on `codex/bank-funding`. See [BANK_FUNDING.md](docs/BANK_FUNDING.md) for setup, verification boundaries and the remaining mainnet work. No live bank transfers or automatic pouch credits are enabled.
 
 Current audit fixes and local verification are tracked in `docs/AUDIT_FIXES.md`. Historical deployment observations below are not proof of the current live environment.
@@ -48,13 +50,34 @@ The historical integration notes below describe the earlier deployment, not the 
 - The site needs `Cross-Origin-Opener-Policy: same-origin-allow-popups`, or the Google popup hangs blank on `/gsi/transform`.
 - Live at https://solpouch.tech through the named Cloudflare tunnel `solpouch` (`api.solpouch.tech` -> :8787, site -> the production `next start` port). Voice tool URLs use `https://api.solpouch.tech/voice/tools/<name>`.
 
+## Historical audit branch report (2026-10-03, branch `fix/audit`)
+
+The integration report above supersedes this branch report. In particular, an expired transaction with missing RPC history remains uncertain and must not be treated as a proven failure.
+
+Fixes from the whole-project audit. Checks: backend 153 tests and typecheck, web typecheck and CSP test, `cargo test` 10. Not run: Anchor integration tests (need a local validator), Postgres integration tests, and a browser pass over the chat widget and top-up flow.
+
+- Chain client: `CHECKOUT_PAY_TO` must be a real devnet wallet in `.env`. Without it the backend starts with a warning and any-store / web-store orders are rejected. Chain errors that can never succeed (pouch not on chain, wrong AI key, signer out of SOL, failed or expired transaction) now end the order as rejected instead of leaving it `paying`. `freeze_all` and reconcile carry on past a failing pouch. Startup warns when the AI key holds under 0.05 SOL (each receipt costs it about 0.0015 SOL).
+- Orders: Postgres stores `order.store` and `order.fulfillment` (additive columns). A failed AI lookup returns 503 `LookupFailed` instead of an invented draft; this also applies with no AI key at all. Confirm re-checks the pouch's store list. Voice `confirm_order` refuses a draft younger than 4 seconds.
+- Top-ups: new `failed` status with `failReason`; `GET /topups` also lists `processing` and recently failed ones; completing re-checks the linked wallet.
+- Users: profile and wallet-link updates no longer overwrite each other; the in-memory store enforces one wallet per account.
+- AI and voice: store URLs must be https on the found domain, Gemini calls time out, quantities are clamped, voice `create_order` is rate limited, 10 wrong voice secrets lock an IP out for 10 minutes.
+- Web: order page picks up voice-created drafts, top-up cooldown tolerates clock skew, chat widget Talk works after typing and sign-out ends the session. The ElevenLabs audio worklets were tested under the production CSP in headless Chrome and load fine (`apps/web/test/worklet-csp.browser.mjs`, needs `PLAYWRIGHT_MODULE`).
+- Vault program (source only, NOT redeployed): rejects zero amounts, the AI key as an allowed merchant and duplicate merchants (errors 6009-6011); `close_pouch` sweeps leftover tokens to a new `owner_token` account. After a redeploy, regenerate the IDL (`apps/backend/src/vault/idl`), since the `close_pouch` entry there still describes the deployed version.
+
+Second pass (branch `fix/audit-2`, built in the `Solpouch-fix` worktree; backend 164 tests, typechecks and CSP test pass; the new SQL has not run against a real Timescale database and nothing was checked in a browser):
+
+- Indexer (`apps/backend/src/indexer.ts`, started in chain mode from `src/index.ts`): backfills paid orders into the Tiger `payments` hypertable, then follows the program's `PaymentMade` logs, including payments sent from outside the app. A paid order also writes `payments` and `prices` rows directly. `GET /stats/spend` reads `payments` with `time_bucket` and falls back to the orders table when the series is empty or the query fails.
+- `spentToday` follows the chain's rolling 24 hours (`pouches.spent_since`, additive column).
+- `confirmAbove`: 0 asks before every order; above 0, orders at or under it skip the 4-second voice wait (still a separate confirm call, nothing auto-pays). The pouch form has an "Ask before paying" field. `voice/prompt.md` gained one sentence; the live ElevenLabs agent prompt has not been re-synced.
+
+Still open from the audit: `apps/web/test/auth-voice.browser.mjs` still drives the old wallet-login flow. The production backend runs `tsx watch` from this checkout, so saving a backend file reloads the live API.
+
 ## Not done yet
 
 - Wallet sign-in for owner actions (the backend still signs owner txs for the demo).
 - Production multi-wallet transaction signing and authenticated voice provider binding remain to be built.
 
 - A permanent tunnel on solpouch.tech (the quick tunnel URL changes on restart).
-- Indexer is a stub; `confirmAbove` is stored but not used for auto-confirm.
 - `scripts/chain-smoke.ts` and `scripts/db-check.ts` are manual checks; `test/postgres.test.ts` runs only with `TEST_DATABASE_URL`.
 
 ## Run it

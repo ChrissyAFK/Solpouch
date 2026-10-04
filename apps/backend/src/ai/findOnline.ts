@@ -32,6 +32,29 @@ export function normalizeDomain(raw: string): string {
   return raw.trim().toLowerCase().replace(/^[a-z]+:\/\//, "").replace(/^www\./, "").split(/[/?#]/)[0];
 }
 
+/** True for a plain DNS hostname: no scheme, path, port, credentials, spaces or IP literal. */
+export function isPlainHostname(raw: string): boolean {
+  const h = raw.trim().toLowerCase().replace(/^www\./, "");
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(h)) return false;
+  return /[a-z]/.test(h.slice(h.lastIndexOf(".") + 1)); // numeric TLD means an IPv4 literal
+}
+
+/** Accept a model-supplied URL only if it is https and on `domain` or a subdomain of it. */
+export function safeUrlForDomain(raw: unknown, domain: string): string | undefined {
+  if (typeof raw !== "string" || !isPlainHostname(domain)) return undefined;
+  let u: URL;
+  try {
+    u = new URL(raw.trim());
+  } catch {
+    return undefined;
+  }
+  if (u.protocol !== "https:" || u.username || u.password || u.port) return undefined;
+  const strip = (h: string) => h.toLowerCase().replace(/^www\./, "");
+  const host = strip(u.hostname);
+  const d = strip(domain.trim());
+  return host === d || host.endsWith("." + d) ? u.toString() : undefined;
+}
+
 function parseJson(text: string): any {
   const t = text.replace(/```(?:json)?/gi, "").trim();
   const candidates = [t];
@@ -50,7 +73,9 @@ function parseJson(text: string): any {
 
 export function validateFind(raw: any, items: ParsedItem[], allowedDomains?: string[]): WebFind | null {
   if (!raw || typeof raw !== "object") return null;
-  const domain = normalizeDomain(String(raw.domain ?? raw.storeDomain ?? ""));
+  const rawDomain = String(raw.domain ?? raw.storeDomain ?? "").trim();
+  if (!isPlainHostname(rawDomain)) return null;
+  const domain = normalizeDomain(rawDomain);
   const name = String(raw.storeName ?? raw.name ?? domain).trim();
   if (!domain || !domain.includes(".")) return null;
   if (allowedDomains?.length) {
@@ -70,11 +95,11 @@ export function validateFind(raw: any, items: ParsedItem[], allowedDomains?: str
       brand: m.brand ? String(m.brand) : undefined,
       size: m.size ? String(m.size) : undefined,
       unitPrice: Math.min(99999.99, Math.max(0.01, price)),
-      url: typeof m.url === "string" && m.url.startsWith("http") ? m.url : undefined,
+      url: safeUrlForDomain(m.url, domain),
     });
   }
   if (!out.length) return null;
-  const url = typeof raw.storeUrl === "string" && raw.storeUrl.startsWith("http") ? raw.storeUrl : `https://${domain}`;
+  const url = safeUrlForDomain(raw.storeUrl, domain) ?? `https://${domain}`;
   return { store: { name, domain, url }, onInstacart: raw.onInstacart === true, items: out, fallback: false };
 }
 

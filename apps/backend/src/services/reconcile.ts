@@ -9,7 +9,7 @@ export async function reconcilePouch(deps: Deps, id: string): Promise<StoredPouc
   if (deps.vault.authorizedOwner === undefined) return initial;
   try {
     // Reading chain state takes no lock; only a write to the mirror does.
-    const state = deps.vault.getState ? await deps.vault.getState(id) : await deps.vault.getBalance(id);
+    const state = deps.vault.getState ? await deps.vault.getState(id, initial) : await deps.vault.getBalance(id);
     const same = (pouch: Pouch) => Object.entries(state).every(([key, value]) => JSON.stringify(pouch[key as keyof Pouch]) === JSON.stringify(value));
     if (same(initial)) return initial;
     return await deps.store.withPouchLock(id, async () => {
@@ -29,6 +29,13 @@ export async function reconcilePouch(deps: Deps, id: string): Promise<StoredPouc
 
 export async function reconcilePouches(deps: Deps): Promise<Pouch[]> {
   const rows = await deps.store.listPouches(); const current: Pouch[] = [];
-  for (const row of rows) current.push(await reconcilePouch(deps, row.id));
+  for (const row of rows) {
+    try {
+      current.push(await reconcilePouch(deps, row.id));
+    } catch (error) {
+      console.warn(`[reconcile] Could not refresh pouch ${row.id}; returning the stored row.`, error instanceof Error ? error.message : error);
+      current.push(row);
+    }
+  }
   return current;
 }

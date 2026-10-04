@@ -21,4 +21,10 @@ pub enum VaultError {
     TooManyMerchants,
     #[msg("Vault must be empty to close the pouch")]
     VaultNotEmpty,
+    #[msg("Amount must be greater than zero")]
+    ZeroAmount,
+    #[msg("The agent key cannot be an allowed merchant")]
+    AgentIsMerchant,
+    #[msg("Duplicate merchant in the allowlist")]
+    DuplicateMerchant,
 }

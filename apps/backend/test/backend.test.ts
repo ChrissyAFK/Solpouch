@@ -1,4 +1,13 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// The offline table stands in for a real web lookup here; production code refuses fallback results.
+vi.mock("../src/ai/findOnline.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/ai/findOnline.js")>();
+  return { ...actual, findOnline: async (...args: Parameters<typeof actual.findOnline>) => {
+    const r = await actual.findOnline(...args);
+    return r && { ...r, fallback: false };
+  } };
+});
 import { toMicros } from "@solpouch/shared";
 import { createApp } from "../src/app.js";
 import { getMerchant } from "../src/merchants/index.js";
@@ -14,14 +23,17 @@ const thai = getMerchant("thai-express")!.payTo;
 const builders = getMerchant("burnaby-builders")!.payTo;
 const $ = toMicros;
 
-let clock = 1_000_000;
+let clock = Date.now();
 let store: MemoryStore;
 let vault: MockVaultClient;
 beforeEach(() => {
-  clock = 1_000_000;
+  clock = Date.now();
+  vi.spyOn(Date,"now").mockImplementation(()=>clock);
   store = new MemoryStore(ownedSeed());
   vault = new MockVaultClient(store, (id) => getMerchant(id)?.payTo, () => clock);
 });
+
+afterEach(()=>vi.restoreAllMocks());
 
 async function code(p: Promise<unknown>) {
   try {

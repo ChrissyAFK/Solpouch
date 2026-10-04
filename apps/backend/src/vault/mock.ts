@@ -58,7 +58,7 @@ export class MockVaultClient implements VaultClient {
     if (!allowed.includes(merchantPayTo)) throw new VaultRejected("MerchantNotAllowed");
     if (amount > p.maxPerOrder) throw new VaultRejected("OverPerOrderLimit");
     const now = this.now();
-    const start = this.dayStart.get(p.id) ?? now;
+    const start = p.spentSince ? Date.parse(p.spentSince) : this.dayStart.get(p.id) ?? now;
     if (now - start >= DAY_MS) {
       p.spentToday = 0;
       this.dayStart.set(p.id, now);
@@ -69,6 +69,7 @@ export class MockVaultClient implements VaultClient {
     if (amount > p.balance) throw new VaultRejected("InsufficientFunds");
     p.balance -= amount;
     p.spentToday += amount;
+    p.spentSince = new Date(now - start >= DAY_MS ? now : start).toISOString();
     const txSignature = sig();
     await this.store.applyMockOperation(p,{id:key,kind:"pay",pouchId:p.id,txSignature,signedTransaction:"mock",lastValidBlockHeight:0,createdAt:new Date().toISOString()});
     return { txSignature };
