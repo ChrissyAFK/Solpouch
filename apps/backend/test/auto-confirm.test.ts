@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { toMicros, type Order, type Pouch } from "@solpouch/shared";
 import { createApp } from "../src/app.js";
 import { getCatalog, getMerchant } from "../src/merchants/index.js";
-import { MATCH_THRESHOLD, autoConfirmEligible } from "../src/services/orders.js";
+import { AUTO_CONFIRM_MATCH, autoConfirmEligible } from "../src/services/orders.js";
 import { MemoryStore } from "../src/store/memory.js";
 import { MockVaultClient } from "../src/vault/mock.js";
 import { VaultRejected } from "../src/vault/types.js";
@@ -45,7 +45,8 @@ describe("autoConfirmEligible guards", () => {
   it("requires every line to be an exact, unflagged match", () => {
     for (const bad of [
       { substitution: true },
-      { matchScore: MATCH_THRESHOLD - 0.01 },
+      { matchScore: AUTO_CONFIRM_MATCH - 0.01 },
+      { matchScore: 0.5 },
       { note: "Picked a different size" },
       { product: null, qty: 0, lineTotal: 0 },
       { product: { ...eggs, inStock: false } },
@@ -55,7 +56,7 @@ describe("autoConfirmEligible guards", () => {
       const total = l.lineTotal + line.lineTotal;
       expect(autoConfirmEligible(pouch(), order({ lines: [line, l], total })), JSON.stringify(bad)).toBe(false);
     }
-    expect(autoConfirmEligible(pouch(), order({ lines: [{ ...line, matchScore: MATCH_THRESHOLD }] }))).toBe(true);
+    expect(autoConfirmEligible(pouch(), order({ lines: [{ ...line, matchScore: AUTO_CONFIRM_MATCH }] }))).toBe(true);
   });
   it("leaves the draft alone when the pouch rules would refuse it", () => {
     expect(autoConfirmEligible(pouch({ frozen: true }), order())).toBe(false);

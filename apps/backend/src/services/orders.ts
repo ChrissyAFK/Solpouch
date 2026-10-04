@@ -57,6 +57,8 @@ export class HttpError extends Error {
 
 /** Lowest matchScore a catalog line may have to count as covering the request. */
 export const MATCH_THRESHOLD = 0.3;
+/** Auto-pay moves money without asking, so every line must be a near-exact match (1 = exactly what was asked). */
+export const AUTO_CONFIRM_MATCH = 0.9;
 
 /**
  * Whether a fresh draft may be paid without asking (Pouch.confirmAbove).
@@ -74,7 +76,7 @@ export function autoConfirmEligible(pouch: Pouch, order: Order): boolean {
   if (!order.lines.length) return false;
   return order.lines.every((l) =>
     !!l.product && l.product.inStock && !l.product.estimated && l.product.merchantId === order.merchantId &&
-    !l.substitution && !l.note && l.matchScore >= MATCH_THRESHOLD && l.qty === l.requestedQty && l.qty > 0);
+    !l.substitution && !l.note && l.matchScore >= AUTO_CONFIRM_MATCH && l.qty === l.requestedQty && l.qty > 0);
 }
 
 export interface CreatedOrder {
