@@ -25,10 +25,17 @@ export function CartEditor({ order, disabled, onSaved, onDirty }: { order: Order
     if (!isCheckoutReference(order)) api.products(order.merchantId).then(result => { if (active && current()) setProducts(result); }).catch(() => { if (active && current()) setCatalogError("Replacement options could not load. You can still change quantities or remove items."); });
     return () => { active = false; };
   }, [order.merchantId]);
+  const matched = (index: number) => !!order.lines[index]?.product;
+  const matchedLines = lines.filter(l => matched(l.index));
+  const hasUnmatched = order.lines.some(l => !l.product);
+  const listItems = (() => {
+    const found = order.lines.filter(l => l.product).map(l => ({ name: l.product!.name, qty: Math.min(10000, Math.max(1, l.qty)) }));
+    return found.length > 0 ? found : order.lines.map(l => ({ name: l.requested, qty: Math.min(10000, Math.max(1, l.requestedQty || 1)) }));
+  })();
   async function save() {
     if (busy || !current()) return;
     setBusy(true); setError(null); setNotice("");
-    try { const result = await api.editOrder(order.id, order.version ?? 0, lines); if (current()) { onDirty(false); onSaved(result); } }
+    try { const result = await api.editOrder(order.id, order.version ?? 0, matchedLines); if (current()) { onDirty(false); onSaved(result); } }
     catch (cause) { if (current()) setError(errMsg(cause)); }
     finally { if (current()) setBusy(false); }
   }
@@ -44,14 +51,15 @@ export function CartEditor({ order, disabled, onSaved, onDirty }: { order: Order
           {products.map(p => <option key={p.id} value={p.id} disabled={!p.inStock}>{p.name} · {usd(toUsdc(p.unitPrice))} USDC{!p.inStock ? " · Out of stock" : ""}</option>)}
         </select>}
       </label>
-      <label className={`${label} w-24`}>Quantity<input className={input} aria-label={`Cart quantity ${line.index + 1}`} type="number" min={1} max={10000} step={1} value={Number.isNaN(line.qty) ? "" : line.qty} disabled={busy || disabled} onChange={e => setLines(rows => rows.map(row => row.index === line.index ? { ...row, qty: e.target.valueAsNumber } : row))} /></label>
+      <label className={`${label} w-24`}>Quantity<input className={input} aria-label={`Cart quantity ${line.index + 1}`} type="number" min={1} max={10000} step={1} value={Number.isNaN(line.qty) ? "" : line.qty} disabled={busy || disabled || !matched(line.index)} onChange={e => setLines(rows => rows.map(row => row.index === line.index ? { ...row, qty: e.target.valueAsNumber } : row))} /></label>
       <button type="button" className={btnSecondary} aria-label={`Remove cart item ${line.index + 1}`} disabled={busy || disabled || lines.length === 1} onClick={() => setLines(rows => rows.filter(row => row.index !== line.index))}>Remove</button>
     </div>)}
-    {dirty && <div className="flex gap-2 my-3"><button type="button" className={btnPrimary} disabled={busy || disabled || lines.some(l => !Number.isInteger(l.qty) || l.qty < 1 || l.qty > 10000)} onClick={() => void save()}>{busy ? "Saving…" : "Save cart changes"}</button><button className={btnSecondary} disabled={busy || disabled} onClick={() => { setLines(original); setError(null); }}>Discard changes</button></div>}
+    {dirty && <div className="flex gap-2 my-3"><button type="button" className={btnPrimary} disabled={busy || disabled || matchedLines.length === 0 || matchedLines.some(l => !Number.isInteger(l.qty) || l.qty < 1 || l.qty > 10000)} onClick={() => void save()}>{busy ? "Saving…" : "Save cart changes"}</button><button className={btnSecondary} disabled={busy || disabled} onClick={() => { setLines(original); setError(null); }}>Discard changes</button></div>}
     <div className="flex flex-wrap gap-2 items-end mt-4">
       <label className={`${label} flex-1`}>Save these items as a list<input className={input} placeholder="Weekly groceries" value={name} maxLength={80} disabled={busy || disabled} onChange={e => setName(e.target.value)} /></label>
-      <button className={btnSecondary} disabled={busy || disabled || dirty || !name.trim()} onClick={async () => { if (!current() || busy) return; setBusy(true); setError(null); try { await api.saveShoppingList({ name: name.trim(), items: order.lines.map(line => ({ name: line.product?.name ?? line.requested, qty: line.qty })) }); if (current()) { setNotice("Saved to shopping lists."); setName(""); } } catch (cause) { if (current()) setError(errMsg(cause)); } finally { if (current()) setBusy(false); } }}>Save as list</button>
+      <button className={btnSecondary} disabled={busy || disabled || dirty || !name.trim()} onClick={async () => { if (!current() || busy) return; setBusy(true); setError(null); try { await api.saveShoppingList({ name: name.trim(), items: listItems }); if (current()) { setNotice("Saved to shopping lists."); setName(""); } } catch (cause) { if (current()) setError(errMsg(cause)); } finally { if (current()) setBusy(false); } }}>Save as list</button>
     </div>
+    {hasUnmatched && <p role="status" className="mt-2 text-sm">Items we couldn't find aren't saved.</p>}
     {dirty && <p role="status" className="mt-2 text-sm">Unsaved changes. Save the cart before approving or creating a checkout link.</p>}
     {notice && <p role="status" className="mt-2 text-sm">{notice}</p>}
   </div>;

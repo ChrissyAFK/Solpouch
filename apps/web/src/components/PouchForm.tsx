@@ -94,6 +94,7 @@ export function PouchForm({
   return (
     <form
       className="space-y-6"
+      noValidate
       onSubmit={async (e) => {
         e.preventDefault();
         if (busy) return;
@@ -104,11 +105,11 @@ export function PouchForm({
           const v = Number(raw);
           return raw.trim() === "" || !Number.isFinite(v) || v < 0 || !Number.isSafeInteger(toMicros(v));
         };
-        if (invalid(maxPerOrder) || invalid(dailyLimit)) {
-          setFieldErrors({
-            max: invalid(maxPerOrder) ? "Enter a valid amount." : undefined,
-            daily: invalid(dailyLimit) ? "Enter a valid amount." : undefined,
-          });
+        const over = (raw: string) => Number(raw) > 10000;
+        const msg = (raw: string) =>
+          invalid(raw) ? "Enter a valid amount." : over(raw) ? "Limits can be at most $10,000." : undefined;
+        if (msg(maxPerOrder) || msg(dailyLimit)) {
+          setFieldErrors({ max: msg(maxPerOrder), daily: msg(dailyLimit) });
           return;
         }
         const stores = mode === "any" ? [] : [...new Set(allowed)];
@@ -196,6 +197,7 @@ export function PouchForm({
               required
               type="number"
               min="0.01"
+              max="10000"
               step="0.01"
               inputMode="decimal"
               placeholder="25.00"
@@ -223,6 +225,7 @@ export function PouchForm({
               required
               type="number"
               min="0.01"
+              max="10000"
               step="0.01"
               inputMode="decimal"
               placeholder="50.00"
