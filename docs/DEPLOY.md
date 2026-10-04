@@ -1,6 +1,9 @@
 # Moving production off the laptop
 
-Today solpouch.tech runs on Tariq's laptop: `restart-prod.ps1` starts the backend (`:8787`) and
+**Done 2026-10-04:** solpouch.tech now runs on the VPS below. The laptop's "Solpouch Tunnel" task is
+disabled and its backend and web are stopped; the steps are kept for rollback and for reference.
+
+Before the cutover, solpouch.tech ran on Tariq's laptop: `restart-prod.ps1` starts the backend (`:8787`) and
 `next start` (`:3019`), and a Cloudflare tunnel maps `api.solpouch.tech` and `solpouch.tech` to them.
 Postgres is already hosted (Tiger Data, AWS us-east-1), so only the two Node processes move.
 
@@ -90,7 +93,9 @@ curl -I https://next.solpouch.tech/            # 200 (sign-in won't work on this
 3. In Cloudflare DNS, replace the tunnel records for `@`, `www` and `api` with A → `5.78.87.188`, DNS only.
    Delete the `next`, `www.next` and `api-next` records.
 4. The teammate switches the Solpouch blocks in the shared Caddyfile to the real hosts (as in
-   `deploy/vps/Caddyfile`) and reloads the proxy.
+   `deploy/vps/Caddyfile`) and reloads the proxy. Do this after DNS points at the server: Caddy backs off
+   after failed certificate attempts, and `caddy reload --force` makes it retry at once (about a minute).
+   In Cloudflare, a Tunnel record's type can be changed to A in place from its Edit form.
 5. On the server: `docker compose down && docker compose up -d`.
 6. Check:
    - `https://api.solpouch.tech/health` and `https://solpouch.tech/funding` return 200
