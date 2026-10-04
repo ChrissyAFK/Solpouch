@@ -2,7 +2,7 @@ import { prepareDemoCheckout } from "../services/demoCheckout.js";
 import { SCRIPT_UNDER_15_SAY, demoVoiceRequest, scriptedDemoMatch } from "../services/demoScript.js";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
-import { consumeBudget, clientIp } from "../security/rateLimit.js";
+import { consumeBudget, clientIp, RateLimitError } from "../security/rateLimit.js";
 import { verifyVoiceToken } from "../auth/session.js";
 import { z } from "zod";
 import { isCheckoutReference, toUsdc, type Order } from "@solpouch/shared";
@@ -50,6 +50,14 @@ const orderIdBody = z.object({ orderId: z.string().min(1).max(100), user_token: 
 
 const MAX_FAILS = 10;
 const LOCK_MS = 10 * 60_000;
+/** Per-process lockouts: the store has no read-only budget check, so remember when a budget ran out. */
+const lockedUntil = new Map<string, number>();
+const fails = new Map<string, { n: number; reset: number }>();
+function httpSay(e: HttpError) {
+  const m = /^Order is (\w+), not draft$/.exec(e.message);
+  const say = e.status === 404 ? (e.message && e.message !== "Not found" ? e.message : "I couldn't find that order.") : m ? `That order can't be cancelled because it is already ${m[1]}.` : e.message;
+  return { say, needsConfirmation: false, ...(e.code ? { code: e.code } : {}) };
+}
 function safeEqual(a: string, b: string): boolean {
   const ha = createHash("sha256").update(a).digest();
   const hb = createHash("sha256").update(b).digest();
@@ -63,7 +71,13 @@ export function voiceRoutes(deps: Deps) {
     const secret = process.env.VOICE_WEBHOOK_SECRET || process.env.ELEVENLABS_TOOL_SECRET;
     if (secret) {
       const ip = clientIp(c);
+      const until = lockedUntil.get(ip) ?? 0;
+      if (until > Date.now()) throw new RateLimitError(Math.max(1, Math.ceil((until - Date.now()) / 1000)));
       if (!safeEqual(c.req.header("X-Solpouch-Secret") ?? "", secret)) {
+        const f = fails.get(ip);
+        const n = f && f.reset > Date.now() ? f.n + 1 : 1;
+        fails.set(ip, { n, reset: f && f.reset > Date.now() ? f.reset : Date.now() + LOCK_MS });
+        if (n >= MAX_FAILS) lockedUntil.set(ip, fails.get(ip)!.reset);
         await consumeBudget(deps.store, `voice-secret:${ip}`, LOCK_MS, MAX_FAILS);
         return c.json({ error: "Unauthorized" }, 401);
       }
@@ -116,11 +130,13 @@ export function voiceRoutes(deps: Deps) {
         try {
           const order = await prepareDemoCheckout(deps,email,orderId,version);
           return c.json({say:readback(order),orderId:order.id,version:order.version,needsConfirmation:true,demo:true});
-        } catch (e) { if (e instanceof HttpError) return c.json({say:e.message,code:e.code,needsConfirmation:false}); throw e; }
+        } catch (e) { if (e instanceof HttpError) return c.json(httpSay(e)); throw e; }
       }
       case "confirm_order": {
         const { orderId, version } = orderIdBody.extend({version:z.number().int().positive().optional()}).parse(body);
-        const draft = await getOwnedOrder(deps, orderId, email);
+        let draft: Order;
+        try { draft = await getOwnedOrder(deps, orderId, email); }
+        catch (e) { if (e instanceof HttpError) return c.json(httpSay(e)); throw e; }
         if (draft.status === "draft" && draft.version !== (version ?? -1)) return c.json({say:"This cart changed. Review it again before approving.",status:"draft",code:"RecordChanged"});
         if (draft.status === "draft" && Date.now() - Date.parse(draft.fulfillment?.demo?.preparedAt ?? draft.createdAt) < VOICE_CONFIRM_MIN_AGE_MS) return c.json({say:"Please listen to the read-back first, then say yes again to place the order.",status:"draft",needsConfirmation:true});
         try {
@@ -137,13 +153,16 @@ export function voiceRoutes(deps: Deps) {
           if (e instanceof HttpError && e.code) {
             return c.json({ say: `That payment was refused: ${e.code}. No money moved.`, status: "rejected", code: e.code });
           }
+          if (e instanceof HttpError) return c.json(httpSay(e));
           throw e;
         }
       }
       case "cancel_order": {
         const { orderId } = orderIdBody.parse(body);
-        const order = await cancelOrder(deps, email, orderId);
-        return c.json({ say: "Okay, cancelled.", status: order.status });
+        try {
+          const order = await cancelOrder(deps, email, orderId);
+          return c.json({ say: "Okay, cancelled.", status: order.status });
+        } catch (e) { if (e instanceof HttpError) return c.json(httpSay(e)); throw e; }
       }
       case "freeze_all": {
         const pouches = await deps.store.listPouches(email);

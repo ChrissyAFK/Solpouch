@@ -45,7 +45,9 @@ export function createApp(deps: Deps) {
 
   app.use("*", secureHeaders());
   app.use("*", async(c,next) => { c.header("Cache-Control","no-store"); await next(); });
-  app.use("*", bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "Request body too large" } satisfies ApiError, 413) }));
+  const globalBodyLimit = bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "Request body too large" } satisfies ApiError, 413) });
+  // /chat enforces its own, larger limit in routes/chat.ts.
+  app.use("*", (c, next) => (c.req.path === "/chat" || c.req.path.startsWith("/chat/") ? next() : globalBodyLimit(c, next)));
   const stripeWebhook = (c: {req:{method:string;path:string}}) => c.req.method === "POST" && c.req.path === "/funding-webhooks/stripe";
   const corsMiddleware = cors({
       origin: (o) => (origins.includes(o) ? o : null),
