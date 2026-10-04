@@ -81,6 +81,12 @@ if (!byName.has("prepare_demo_checkout")) {
     await call("PATCH", `/agents/${id}`, { conversation_config: { agent: { prompt: { ...curPrompt, tool_ids: ids } } } });
   }
 }
+// Keep the live prepare_demo_checkout description in step with voice/tools.json.
+const prep = byName.get("prepare_demo_checkout");
+if (prep && prep.config.description !== wanted.description) {
+  actions.push("prepare_demo_checkout: description");
+  if (!dry) await call("PATCH", `/tools/${prep.id}`, { tool_config: { ...prep.config, description: wanted.description } });
+}
 // The cart search takes up to ~9 s; a typing sound fills that silence. Only slow tools get it.
 for (const name of ["create_order", "prepare_demo_checkout", "confirm_order"]) {
   const t = byName.get(name);

@@ -73,6 +73,27 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(ha, hb);
 }
 
+/** Pays an approved draft and turns the outcome into what the agent says. */
+async function payAndSay(deps: Deps, email: string, orderId: string, version: number) {
+  try {
+    const order = await confirmOrder(deps, email, orderId, version);
+    return { say: order.fulfillment?.via === "demo" ? `Payment complete: ${usd(order.fulfillment.demo?.sourceTotal ?? order.total)}.` : `Payment recorded: ${usd(order.total)}.`, status: order.status };
+  } catch (e) {
+    if (e instanceof HttpError && (e.code === "WebCheckoutRequired" || e.code === "RecordChanged")) {
+      return { say: e.message, status: "draft", code: e.code };
+    }
+    if (e instanceof HttpError && e.code === "PaymentPending") {
+      // The outcome is unknown: money may have moved. Never tell the caller it was refused.
+      return { say: PENDING_SAY, status: "paying", code: e.code };
+    }
+    if (e instanceof HttpError && e.code) {
+      return { say: `That payment was refused: ${e.code}. No money moved.`, status: "rejected", code: e.code };
+    }
+    if (e instanceof HttpError) return httpSay(e);
+    throw e;
+  }
+}
+
 export function voiceRoutes(deps: Deps) {
   const app = new Hono();
 
@@ -136,8 +157,11 @@ export function voiceRoutes(deps: Deps) {
       case "prepare_demo_checkout": {
         const {orderId,version} = orderIdBody.extend({version:z.number().int().positive()}).parse(body);
         try {
+          // The user's "yes, pay for it" after the cart readback is the approval: quote and pay in one step.
+          const draft = await getOwnedOrder(deps, orderId, email);
+          if (draft.status === "draft" && Date.now() - Date.parse(draft.createdAt) < VOICE_CONFIRM_MIN_AGE_MS) return c.json({say:"Please listen to the read-back first, then say yes again to pay.",status:"draft",needsConfirmation:true});
           const order = await prepareDemoCheckout(deps,email,orderId,version);
-          return c.json({say:readback(order),orderId:order.id,version:order.version,needsConfirmation:true,demo:true});
+          return c.json(await payAndSay(deps, email, order.id, order.version ?? -1));
         } catch (e) { if (e instanceof HttpError) return c.json(httpSay(e)); throw e; }
       }
       case "confirm_order": {
@@ -147,23 +171,7 @@ export function voiceRoutes(deps: Deps) {
         catch (e) { if (e instanceof HttpError) return c.json(httpSay(e)); throw e; }
         if (draft.status === "draft" && draft.version !== (version ?? -1)) return c.json({say:"This cart changed. Review it again before approving.",status:"draft",code:"RecordChanged"});
         if (draft.status === "draft" && Date.now() - Date.parse(draft.fulfillment?.demo?.preparedAt ?? draft.createdAt) < VOICE_CONFIRM_MIN_AGE_MS) return c.json({say:"Please listen to the read-back first, then say yes again to place the order.",status:"draft",needsConfirmation:true});
-        try {
-          const order = await confirmOrder(deps, email, orderId, version ?? -1);
-          return c.json({ say: order.fulfillment?.via === "demo" ? `Payment complete: ${usd(order.fulfillment.demo?.sourceTotal ?? order.total)}.` : order.txSignature?.startsWith("mock") ? `Payment recorded: ${usd(order.total)}.` : `Payment recorded: ${usd(order.total)}.`, status: order.status });
-        } catch (e) {
-          if (e instanceof HttpError && (e.code === "WebCheckoutRequired" || e.code === "RecordChanged")) {
-            return c.json({ say: e.message, status: "draft", code: e.code });
-          }
-          if (e instanceof HttpError && e.code === "PaymentPending") {
-            // The outcome is unknown: money may have moved. Never tell the caller it was refused.
-            return c.json({ say: PENDING_SAY, status: "paying", code: e.code });
-          }
-          if (e instanceof HttpError && e.code) {
-            return c.json({ say: `That payment was refused: ${e.code}. No money moved.`, status: "rejected", code: e.code });
-          }
-          if (e instanceof HttpError) return c.json(httpSay(e));
-          throw e;
-        }
+        return c.json(await payAndSay(deps, email, orderId, version ?? -1));
       }
       case "cancel_order": {
         const { orderId } = orderIdBody.parse(body);

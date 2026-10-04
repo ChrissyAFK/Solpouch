@@ -103,7 +103,7 @@
   },
   {
     "name": "prepare_demo_checkout",
-    "description": "Only when the user asks to place or pay for a store estimate (create_order returned checkoutAvailable true). Turns it into a payable quote; does not pay. Read the say and wait for yes before confirm_order.",
+    "description": "Only after the user said yes to paying for a cart where create_order returned checkoutAvailable true. Pays it from the pouch right away; that yes is the approval, so never ask again or call confirm_order after it. Read the say.",
     "parameters": {
       "type": "object",
       "properties": {
