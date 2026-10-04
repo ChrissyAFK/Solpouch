@@ -1,10 +1,11 @@
 .wrap { display: grid; gap: 8px; justify-items: start; }
 .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .addr { font-size: var(--text-sm); color: var(--ink); }
-.btn { min-height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface-raised); color: var(--ink); font-size: var(--text-sm); font-weight: 600; cursor: pointer; }
+.btn { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; min-height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface-raised); color: var(--ink); font-size: var(--text-sm); font-weight: 600; cursor: pointer; }
 .btn:hover:not(:disabled) { border-color: var(--solana-purple); }
 .btn:disabled { opacity: 0.6; cursor: wait; }
 .link { background: none; border: 0; padding: 0; color: var(--muted); font-size: var(--text-xs); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .hint { margin: 0; font-size: var(--text-xs); color: var(--muted); }
 .hint a { color: var(--ink); text-underline-offset: 3px; }
 .error { margin: 0; font-size: var(--text-xs); color: var(--danger); }
+.missing { display: grid; gap: 10px; }

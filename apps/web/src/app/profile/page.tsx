@@ -269,16 +269,31 @@ export default function ProfilePage() {
 
       <PreferencesCard />
 
-      <section className="sp-card" aria-labelledby="wallet-title">
-        <h2 id="wallet-title" className={styles.heading}>
-          Wallet
-        </h2>
-        <p className={styles.hint}>
-          Your linked wallet is used to add money to your pouches. Linking it
-          only proves it&apos;s yours; it doesn&apos;t move money.
-        </p>
-        <WalletLink />
-        <Link href="/funding" className="underline">Add or withdraw wallet funds</Link>
+      <section className="sp-card wallet-card" aria-labelledby="wallet-title">
+        <div className="wallet-card-head">
+          <span className="wallet-card-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+              <path d="M21 9h-5a3 3 0 0 0 0 6h5V9Z" />
+            </svg>
+          </span>
+          <div>
+            <h2 id="wallet-title" className={styles.heading}>
+              Wallet
+            </h2>
+            <p className={styles.hint}>
+              Used to add money to your pouches. Linking only proves it&apos;s
+              yours; it never moves money.
+            </p>
+          </div>
+        </div>
+        <div className="wallet-card-body">
+          <WalletLink />
+        </div>
+        <Link href="/funding" className="wallet-card-link">
+          <span>Add or withdraw funds</span>
+          <span aria-hidden="true">→</span>
+        </Link>
       </section>
 
       <ErrorBanner message={error} />

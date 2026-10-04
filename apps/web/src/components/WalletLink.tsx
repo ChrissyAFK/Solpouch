@@ -137,13 +137,19 @@ export function WalletLink() {
           </button>
         </div>
       ) : available === false ? (
-        <p className={styles.hint}>
-          No wallet found. Install{" "}
-          <a href="https://phantom.app" target="_blank" rel="noreferrer">
-            Phantom
-          </a>{" "}
-          or Solflare, then reload.
-        </p>
+        <div className={styles.missing}>
+          <p className={styles.hint}>
+            No Solana wallet in this browser. Install one, then reload this page.
+          </p>
+          <div className={styles.row}>
+            <a className={styles.btn} href="https://phantom.app/download" target="_blank" rel="noreferrer">
+              Get Phantom <span aria-hidden="true">↗</span>
+            </a>
+            <a className={styles.btn} href="https://solflare.com/download" target="_blank" rel="noreferrer">
+              Get Solflare <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+        </div>
       ) : (
         <button
           type="button"

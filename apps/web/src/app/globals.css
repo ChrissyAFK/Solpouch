@@ -946,6 +946,163 @@ h1 {
   max-width: 80ch;
   line-height: 1.5;
 }
+/* Profile: spending alerts toggle */
+.alert-pref {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+.alert-pref-text h2 {
+  margin: 0 0 6px;
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+.alert-pref-text > p {
+  margin: 0;
+  max-width: 46ch;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--muted);
+}
+.alert-pref-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.alert-pref-kinds li {
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  font-size: var(--text-xs);
+  color: var(--ink);
+}
+.alert-pref .alert-pref-error {
+  margin-top: 10px;
+  color: var(--danger);
+}
+.sp-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.sp-switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.sp-switch-track {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--track, var(--line-strong));
+  border: 1px solid var(--line-strong);
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+.sp-switch-track > span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+  transition: transform 160ms ease;
+}
+.sp-switch input:checked + .sp-switch-track {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+.sp-switch input:checked + .sp-switch-track > span {
+  transform: translateX(18px);
+}
+.sp-switch input:focus-visible + .sp-switch-track {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.sp-switch-label {
+  min-width: 2ch;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* Profile: wallet card */
+.wallet-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.wallet-card-head h2 {
+  font-size: var(--text-base);
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+.wallet-card-head p {
+  margin: 0;
+  max-width: 52ch;
+  line-height: 1.5;
+}
+.wallet-card-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+.wallet-card-body {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-raised);
+}
+.wallet-card-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .wallet-card-link:hover {
+    border-color: var(--brand);
+    background: var(--brand-soft);
+  }
+}
+@media (max-width: 540px) {
+  .alert-pref {
+    gap: 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sp-switch-track,
+  .sp-switch-track > span {
+    transition: none;
+  }
+}
+
 .sp-footnote {
   margin: 16px 0 0;
   max-width: 80ch;

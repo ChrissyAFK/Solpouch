@@ -13,14 +13,26 @@ export function AlertPreferences() {
   const [enabled, setEnabled] = useState(false);
   const [error, setError] = useState(false);
   useEffect(() => { if (user) setEnabled(enabledFor(user.email)); }, [user]);
-  return <section className="sp-card space-y-3"><h2 className="text-lg font-semibold">Spending alerts</h2>
-    <label className="flex items-start gap-3"><input type="checkbox" checked={enabled} onChange={event => {
-      if (!user) return;
-      try { localStorage.setItem(preferenceKey(user.email), String(event.target.checked)); setEnabled(event.target.checked); setError(false); window.dispatchEvent(new Event(eventName)); }
-      catch { setError(true); }
-    }} /> Show ready top-ups and 80% daily-budget alerts in this browser</label>
-    <p className="text-sm text-[var(--muted)]">Optional, account-specific alerts while Solpouch is open. No email, push notifications, or payment actions.</p>
-    {error && <p role="alert">This browser could not save the preference.</p>}
+  return <section className="sp-card alert-pref" aria-labelledby="alert-pref-title">
+    <div className="alert-pref-text">
+      <h2 id="alert-pref-title">Spending alerts</h2>
+      <p id="alert-pref-desc">Heads-up banners while Solpouch is open in this browser. No emails, push notifications, or payments.</p>
+      <ul className="alert-pref-kinds" aria-label="Alerts you'll get">
+        <li>Top-ups ready to finish</li>
+        <li>80% of a daily limit used</li>
+      </ul>
+      {error && <p role="alert" className="alert-pref-error">This browser could not save the preference.</p>}
+    </div>
+    <label className="sp-switch">
+      <span className="sr-only">Show spending alerts in this browser</span>
+      <input type="checkbox" role="switch" aria-describedby="alert-pref-desc" checked={enabled} onChange={event => {
+        if (!user) return;
+        try { localStorage.setItem(preferenceKey(user.email), String(event.target.checked)); setEnabled(event.target.checked); setError(false); window.dispatchEvent(new Event(eventName)); }
+        catch { setError(true); }
+      }} />
+      <span className="sp-switch-track" aria-hidden="true"><span /></span>
+      <span className="sp-switch-label" aria-hidden="true">{enabled ? "On" : "Off"}</span>
+    </label>
   </section>;
 }
 type Alert = { id: string; text: string; href: string };
