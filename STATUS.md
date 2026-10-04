@@ -1,5 +1,7 @@
 # Status
 
+Current audit fixes and local verification are tracked in `docs/AUDIT_FIXES.md`. Historical deployment observations below are not proof of the current live environment.
+
 Dashboard redesign from `codex/dashboard-design` is merged into `scaffold` (not merged to main).
 
 ## Done
@@ -19,19 +21,19 @@ Dashboard redesign from `codex/dashboard-design` is merged into `scaffold` (not 
 - ElevenLabs agent `agent_5201m41wvxthe08tk6nm81391sss`: prompt from `voice/prompt.md`, Gemini 2.5 Flash, 5 webhook tools (POST, header `X-Solpouch-Secret` from workspace secret, synced to `.env` `ELEVENLABS_TOOL_SECRET`). No-arg tools carry an optional `note` field because ElevenLabs requires a body schema on POST.
 - Tool URLs point at a cloudflared quick tunnel, which changes on every restart. After a restart, rerun the tool setup with the new URL, or move to a named tunnel on solpouch.tech.
 
-- Backend runs on Tiger Postgres (`apps/backend/src/store/postgres.ts`, schema applied and seeded on start) with `VAULT_MODE=chain`: on start it creates any missing pouch PDAs on devnet and funds them from the owner wallet (`ensureOnChain`), and `vault/synced.ts` mirrors balance, spentToday and frozen back into the store after every write. Signers come from `.keys/owner.json` and `.keys/agent.json` (gitignored). The backend signs owner actions only for the demo; in production the owner signs in their wallet.
+- Backend runs on Tiger Postgres (`apps/backend/src/store/postgres.ts`, schema applied and seeded on start) with `VAULT_MODE=chain`: on start it only reads existing pouch state from the chain; it never creates or funds pouches automatically, and `vault/synced.ts` mirrors balance, spentToday and frozen back into the store after every write. Signers come from `.keys/owner.json` and `.keys/agent.json` (gitignored). The backend signs owner actions only for the demo; in production the owner signs in their wallet.
 - Verified end to end on 2026-10-03: a draft order is confirmed with a real devnet tx and the balance syncs; freeze and unfreeze work; the voice webhook via the tunnel answers with the secret and returns 401 without it. A voice call in the ElevenLabs Preview (Mock tools off) reads live balances.
 
 ## Abuse protection (2026-10-03)
 
-- Backend (`apps/backend/src/security/rateLimit.ts`, `app.ts`): per-IP limits (all routes 120/min, writes 30/min, `/chat` and `POST /orders` 10/min and 200/day, top-ups 5/min, `/voice/*` 60/min), 64KB body limit, secure headers, CORS only for `WEB_ORIGINS` (default localhost:3000 and solpouch.tech). Requests that come through the Cloudflare tunnel can only reach `/health` and `/voice/*` unless `PUBLIC_API=all`. The voice secret is compared in constant time, and 10 wrong secrets lock an IP out for 10 minutes. Inputs are capped (names 60 chars, amounts 10,000 USDC, max 50 pouches).
+- Backend limits use persistent Store counters. Forwarded client addresses are accepted only from configured `TRUSTED_PROXY_IPS`, using `TRUSTED_PROXY_HEADER`. AI calls share a per-account minute/day budget across chat, orders and voice. The 64KB body limit, CORS and secure headers remain. Repeated invalid voice secrets are rate-limited. A header's mere presence no longer identifies trusted tunnel traffic; restrict exposed paths at the actual ingress when needed.
 - ElevenLabs agent: origin allowlist (localhost, solpouch.tech, www.solpouch.tech), Origin header required, 5 concurrent calls, 300 a day, 5-minute calls, hang up after 30s of silence.
 - The backend no longer seeds placeholder pouches on start (tests still use `seedPouches()`).
 
 ## Google sign-in and solpouch.tech (2026-10-03)
 
-- Sign in with Google (Identity Services ID token). The backend verifies it against Google's keys (`GOOGLE_CLIENT_ID`, verified email only) and issues a 7-day session JWT (`SESSION_SECRET`). Pouches, orders, top-ups, stats and chat are scoped to the signed-in email; other users' items return 404. `LEGACY_OWNER_EMAIL` in `.env` owns pouches created before sign-in.
-- Voice: the web app fetches a 15-minute voice token (`POST /auth/voice-token`) and passes it to the ElevenLabs agent as the `user_token` dynamic variable; every voice tool requires it.
+- Sign in with Google (Identity Services ID token). The backend verifies it against Google's keys (`GOOGLE_CLIENT_ID`, verified email only) and issues a 7-day JWT referencing a persisted, revocable session (`SESSION_SECRET`). Old stateless tokens require signing in again. Pouches, orders, top-ups, stats and chat are scoped to the signed-in email; other users' items return 404. `LEGACY_OWNER_EMAIL` in `.env` owns pouches created before sign-in.
+- Voice: the web app fetches a 15-minute voice token (`POST /auth/voice-token`) and passes it to the ElevenLabs agent as the `user_token` dynamic variable; every voice tool requires it and verifies that its parent session is still active. Signing out or revoking the parent invalidates voice tools immediately.
 - Production requires `SESSION_SECRET` and `ELEVENLABS_TOOL_SECRET`.
 - The site needs `Cross-Origin-Opener-Policy: same-origin-allow-popups`, or the Google popup hangs blank on `/gsi/transform`.
 - Live at https://solpouch.tech through the named Cloudflare tunnel `solpouch` (`api.solpouch.tech` -> :8787, site -> the production `next start` port). Voice tool URLs use `https://api.solpouch.tech/voice/tools/<name>`.
@@ -47,7 +49,7 @@ Dashboard redesign from `codex/dashboard-design` is merged into `scaffold` (not 
 ```
 pnpm install
 cp .env.example .env      # keys go here only, never in apps/web
-pnpm dev:backend          # http://localhost:8787, works offline with seeded pouches
+pnpm dev:backend          # http://localhost:8787; no placeholder pouches seeded
 pnpm dev:web              # http://localhost:3000
 pnpm --filter @solpouch/backend test
 cd programs/solpouch_vault && cargo test
@@ -66,7 +68,7 @@ The floating **Ask Solpouch** widget talks to the ElevenLabs agent (`NEXT_PUBLIC
 
 The Gemini fallback uses the existing Gemini integration. Set `GEMINI_API_KEY` in the ignored root `.env` to enable model replies; `GEMINI_MODEL` optionally overrides the existing default model. Restart the backend after changing environment configuration. Keep keys on the backend.
 
-Without a key, the widget explicitly shows **Demo mode** and offers limited responses based on current pouch data. Chat does not execute payments or change pouch rules. Shopping requests open the existing order form for review and approval. Conversation history stays in the current browser page session and resets on refresh.
+Without a key, the widget explicitly shows **Demo mode** and offers limited responses based on current pouch data. The text-model fallback has no action tools. Account-backed cart cards display current orders and let the user explicitly approve catalog payments or check pending status. Instacart links hand off checkout without moving pouch funds. Conversation history stays in the current browser page session and resets on refresh.
 
 ## Mobile, metadata and page states
 

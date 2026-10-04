@@ -1,4 +1,5 @@
 "use client";
+import { useRequestScope } from "@/lib/useRequestScope";
 import { StatePanel } from "@/components/StatePanel";
 import { RowsSkeleton } from "@/components/Skeletons";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -18,7 +19,9 @@ export default function PouchesPage() {
   const [loadError, setLoadError] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const formRef = useRef<HTMLElement>(null);
+  const beginRequest = useRequestScope();
   const load = useCallback(async (quiet = false) => {
+    const current = beginRequest();
     if (!quiet) {
       setLoading(true);
       setLoadError(false);
@@ -26,19 +29,22 @@ export default function PouchesPage() {
     }
     try {
       const [p, m] = await Promise.all([api.pouches(), api.merchants()]);
+      if (!current()) return;
       setPouches(p);
       setMerchants(m);
       setLoadError(false);
       setError(null);
     } catch (e) {
+      if (!current()) return;
+      setError(errMsg(e));
       if (!quiet) {
         setLoadError(true);
         setError(errMsg(e));
       }
     } finally {
-      if (!quiet) setLoading(false);
+      if (current()) setLoading(false);
     }
-  }, []);
+  }, [beginRequest]);
   useEffect(() => {
     void load();
   }, [load]);

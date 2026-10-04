@@ -23,6 +23,7 @@ export const WEB_PREFIX = "web:";
 export const isAnyStore = (p: Pick<Pouch, "allowedMerchantIds">) => p.allowedMerchantIds.length === 0;
 
 export interface Pouch {
+  version?: number;
   id: string;
   /** On-chain Pouch PDA address. */
   address: string;
@@ -73,6 +74,8 @@ export type OrderStatus =
   | "cancelled";
 
 export interface Order {
+  version?: number;
+  paidAt?: string;
   id: string; // also the on-chain order_id (16 bytes, hex)
   pouchId: string;
   merchantId: string;
@@ -85,7 +88,7 @@ export interface Order {
   txSignature?: string;
   createdAt: string;
   store?: { name: string; domain: string; url?: string };
-  fulfillment?: { via: "direct" | "instacart" | "service"; label: string; checkoutUrl?: string };
+  fulfillment?: { via: "direct" | "instacart" | "service"; label: string; checkoutUrl?: string; linkStatus?: "ready" | "unavailable" | "not_configured"; linkCreatedAt?: string; linkExpiresAt?: string };
 }
 
 /** Web search results are references, never retailer-authorized payment quotes.
@@ -96,9 +99,17 @@ export function isCheckoutReference(order: Order): boolean {
     order.lines.some((line) => line.product?.estimated === true);
 }
 
-export type TopUpStatus = "started" | "cooling_down" | "completed" | "cancelled";
+/** Creating a checkout link does not convert the original quote currency. */
+export function orderCurrency(order: Order): "CAD" | "USDC" {
+  return order.merchantId.startsWith(WEB_PREFIX) || !!order.store || order.lines.some(l=>l.product?.estimated) ? "CAD" : "USDC";
+}
+
+export type TopUpStatus = "started" | "cooling_down" | "processing" | "completed" | "cancelled";
 
 export interface TopUp {
+  version?: number;
+  txSignature?: string;
+  completedAt?: string;
   id: string;
   pouchId: string;
   amount: Micros;

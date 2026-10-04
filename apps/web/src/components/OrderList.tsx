@@ -37,7 +37,7 @@ export function OrderList({
         >
           <span className="order-identity">
             <strong>
-              {merchants.find((m) => m.id === o.merchantId)?.name ?? "Order"}
+              {o.store?.name ?? o.store?.domain ?? merchants.find((m) => m.id === o.merchantId)?.name ?? "Order"}
             </strong>
             <span>
               {pouches?.find((p) => p.id === o.pouchId)?.name ?? "Pouch"}
@@ -50,7 +50,7 @@ export function OrderList({
             })}
           </span>
           <span className={`order-status status-${o.status}`}>
-            {o.status === "draft" ? "Awaiting review" : o.status}
+            {o.status === "draft" ? "Awaiting review" : o.status === "paying" ? "Checking payment" : o.status}
           </span>
           <strong className="order-amount">{usd(toUsdc(o.total))}</strong>
           <Icon name="arrow" size={15} />

@@ -1,3 +1,6 @@
+import { consumeAiBudget } from "../security/rateLimit.js";
+import { validateOrderLines } from "./orderValidation.js";
+import { PaymentPending } from "../vault/recovery.js";
 import { randomBytes } from "node:crypto";
 import { WEB_PREFIX, isAnyStore, isCheckoutReference, toMicros, type Merchant, type Order, type OrderLine, type Pouch } from "@solpouch/shared";
 import { findOnline } from "../ai/findOnline.js";
@@ -28,26 +31,33 @@ export async function getOwnedOrder(deps: Deps, id: string, ownerEmail: string):
   if (!o) throw new HttpError(404, "Order not found");
   const p = await deps.store.getPouch(o.pouchId);
   if (!p || p.ownerEmail !== ownerEmail) throw new HttpError(404, "Order not found");
-  return o;
+  return withPaymentSignature(deps, o);
+}
+
+async function withPaymentSignature(deps: Deps, order: Order): Promise<Order> {
+  if (order.status !== "paying" || order.txSignature) return order;
+  const operation=await deps.store.getOperation(`pay:${order.id}`);
+  return operation && operation.kind==="pay" && operation.pouchId===order.pouchId ? {...order,txSignature:operation.txSignature} : order;
 }
 
 export async function listOwnedOrders(deps: Deps, ownerEmail: string, pouchId?: string): Promise<Order[]> {
   if (pouchId) {
     await getOwnedPouch(deps, pouchId, ownerEmail);
-    return deps.store.listOrders(pouchId);
+    return Promise.all((await deps.store.listOrders(pouchId)).map(o=>withPaymentSignature(deps,o)));
   }
   const ids = new Set((await deps.store.listPouches(ownerEmail)).map((p) => p.id));
-  return (await deps.store.listOrders()).filter((o) => ids.has(o.pouchId));
+  return Promise.all((await deps.store.listOrders()).filter((o) => ids.has(o.pouchId)).map(o=>withPaymentSignature(deps,o)));
 }
 
 export class HttpError extends Error {
-  constructor(public status: 400 | 404 | 409 | 422, message: string, public code?: string) {
+  constructor(public status: 400 | 401 | 403 | 404 | 409 | 413 | 422 | 429 | 503, message: string, public code?: string) {
     super(message);
   }
 }
 
 /** parse -> pick pouch -> pick merchant -> match -> total. Returns a draft order. */
 export async function createDraft(deps: Deps, ownerEmail: string, request: string, pouchId?: string): Promise<Order> {
+  await consumeAiBudget(deps.store, ownerEmail);
   const parsed = await parseRequest(request);
   if (!parsed.items.length) throw new HttpError(400, "Could not find any items in that request");
   const pouches = await deps.store.listPouches(ownerEmail);
@@ -152,7 +162,7 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
       merchantId: merchant.id,
       request,
       lines,
-      total: lines.reduce((s, l) => s + l.lineTotal, 0),
+      total: validateOrderLines(lines),
       status: "draft",
       createdAt: new Date().toISOString(),
       store,
@@ -185,7 +195,7 @@ function catalogOrder(id: string, pouch: Pouch, merchant: Merchant, request: str
     merchantId: merchant.id,
     request,
     lines,
-    total: lines.reduce((s, l) => s + l.lineTotal, 0),
+    total: validateOrderLines(lines),
     status: "draft",
     createdAt: new Date().toISOString(),
     fulfillment: { via: "direct", label: merchant.name },
@@ -193,45 +203,41 @@ function catalogOrder(id: string, pouch: Pouch, merchant: Merchant, request: str
 }
 
 export async function confirmOrder(deps: Deps, ownerEmail: string, id: string): Promise<Order> {
-  const order = await getOwnedOrder(deps, id, ownerEmail);
-  if (order.status !== "draft") throw new HttpError(409, `Order is ${order.status}, not draft`);
-  if (order.total <= 0) throw new HttpError(400, "Order has nothing to pay for");
-  const pouch = await deps.store.getPouch(order.pouchId);
-  if (!pouch || pouch.ownerEmail !== ownerEmail) throw new HttpError(404, "Pouch not found");
-  // Shared checkout wallets cannot enforce individual website restrictions.
-  if (!isAnyStore(pouch) && !pouch.allowedMerchantIds.includes(order.merchantId)) {
-    throw new HttpError(422, "This pouch no longer allows this store. Review its store rules before paying.", "MerchantNotAllowed");
-  }
-  if (isCheckoutReference(order) || !merchants.some((m) => m.id === order.merchantId)) {
-    throw new HttpError(422, "This is a search estimate, not a payable quote. Check the current price and complete checkout with the retailer. Solpouch has not placed an order.", "WebCheckoutRequired");
-  }
-  const merchant = getMerchant(order.merchantId);
-  if (!pouch || !merchant) throw new HttpError(404, "Pouch or merchant not found");
-
-  order.status = "paying";
-  await deps.store.saveOrder(order);
-  try {
-    const { txSignature } = await deps.vault.pay(pouch, merchant.payTo, order.total, order.id);
-    order.status = "paid";
-    order.txSignature = txSignature;
-    await deps.store.saveOrder(order);
-    return order;
-  } catch (e) {
-    if (e instanceof VaultRejected) {
-      order.status = "rejected";
-      order.rejectReason = e.code;
-      await deps.store.saveOrder(order);
-      throw new HttpError(422, `Payment refused: ${e.code}`, e.code);
+  const initial = await getOwnedOrder(deps, id, ownerEmail);
+  return deps.store.withPouchLock(initial.pouchId, async () => {
+    let order = await getOwnedOrder(deps, id, ownerEmail);
+    if (order.status === "paid") return order;
+    if (order.status !== "draft" && order.status !== "paying") throw new HttpError(409, `Order is ${order.status}`);
+    const pouch = await getOwnedPouch(deps, order.pouchId, ownerEmail);
+    const merchant = getMerchant(order.merchantId);
+    if (order.status === "draft" && !isAnyStore(pouch) && !pouch.allowedMerchantIds.includes(order.merchantId)) throw new HttpError(422,"This pouch no longer allows this store. Review its store rules before paying.","MerchantNotAllowed");
+    if (isCheckoutReference(order) || !merchants.some(m=>m.id===order.merchantId)) throw new HttpError(422, "This is a search estimate, not a payable quote. Check the current price and complete checkout with the retailer. Solpouch has not placed an order.", "WebCheckoutRequired");
+    if (!merchant) throw new HttpError(404,"Merchant not found");
+    // Once paying, recover the original signed transaction even if rules changed later.
+    if (order.status === "draft") {
+      if (order.total <= 0 || validateOrderLines(order.lines) !== order.total) throw new HttpError(422,"Order total does not match its items");
+      order = await deps.store.saveOrder({...order,status:"paying"});
     }
-    order.status = "draft";
-    await deps.store.saveOrder(order);
-    throw e;
-  }
+    let txSignature: string;
+    try {
+      ({txSignature}=await deps.vault.pay(pouch,merchant.payTo,order.total,order.id));
+    } catch(e) {
+      if(e instanceof VaultRejected) {
+        await deps.store.saveOrder({...order,status:"rejected",rejectReason:e.code});
+        throw new HttpError(422,`Payment refused: ${e.code}`,e.code);
+      }
+      throw new HttpError(503,e instanceof PaymentPending ? e.message : "Payment is not confirmed yet. Retry this order to check its status.","PaymentPending");
+    }
+    try { return await deps.store.saveOrder({...order,status:"paid",txSignature,paidAt:new Date().toISOString()}); }
+    catch { throw new HttpError(503,"Payment was submitted. Retry this order to recover its receipt.","PaymentPending"); }
+  });
 }
 
 export async function cancelOrder(deps: Deps, ownerEmail: string, id: string): Promise<Order> {
-  const order = await getOwnedOrder(deps, id, ownerEmail);
-  if (order.status !== "draft") throw new HttpError(409, `Order is ${order.status}, not draft`);
-  order.status = "cancelled";
-  return deps.store.saveOrder(order);
+  const initial=await getOwnedOrder(deps,id,ownerEmail);
+  return deps.store.withPouchLock(initial.pouchId,async()=>{
+    const order=await getOwnedOrder(deps,id,ownerEmail);
+    if(order.status!=="draft") throw new HttpError(409,`Order is ${order.status}, not draft`);
+    return deps.store.saveOrder({...order,status:"cancelled"});
+  });
 }

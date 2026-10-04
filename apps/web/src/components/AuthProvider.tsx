@@ -1,6 +1,7 @@
 "use client";
 import {
   createContext,
+  Fragment,
   useCallback,
   useContext,
   useEffect,
@@ -9,7 +10,7 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
-import { BACKEND_URL } from "@/lib/api";
+import { BACKEND_URL, api } from "@/lib/api";
 import {
   clearSession,
   onSessionChange,
@@ -44,8 +45,9 @@ type AuthState = {
   loading: boolean;
   gisReady: boolean;
   error: string | null;
-  signOut: () => void;
-  updateUser: (u: Partial<SessionUser>) => void;
+  signOut: () => Promise<void>;
+  signOutAll: () => Promise<void>;
+  updateUser: (u: Partial<SessionUser>, expectedToken: string) => void;
 };
 const AuthContext = createContext<AuthState | null>(null);
 
@@ -181,24 +183,39 @@ export function AuthProvider({
     return () => script?.removeEventListener("load", init);
   }, [nonce, handleCredential]);
 
-  const signOut = useCallback(() => {
-    try {
-      window.google?.accounts.id.disableAutoSelect();
-    } catch {}
+  const loggingOut = useRef(new Set<string>());
+  const endSession = useCallback(async (all: boolean) => {
+    const token = readSession()?.token;
+    if (!token || loggingOut.current.has(token)) return;
+    loggingOut.current.add(token);
+    authGeneration.current++;
+    try { window.google?.accounts.id.disableAutoSelect(); } catch {}
+    // Hide private pages and close the microphone immediately, even offline.
     clearSession();
+    const signedOutGeneration = authGeneration.current;
+    setError(null);
+    try {
+      await api.logout(token, all);
+    } catch {
+      if (!readSession() && signedOutGeneration === authGeneration.current) setError("Signed out on this browser, but we could not revoke the server session. Sign in again and retry ending your sessions.");
+    } finally {
+      loggingOut.current.delete(token);
+    }
   }, []);
+  const signOut = useCallback(() => endSession(false), [endSession]);
+  const signOutAll = useCallback(() => endSession(true), [endSession]);
 
-  const updateUser = useCallback((u: Partial<SessionUser>) => {
+  const updateUser = useCallback((u: Partial<SessionUser>, expectedToken: string) => {
     const stored = readSession();
-    if (!stored) return;
+    if (!stored || stored.token !== expectedToken) return;
     const next = { ...stored.user, ...u };
     writeSession({ token: stored.token, user: next });
     setUser(next);
   }, []);
 
   const value = useMemo(
-    () => ({ user, sessionKey, loading, gisReady, error, signOut, updateUser }),
-    [user, sessionKey, loading, gisReady, error, signOut, updateUser],
+    () => ({ user, sessionKey, loading, gisReady, error, signOut, signOutAll, updateUser }),
+    [user, sessionKey, loading, gisReady, error, signOut, signOutAll, updateUser],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
@@ -258,10 +275,10 @@ export function SignInCard({ message }: { message?: string }) {
 
 /** Renders children only when signed in, so no data requests fire before sign-in. */
 export function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, sessionKey } = useAuth();
   if (loading && !user) return <div className={styles.wrap} aria-busy="true" />;
   if (!user) return <SignInCard />;
-  return <>{children}</>;
+  return <Fragment key={sessionKey}>{children}</Fragment>;
 }
 
 export function UserMenu() {

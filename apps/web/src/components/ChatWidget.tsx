@@ -5,6 +5,7 @@ import { ConversationProvider, useConversation } from "@elevenlabs/react";
 import { BACKEND_URL, api, errMsg } from "@/lib/api";
 import { getToken, clearSession } from "@/lib/session";
 import { GoogleButton, useAuth } from "./AuthProvider";
+import { ChatOrderCards } from "./ChatOrderCards";
 import styles from "./ChatWidget.module.css";
 
 type Message = { role: "user" | "assistant"; content: string };
@@ -62,6 +63,7 @@ function ChatPanel() {
   const history = useRef<HTMLDivElement>(null);
   const request = useRef<AbortController | null>(null);
   const voiceRequest = useRef<AbortController | null>(null);
+  const voiceExpiry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceSetup = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sequence = useRef(0);
@@ -143,6 +145,7 @@ function ChatPanel() {
       sequence.current++;
       request.current?.abort();
       voiceRequest.current?.abort();
+      if (voiceExpiry.current) clearTimeout(voiceExpiry.current);
       if (timer.current) clearTimeout(timer.current);
     };
   }, []);
@@ -193,6 +196,7 @@ function ChatPanel() {
     sequence.current++;
     voiceSetup.current = false;
     voiceRequest.current?.abort();
+    if (voiceExpiry.current) clearTimeout(voiceExpiry.current);
     voiceRequest.current = null;
     queued.current = null;
     queuedNext.current = null;
@@ -213,6 +217,7 @@ function ChatPanel() {
     queuedNext.current = null;
     setSession(null);
     voiceRequest.current?.abort();
+    if (voiceExpiry.current) clearTimeout(voiceExpiry.current);
     voiceSetup.current = false;
     sequence.current++;
     request.current?.abort();
@@ -268,9 +273,17 @@ function ChatPanel() {
     const generation = sequence.current;
     const controller = new AbortController();
     voiceRequest.current?.abort();
+    if (voiceExpiry.current) clearTimeout(voiceExpiry.current);
     voiceRequest.current = controller;
-    const { token } = await api.voiceToken(controller.signal);
+    const { token, expiresAt } = await api.voiceToken(controller.signal);
     if (!isCurrent() || generation !== sequence.current) return;
+    const expiry = expiresAt ? Date.parse(expiresAt) : Date.now() + 15 * 60_000;
+    if (!Number.isFinite(expiry) || expiry <= Date.now()) throw new Error("Voice session expired. Reconnect to continue.");
+    voiceExpiry.current = setTimeout(() => {
+      if (!isCurrent() || generation !== sequence.current) return;
+      stopVoice();
+      setNotice("Voice session expired. Press Talk or send a new message to reconnect. No payment will be retried automatically.");
+    }, Math.min(expiry - Date.now(), 15 * 60_000));
     agentSequence.current = generation;
     await agent.startSession({
       agentId: AGENT_ID,
@@ -522,6 +535,7 @@ function ChatPanel() {
                 <p>{message.content}</p>
               </div>
             ))}
+            <ChatOrderCards refreshKey={messages.length} />
             {notice && (
               <p className={styles.pending} role="status">
                 {notice}
@@ -606,7 +620,7 @@ function ChatPanel() {
             <p className={styles.boundary}>
               {mode === "agent"
                 ? "Orders always wait for your yes. The assistant can't top up pouches."
-                : "Chat cannot move funds or place orders."}
+                : "The text helper cannot act on its own. Cart payment buttons require your approval."}
             </p>
           </form>
           </>

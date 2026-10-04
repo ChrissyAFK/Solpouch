@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { AccountAlerts } from "./AccountAlerts";
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Icon, type IconName } from "./Icons";
@@ -187,6 +188,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             marginBottom: 0,
           }}
         >
+          <AccountAlerts />
           {children}
         </main>
         <Footer />

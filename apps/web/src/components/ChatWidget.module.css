@@ -352,3 +352,13 @@
     transition: none !important;
   }
 }
+
+.orderCards { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 12px; }
+.cardHeading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.orderCards small { color: var(--muted); }
+.orderCard { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.orderCard ul { padding-left: 16px; max-height: 150px; overflow: auto; }
+.orderCard p { color: var(--muted); }
+.orderCard a { text-decoration: underline; }
+.orderCards button { padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 8px; cursor: pointer; }
+.orderCards button:disabled { opacity: .5; cursor: wait; }

@@ -20,11 +20,11 @@ let vault: MockVaultClient;
 let app: ReturnType<typeof createApp>;
 let auth: Record<string, string>;
 beforeEach(async () => {
-  auth = await authHeaders();
   vi.stubEnv("GEMINI_API_KEY", "");
   vi.stubEnv("GEMINI_MODEL", "");
   vi.clearAllMocks();
   store = new MemoryStore(ownedSeed());
+  auth = await authHeaders(store);
   vault = new MockVaultClient(store, (id) => getMerchant(id)?.payTo);
   app = createApp({ store, vault });
 });

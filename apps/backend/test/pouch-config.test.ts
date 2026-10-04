@@ -40,7 +40,7 @@ describe("chain-compatible pouch identifiers", () => {
     const vault = new MockVaultClient(store, () => undefined);
     const create = vi.spyOn(vault, "createPouch");
     const app = createApp({ store, vault });
-    const headers = { "Content-Type": "application/json", ...await authHeaders() };
+    const headers = { "Content-Type": "application/json", ...await authHeaders(store) };
     const ids = new Set<string>();
     for (const name of ["Vacation Savings", "x".repeat(60), "旅行 🏖️", "Vacation Savings"]) {
       const res = await app.request("/pouches", {
@@ -68,7 +68,7 @@ describe("chain-compatible pouch identifiers", () => {
     });
     const app = createApp({ store, vault });
     const res = await app.request("/pouches", {
-      method: "POST", headers: { "Content-Type": "application/json", ...await authHeaders() },
+      method: "POST", headers: { "Content-Type": "application/json", ...await authHeaders(store) },
       body: JSON.stringify({ name: "Web", maxPerOrder: 1, dailyLimit: 1, allowedMerchantIds: [] }),
     });
     expect(res.status).toBe(503);

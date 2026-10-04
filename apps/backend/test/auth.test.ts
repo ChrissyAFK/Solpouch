@@ -30,7 +30,7 @@ beforeEach(() => {
 const req = async (method: string, path: string, who: string | null, body?: unknown) =>
   app.request(path, {
     method,
-    headers: { ...json, ...(who ? await authHeaders(who) : {}) },
+    headers: { ...json, ...(who ? await authHeaders(store, who) : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
@@ -71,7 +71,7 @@ describe("authentication", () => {
   });
 
   it("a voice token is not a session token", async () => {
-    const r = await app.request("/pouches", { headers: { Authorization: `Bearer ${await voiceToken(A)}` } });
+    const r = await app.request("/pouches", { headers: { Authorization: `Bearer ${await voiceToken(store, A)}` } });
     expect(r.status).toBe(401);
   });
 });
@@ -118,7 +118,7 @@ describe("per-user ownership", () => {
 
   it("the pouch cap is per user", async () => {
     for (let i = 0; i < 47; i++) {
-      await store.savePouch({ ...(await store.getPouch("uber-eats"))!, id: `x${i}`, address: `addr${i}` });
+      await store.savePouch({ ...(await store.getPouch("uber-eats"))!, id: `x${i}`, version: undefined, address: `addr${i}` });
     }
     const body = { name: "Over", maxPerOrder: 1, dailyLimit: 1, allowedMerchantIds: [] };
     expect((await req("POST", "/pouches", A, body)).status).toBe(409);
@@ -130,7 +130,7 @@ describe("voice tools need a voice token", () => {
   const tool = (name: string, body: unknown) => app.request(`/voice/tools/${name}`, { method: "POST", headers: json, body: JSON.stringify(body) });
 
   it("rejects missing, garbage, and session tokens", async () => {
-    for (const body of [{}, { user_token: "garbage" }, { user_token: await sessionToken(A) }]) {
+    for (const body of [{}, { user_token: "garbage" }, { user_token: await sessionToken(store, A) }]) {
       const r = await tool("get_pouches", body);
       expect(r.status).toBe(401);
       expect(await r.json()).toEqual({ say: "Please sign in to Solpouch first." });
@@ -138,16 +138,16 @@ describe("voice tools need a voice token", () => {
   });
 
   it("scopes tools to the token's user", async () => {
-    const r = await (await tool("get_pouches", { user_token: await voiceToken(B) })).json();
+    const r = await (await tool("get_pouches", { user_token: await voiceToken(store, B) })).json();
     expect(r.pouches.every((p: { id: string }) => p.id.startsWith("b-"))).toBe(true);
-    await tool("freeze_all", { user_token: await voiceToken(B) });
+    await tool("freeze_all", { user_token: await voiceToken(store, B) });
     expect((await store.getPouch("uber-eats"))!.frozen).toBe(false);
     expect((await store.getPouch("b-uber-eats"))!.frozen).toBe(true);
   });
 
   it("cannot confirm another user's order", async () => {
     const order = await (await req("POST", "/orders", B, { request: "pad thai" })).json();
-    const r = await tool("confirm_order", { orderId: order.id, user_token: await voiceToken(A) });
+    const r = await tool("confirm_order", { orderId: order.id, user_token: await voiceToken(store, A) });
     expect(r.status).toBe(404);
     expect((await store.getOrder(order.id))!.status).toBe("draft");
   });

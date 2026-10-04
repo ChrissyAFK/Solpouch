@@ -1,8 +1,12 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errMsg, type Profile } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import { ErrorBanner, Notice } from "@/components/ui";
+import { useRequestScope } from "@/lib/useRequestScope";
+import { getToken } from "@/lib/session";
+import { SessionManager } from "@/components/SessionManager";
+import { AlertPreferences } from "@/components/AccountAlerts";
 import styles from "./profile.module.css";
 
 const MAX_RAW = 5 * 1024 * 1024;
@@ -40,7 +44,7 @@ async function toAvatar(file: File): Promise<string> {
 }
 
 export default function ProfilePage() {
-  const { updateUser, signOut } = useAuth();
+  const { updateUser, signOut, sessionKey } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [avatar, setAvatar] = useState<string | null>(null);
@@ -57,21 +61,20 @@ export default function ProfilePage() {
     setAvatar(p.avatar);
   }
 
-  useEffect(() => {
-    let live = true;
-    api
-      .getProfile()
-      .then((p) => live && adopt(p))
-      .catch((e) => live && setLoadError(errMsg(e)));
-    return () => {
-      live = false;
-    };
-  }, []);
+  const beginRequest = useRequestScope();
+  const reload = useCallback(async () => {
+    const current = beginRequest();
+    setLoadError(null);
+    try { const p = await api.getProfile(); if (current()) adopt(p); }
+    catch (cause) { if (current()) setLoadError(errMsg(cause)); }
+  }, [beginRequest]);
+  useEffect(() => { void reload(); }, [reload]);
 
   if (loadError)
     return (
       <div className={styles.page}>
         <ErrorBanner message={loadError} />
+        <button className="sp-button sp-button-secondary" onClick={() => void reload()}>Retry profile</button>
       </div>
     );
   if (!profile)
@@ -110,7 +113,7 @@ export default function ProfilePage() {
   }
 
   async function save() {
-    if (!profile || saving || nameInvalid) return;
+    if (!profile || saving || nameInvalid || !sessionKey || getToken() !== sessionKey) return;
     setSaving(true);
     setError(null);
     setSaved(false);
@@ -120,8 +123,9 @@ export default function ProfilePage() {
         body.displayName = name === null ? null : name.trim();
       if (avatar !== profile.avatar) body.avatar = avatar;
       const p = await api.updateProfile(body);
+      if (getToken() !== sessionKey) return;
       adopt(p);
-      updateUser({ name: p.name, picture: p.picture });
+      updateUser({ name: p.name, picture: p.picture }, sessionKey);
       setSaved(true);
     } catch (err) {
       setError(errMsg(err));
@@ -133,6 +137,8 @@ export default function ProfilePage() {
   return (
     <div className={styles.page}>
       <h1 className={styles.title}>Profile</h1>
+      <SessionManager />
+      <AlertPreferences />
       <section className="sp-card" aria-labelledby="photo-title">
         <h2 id="photo-title" className={styles.heading}>
           Photo

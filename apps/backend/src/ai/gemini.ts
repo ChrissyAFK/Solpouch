@@ -1,3 +1,4 @@
+import { OrderInputError, validQuantity, validateOrderLines } from "../services/orderValidation.js";
 import { GoogleGenAI, Type } from "@google/genai";
 import type { OrderLine, Product } from "@solpouch/shared";
 
@@ -69,9 +70,10 @@ export async function parseRequest(text: string): Promise<ParsedRequest> {
       const parsed = JSON.parse(res.text ?? "{}");
       const items: ParsedItem[] = (parsed.items ?? [])
         .filter((i: ParsedItem) => i?.requested)
-        .map((i: ParsedItem) => ({ requested: String(i.requested), qty: Math.max(1, Math.round(Number(i.qty) || 1)) }));
+        .map((i: ParsedItem) => ({ requested: String(i.requested), qty: validQuantity(Number(i.qty ?? 1)) }));
       if (items.length) return { pouchHint: parsed.pouchHint || undefined, items };
     } catch (e) {
+      if (e instanceof OrderInputError) throw e;
       console.warn("[gemini] parseRequest failed, using fallback:", (e as Error).message);
     }
   }
@@ -117,12 +119,12 @@ export async function matchItems(items: ParsedItem[], catalog: Product[]): Promi
         note: string | null;
       }>;
       if (rows.length) {
-        return rows.map((r) => {
+        const lines = rows.map((r) => {
           const product = catalog.find((p) => p.id === r.productId && p.inStock) ?? null;
-          const qty = product ? Math.max(1, Math.round(r.qty || r.requestedQty || 1)) : 0;
+          const qty = product ? validQuantity(Number(r.qty ?? r.requestedQty ?? 1)) : 0;
           return {
             requested: r.requested,
-            requestedQty: r.requestedQty || 1,
+            requestedQty: validQuantity(Number(r.requestedQty ?? 1)),
             product,
             qty,
             lineTotal: product ? product.unitPrice * qty : 0,
@@ -131,8 +133,11 @@ export async function matchItems(items: ParsedItem[], catalog: Product[]): Promi
             note: r.note || (product ? undefined : "No matching product"),
           };
         });
+        validateOrderLines(lines);
+        return lines;
       }
     } catch (e) {
+      if (e instanceof OrderInputError) throw e;
       console.warn("[gemini] matchItems failed, using fallback:", (e as Error).message);
     }
   }
@@ -169,7 +174,7 @@ export function fallbackParse(text: string): ParsedRequest {
     }
     for (let i = 0; i < 2; i++) part = part.replace(UNITS, "");
     part = part.replace(/[.!?]+$/, "").trim();
-    if (part) items.push({ requested: part, qty: Math.max(1, qty) });
+    if (part) items.push({ requested: part, qty: validQuantity(qty) });
   }
   const hints: Array<[RegExp, string]> = [
     [/uber|takeout|delivery|dinner|lunch/, "uber eats"],

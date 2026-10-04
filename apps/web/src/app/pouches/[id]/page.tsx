@@ -56,11 +56,16 @@ function TopUpSection({
   const [added, setAdded] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [autoFailed, setAutoFailed] = useState(false);
+  const [resumeLoading, setResumeLoading] = useState(true);
+  const [resumeError, setResumeError] = useState(false);
+  const [resumeAttempt, setResumeAttempt] = useState(0);
   const completing = useRef(false);
 
   // Resume the newest pending top-up so a reload does not lose it.
   useEffect(() => {
     let live = true;
+    setResumeLoading(true);
+    setResumeError(false);
     api
       .listPendingTopUps(pouch.id)
       .then((list) => {
@@ -69,14 +74,15 @@ function TopUpSection({
           setNow(Date.now());
         }
       })
-      .catch(() => {});
+      .catch(() => { if (live) setResumeError(true); })
+      .finally(() => { if (live) setResumeLoading(false); });
     return () => {
       live = false;
     };
-  }, [pouch.id]);
+  }, [pouch.id, resumeAttempt]);
 
   useEffect(() => {
-    if (!topup) return;
+    if (!topup || topup.status === "processing") return;
     const timer = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(timer);
   }, [topup]);
@@ -84,6 +90,7 @@ function TopUpSection({
   const readyAt = topup ? new Date(topup.readyAt).getTime() : 0;
   const remaining = topup ? Math.max(0, readyAt - now) : 0;
   const ready = topup != null && remaining === 0;
+  const processing = topup?.status === "processing";
   const seconds = Math.ceil(remaining / 1000);
   const total = topup
     ? Math.max(1000, readyAt - new Date(topup.createdAt).getTime())
@@ -98,7 +105,13 @@ function TopUpSection({
       setBusy(true);
       setError(null);
       try {
-        await api.completeTopUp(topup.id);
+        const completed = await api.completeTopUp(topup.id);
+        if (completed.status !== "completed") {
+          setTopup(completed);
+          setAutoFailed(true);
+          setError("The top-up is still being checked. Keep this top-up and check its status again.");
+          return;
+        }
         setAdded(`Added ${usd(toUsdc(topup.amount))} USDC to ${pouch.name}`);
         setTopup(null);
         setAmount("");
@@ -119,12 +132,12 @@ function TopUpSection({
   );
 
   useEffect(() => {
-    if (ready && !autoFailed && !completing.current) void complete(true);
-  }, [ready, autoFailed, complete]);
+    if (ready && !processing && !autoFailed && !completing.current) void complete(true);
+  }, [ready, processing, autoFailed, complete]);
 
   async function start(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (busy || resumeLoading || resumeError) return;
     const micros = toMicros(Number(amount));
     if (!Number.isSafeInteger(micros) || micros <= 0) {
       setError("Enter a valid amount.");
@@ -157,7 +170,7 @@ function TopUpSection({
     }
   }
   async function cancel() {
-    if (!topup || busy) return;
+    if (!topup || busy || processing) return;
     setBusy(true);
     setError(null);
     try {
@@ -201,6 +214,9 @@ function TopUpSection({
             );
           })}
         </ol>
+        {resumeLoading && <p role="status">Checking pending top-ups…</p>}
+        {resumeError && <div role="alert"><p>Pending top-ups could not be checked. Retry before adding more funds.</p><button className={btnSecondary} onClick={() => setResumeAttempt(n => n + 1)}>Retry pending top-ups</button></div>}
+        {processing && <Notice><strong>Checking top-up</strong><p>The transfer result is not confirmed. Do not start another top-up for the same funds.</p><button className={btnSecondary} disabled={busy} onClick={() => void complete(false)}>Check top-up status</button></Notice>}
         <ErrorBanner message={error} />
         {added && <Notice>{added}</Notice>}
         {!topup ? (
@@ -252,7 +268,7 @@ function TopUpSection({
             </div>
             <button
               className={`${btnPrimary} w-full`}
-              disabled={busy || !(Number(amount) > 0)}
+              disabled={busy || resumeLoading || resumeError || !(Number(amount) > 0)}
               type="submit"
             >
               {busy
@@ -289,7 +305,7 @@ function TopUpSection({
               />
             </div>
             <p className="text-sm font-medium" role="status">
-              {ready
+              {processing ? "Checking the existing transfer." : ready
                 ? busy
                   ? "Adding to your pouch…"
                   : "Wait is over."
@@ -298,14 +314,14 @@ function TopUpSection({
             <div className="flex flex-wrap gap-3">
               <button
                 className={`${btnPrimary} flex-1`}
-                disabled={!ready || busy}
+                disabled={!ready || busy || processing}
                 onClick={() => void complete(false)}
               >
                 {busy && ready ? "Adding…" : "Add now"}
               </button>
               <button
                 className={btnSecondary}
-                disabled={busy}
+                disabled={busy || processing}
                 onClick={() => void cancel()}
               >
                 Cancel
@@ -320,6 +336,8 @@ function TopUpSection({
 
 export default function PouchDetail() {
   const { id } = useParams<{ id: string }>();
+  const viewId = useRef(id);
+  viewId.current = id;
   const [pouch, setPouch] = useState<Pouch | null>(null);
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -333,8 +351,9 @@ export default function PouchDetail() {
 
   // quiet: background refresh, keeps what is on screen and skips loading and error states.
   const load = useCallback(async (quiet = false) => {
+    if (viewId.current !== id) return;
     // A quiet refresh never supersedes a full load, so it cannot strand the loading state.
-    const version = quiet ? loadVersion.current : ++loadVersion.current;
+    const version = ++loadVersion.current;
     if (!quiet) {
       setLoading(true);
       setError(null);
@@ -365,15 +384,16 @@ export default function PouchDetail() {
       setSpend(s);
       setError(null);
     } catch (e) {
-      if (version === loadVersion.current && !quiet) setError(errMsg(e));
+      if (version === loadVersion.current) setError(errMsg(e));
     } finally {
-      if (version === loadVersion.current && !quiet) setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
   }, [id]);
   useLiveRefresh(useCallback(() => load(true), [load]));
   useEffect(() => {
     setPouch(null);
     setSaved(false);
+    setFreezing(false);
     void load();
     return () => {
       loadVersion.current++;
@@ -492,9 +512,10 @@ export default function PouchDetail() {
                 Daily (UTC) · USDC
               </span>
             </div>
+            <p className="mb-3 text-xs text-[var(--muted)]">Payments without a recorded payment date are excluded.</p>
             {chart.length === 0 ? (
               <div className="py-8 text-sm text-[var(--muted)]">
-                <p className="font-medium">No spending yet.</p>
+                <p className="font-medium">No dated payments yet.</p>
                 <p className="mt-2 text-sm text-[var(--muted)]">
                   Completed payments will appear here.
                 </p>
@@ -638,6 +659,8 @@ export default function PouchDetail() {
                 const { name: _name, ...rules } = v;
                 void _name;
                 const updated = await api.updateRules(pouch.id, rules);
+                if (viewId.current !== id) return;
+                loadVersion.current++;
                 setPouch(updated);
                 setSaved(true);
               }}
@@ -664,11 +687,13 @@ export default function PouchDetail() {
                     const updated = await (pouch.frozen
                       ? api.unfreeze(pouch.id)
                       : api.freeze(pouch.id));
+                    if (viewId.current !== id) return;
+                    loadVersion.current++;
                     setPouch(updated);
                   } catch (e) {
-                    setError(errMsg(e));
+                    if (viewId.current === id) setError(errMsg(e));
                   } finally {
-                    setFreezing(false);
+                    if (viewId.current === id) setFreezing(false);
                   }
                 }}
               >

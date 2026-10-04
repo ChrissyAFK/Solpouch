@@ -128,3 +128,34 @@ create table if not exists users (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Additive storage-hardening migration. Existing records remain unowned, version 0.
+ALTER TABLE pouches ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 0;
+ALTER TABLE topups ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 0;
+ALTER TABLE topups ADD COLUMN IF NOT EXISTS tx_signature text;
+
+-- Regular tables: journals and auth records must have globally unique identifiers.
+CREATE TABLE IF NOT EXISTS vault_operations (
+  id text PRIMARY KEY,
+  kind text NOT NULL CHECK (kind IN ('pay', 'topup')),
+  pouch_id text NOT NULL,
+  tx_signature text NOT NULL,
+  signed_transaction text NOT NULL,
+  last_valid_block_height bigint NOT NULL,
+  created_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+  key text PRIMARY KEY,
+  hits bigint NOT NULL,
+  expires_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS rate_limit_buckets_expiry_idx ON rate_limit_buckets(expires_at);
+
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS store jsonb;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS fulfillment jsonb;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at timestamptz;
+ALTER TABLE topups ADD COLUMN IF NOT EXISTS completed_at timestamptz;
+CREATE TABLE IF NOT EXISTS web_sessions (id text PRIMARY KEY,email text NOT NULL,name text NOT NULL,picture text NOT NULL,created_at timestamptz NOT NULL,expires_at timestamptz NOT NULL);
+CREATE INDEX IF NOT EXISTS web_sessions_email_idx ON web_sessions(email);
+CREATE INDEX IF NOT EXISTS web_sessions_expiry_idx ON web_sessions(expires_at);

@@ -1049,3 +1049,10 @@ h1 {
     width: 17px;
   }
 }
+
+@media print {
+  body:has([data-print-receipt]) * { visibility: hidden; }
+  [data-print-receipt], [data-print-receipt] * { visibility: visible !important; }
+  [data-print-receipt] { position: absolute; inset: 0 auto auto 0; width: 100%; margin: 0; color: #111; background: white; box-shadow: none; }
+  [data-print-receipt] a { color: #111; }
+}

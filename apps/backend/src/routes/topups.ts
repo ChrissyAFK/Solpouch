@@ -1,3 +1,4 @@
+import { completeTopUp } from "../services/topups.js";
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -20,20 +21,26 @@ export function topupRoutes(deps: Deps) {
 
   app.get("/", async (c) => {
     const pouchId = c.req.query("pouchId");
-    if (!pouchId) throw new HttpError(400, "pouchId is required");
-    await getOwnedPouch(deps, pouchId, c.get("user").email);
-    const all = await deps.store.listTopUps(pouchId);
-    return c.json(all.filter((t) => t.status === "cooling_down"));
+    const email=c.get("user").email;
+    const ids = pouchId ? [(await getOwnedPouch(deps,pouchId,email)).id] : (await deps.store.listPouches(email)).map(p=>p.id);
+    const all=(await Promise.all(ids.map(id=>deps.store.listTopUps(id)))).flat();
+    const pending=all.filter(t=>t.status==="cooling_down" || t.status==="processing").sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+    return c.json(await Promise.all(pending.map(async t=> {
+      if(t.status!=="processing" || t.txSignature) return t;
+      const operation=await deps.store.getOperation(`topup:${t.id}`);
+      return operation && operation.kind==="topup" && operation.pouchId===t.pouchId ? {...t,txSignature:operation.txSignature} : t;
+    })));
   });
 
   app.post("/:id/cancel", async (c) => {
-    const t = await deps.store.getTopUp(c.req.param("id"));
-    if (!t) throw new HttpError(404, "Top-up not found");
-    const owner = await deps.store.getPouch(t.pouchId);
-    if (!owner || owner.ownerEmail !== c.get("user").email) throw new HttpError(404, "Top-up not found");
-    if (t.status !== "cooling_down") throw new HttpError(409, `Top-up is ${t.status}`);
-    t.status = "cancelled";
-    return c.json(await deps.store.saveTopUp(t));
+    const initial = await deps.store.getTopUp(c.req.param("id"));
+    if (!initial) throw new HttpError(404,"Top-up not found");
+    return deps.store.withPouchLock(initial.pouchId, async()=> {
+      await getOwnedPouch(deps,initial.pouchId,c.get("user").email);
+      const t=(await deps.store.getTopUp(initial.id))!;
+      if(t.status!=="cooling_down") throw new HttpError(409,`Top-up is ${t.status}`);
+      return c.json(await deps.store.saveTopUp({...t,status:"cancelled"}));
+    });
   });
 
   app.post("/", async (c) => {
@@ -54,17 +61,7 @@ export function topupRoutes(deps: Deps) {
   });
 
   app.post("/:id/complete", async (c) => {
-    const t = await deps.store.getTopUp(c.req.param("id"));
-    if (!t) throw new HttpError(404, "Top-up not found");
-    const owner = await deps.store.getPouch(t.pouchId);
-    if (!owner || owner.ownerEmail !== c.get("user").email) throw new HttpError(404, "Top-up not found");
-    if (t.status !== "cooling_down") throw new HttpError(409, `Top-up is ${t.status}`);
-    if (Date.now() < new Date(t.readyAt).getTime()) {
-      throw new HttpError(409, `Cooldown not over yet, ready at ${t.readyAt}`, "CooldownActive");
-    }
-    await deps.vault.topUp(t.pouchId, t.amount);
-    t.status = "completed";
-    return c.json(await deps.store.saveTopUp(t));
+    return c.json(await completeTopUp(deps,c.get("user").email,c.req.param("id")));
   });
 
   return app;

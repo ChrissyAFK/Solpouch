@@ -1,3 +1,4 @@
+import { AuthUnavailableError } from "./session.js";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
 export interface GoogleUser {
@@ -30,7 +31,9 @@ export async function verifyGoogleIdToken(credential: string): Promise<GoogleUse
       name: typeof payload.name === "string" ? payload.name : email,
       picture: typeof payload.picture === "string" ? payload.picture : "",
     };
-  } catch {
+  } catch (error) {
+    const code = (error as {code?:string})?.code;
+    if (error instanceof TypeError || code === "ERR_JWKS_TIMEOUT" || code === "ERR_JOSE_GENERIC") throw new AuthUnavailableError("Google sign-in is temporarily unavailable. Try again shortly");
     throw new GoogleAuthError();
   }
 }

@@ -44,7 +44,7 @@ export function profileRoutes(deps: Deps) {
     createdAt: p.createdAt,
   });
 
-  app.use("*", requireUser);
+  app.use("*", requireUser(store));
 
   app.get("/", async (c) => {
     const g = c.get("user");

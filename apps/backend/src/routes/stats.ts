@@ -8,10 +8,10 @@ export function statsRoutes(deps: Deps) {
   const app = new Hono<AuthEnv>();
   app.get("/spend", async (c) => {
     const bucket = c.req.query("bucket") === "hour" ? "hour" : "day";
-    const orders = (await listOwnedOrders(deps, c.get("user").email, c.req.query("pouchId"))).filter((o) => o.status === "paid");
+    const orders = (await listOwnedOrders(deps, c.get("user").email, c.req.query("pouchId"))).filter((o) => o.status === "paid" && o.paidAt && Number.isFinite(Date.parse(o.paidAt)));
     const points = new Map<string, SpendPoint>();
     for (const o of orders) {
-      const d = new Date(o.createdAt);
+      const d = new Date(o.paidAt!);
       if (bucket === "day") d.setUTCHours(0, 0, 0, 0);
       else d.setUTCMinutes(0, 0, 0);
       const key = `${o.pouchId}|${d.toISOString()}`;

@@ -1,8 +1,8 @@
+import { allowedPayTos } from "./allow.js";
 import { randomBytes } from "node:crypto";
 import type { Micros, Pouch } from "@solpouch/shared";
 import type { Store } from "../store/types.js";
 import { fakeAddress } from "../store/memory.js";
-import { allowedPayTos } from "./allow.js";
 import { VaultRejected, type VaultClient } from "./types.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -14,7 +14,6 @@ const sig = () => "mock" + randomBytes(32).toString("hex");
  */
 export class MockVaultClient implements VaultClient {
   private dayStart = new Map<string, number>();
-  private usedOrders = new Set<string>();
 
   constructor(
     private store: Store,
@@ -28,14 +27,31 @@ export class MockVaultClient implements VaultClient {
     return { address: pouch.address || fakeAddress() };
   }
 
-  async topUp(pouchId: string, amount: Micros) {
+  async topUp(pouchId: string, amount: Micros, operationId?: string) {
+    return this.store.withPouchLock(pouchId, async () => {
+    const key = operationId ? `topup:${operationId}` : undefined;
+    const previous = key ? await this.store.getOperation(key) : undefined;
+    if (previous) {
+      if (previous.pouchId !== pouchId) throw new Error("Operation pouch does not match");
+      return { txSignature: previous.txSignature };
+    }
     const p = await this.mustGet(pouchId);
     p.balance += amount;
-    await this.store.savePouch(p);
-    return { txSignature: sig() };
+    const txSignature = sig();
+    if (key) await this.store.applyMockOperation(p,{id:key,kind:"topup",pouchId,txSignature,signedTransaction:"mock",lastValidBlockHeight:0,createdAt:new Date().toISOString()});
+    else await this.store.savePouch(p);
+    return { txSignature };
+    });
   }
 
   async pay(pouch: Pouch, merchantPayTo: string, amount: Micros, orderId: string) {
+    return this.store.withPouchLock(pouch.id, async () => {
+    const key = `pay:${orderId}`;
+    const previous = await this.store.getOperation(key);
+    if (previous) {
+      if (previous.pouchId !== pouch.id) throw new Error("Operation pouch does not match");
+      return { txSignature: previous.txSignature };
+    }
     const p = await this.mustGet(pouch.id);
     if (p.frozen) throw new VaultRejected("PouchFrozen");
     const allowed = allowedPayTos(p, this.payToOf);
@@ -51,26 +67,30 @@ export class MockVaultClient implements VaultClient {
     }
     if (p.spentToday + amount > p.dailyLimit) throw new VaultRejected("OverDailyLimit");
     if (amount > p.balance) throw new VaultRejected("InsufficientFunds");
-    if (this.usedOrders.has(orderId)) throw new VaultRejected("OrderAlreadyUsed");
-    this.usedOrders.add(orderId);
     p.balance -= amount;
     p.spentToday += amount;
-    await this.store.savePouch(p);
-    return { txSignature: sig() };
+    const txSignature = sig();
+    await this.store.applyMockOperation(p,{id:key,kind:"pay",pouchId:p.id,txSignature,signedTransaction:"mock",lastValidBlockHeight:0,createdAt:new Date().toISOString()});
+    return { txSignature };
+    });
   }
 
   async freeze(pouchId: string) {
+    return this.store.withPouchLock(pouchId, async () => {
     const p = await this.mustGet(pouchId);
     p.frozen = true;
     await this.store.savePouch(p);
     return { txSignature: sig() };
+    });
   }
 
   async unfreeze(pouchId: string) {
+    return this.store.withPouchLock(pouchId, async () => {
     const p = await this.mustGet(pouchId);
     p.frozen = false;
     await this.store.savePouch(p);
     return { txSignature: sig() };
+    });
   }
 
   async getBalance(pouchId: string) {

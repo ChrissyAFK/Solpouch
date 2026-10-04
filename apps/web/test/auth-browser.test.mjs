@@ -15,7 +15,7 @@ async function setup(t, handle) {
   const page = await browser.newPage();
   t.after(() => page.close());
   await page.addInitScript(({ key, a }) => localStorage.setItem(key, JSON.stringify(a)), { key, a });
-  await page.route('**/auth/**', handle);
+  await page.route('**/auth/**', route => new URL(route.request().url()).pathname === '/auth/logout' ? route.fulfill({ json: { ok: true } }) : handle(route));
   await page.route('**/pouches', route => route.fulfill({ json: [] }));
   await page.route('**/orders', route => route.fulfill({ json: [] }));
   return page;
@@ -37,6 +37,7 @@ for (const status of [200, 401]) {
     });
     await page.goto(`${origin}/dashboard`); await arrived.promise;
     await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await page.waitForFunction(key => localStorage.getItem(key) === null, key);
     assert.equal(await page.evaluate(key => localStorage.getItem(key), key), null);
     await switchAccount(page, b); held.resolve();
     await page.waitForTimeout(250);
@@ -187,4 +188,27 @@ test('repeated Talk while permission is pending starts once; closing releases th
   await page.getByRole('button', { name: 'Ask Solpouch', exact: true }).click();
   await page.getByRole('button', { name: 'Talk', exact: true }).waitFor();
   assert.equal(await page.getByRole('dialog', { name: 'Ask Solpouch' }).getByRole('alert').count(), 0);
+});
+test('sign-out closes an active conversation before delayed server revocation completes', async t => {
+  const held = deferred(); const revoking = deferred(); const closed = deferred(); const connected = deferred();
+  const page = await setup(t, route => route.fulfill({ json: new URL(route.request().url()).pathname === '/auth/me' ? { user: a.user } : { token: 'voice-a' } }));
+  await page.route('**/auth/logout', async route => { revoking.resolve(); await held.promise; await route.fulfill({ json: { ok: true } }).catch(() => {}); });
+  await page.routeWebSocket(/api\.elevenlabs\.io/, ws => {
+    ws.onClose(() => closed.resolve());
+    ws.onMessage(raw => {
+      const message = JSON.parse(raw);
+      if (message.type === 'conversation_initiation_client_data') ws.send(JSON.stringify({ type: 'conversation_initiation_metadata', conversation_initiation_metadata_event: { conversation_id: 'logout-fixture', agent_output_audio_format: 'pcm_16000', user_input_audio_format: 'pcm_16000' } }));
+      if (message.type === 'user_message') connected.resolve();
+    });
+  });
+  await page.goto(`${origin}/dashboard`);
+  await page.getByRole('button', { name: 'Ask Solpouch', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Message Solpouch' }).fill('Alice question');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await Promise.race([connected.promise, new Promise((_, reject) => setTimeout(() => reject(new Error('Fixture did not connect')), 10000))]);
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click(); await revoking.promise;
+  assert.equal(await page.evaluate(key => localStorage.getItem(key), key), null);
+  await Promise.race([closed.promise, new Promise((_, reject) => setTimeout(() => reject(new Error('Conversation remained active while logout waited')), 5000))]);
+  await page.getByRole('heading', { name: 'Sign in to Solpouch', exact: true }).waitFor();
+  held.resolve();
 });

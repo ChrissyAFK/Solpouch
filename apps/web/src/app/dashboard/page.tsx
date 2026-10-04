@@ -1,4 +1,5 @@
 "use client";
+import { useRequestScope } from "@/lib/useRequestScope";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { StatePanel } from "@/components/StatePanel";
@@ -24,7 +25,9 @@ export default function OverviewPage() {
   const [loadError, setLoadError] = useState(false);
   const [activityLoading, setActivityLoading] = useState(true);
   // quiet: background refresh, keeps what is on screen and skips loading states.
+  const beginRequest = useRequestScope();
   const load = useCallback(async (quiet = false) => {
+    const current = beginRequest();
     if (!quiet) {
       setLoading(true);
       setActivityLoading(true);
@@ -33,27 +36,33 @@ export default function OverviewPage() {
     }
     try {
       const [p, m] = await Promise.all([api.pouches(), api.merchants()]);
+      if (!current()) return;
       setPouches(p);
       setMerchants(m);
       setLoadError(false);
       setError(null);
     } catch (e) {
+      if (!current()) return;
+      setError(errMsg(e));
       if (!quiet) {
         setLoadError(true);
         setError(errMsg(e));
       }
     } finally {
-      if (!quiet) setLoading(false);
+      if (current()) setLoading(false);
     }
     try {
-      setOrders(await api.orders());
+      if (!current()) return;
+      const nextOrders = await api.orders();
+      if (!current()) return;
+      setOrders(nextOrders);
       setActivityError(false);
     } catch {
-      if (!quiet) setActivityError(true);
+      if (current()) setActivityError(true);
     } finally {
-      if (!quiet) setActivityLoading(false);
+      if (current()) setActivityLoading(false);
     }
-  }, []);
+  }, [beginRequest]);
   useEffect(() => {
     void load();
   }, [load]);

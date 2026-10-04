@@ -106,7 +106,13 @@ export type UpdateProfileBody = {
   avatar?: string | null;
 };
 
+export type AuthSession = { id: string; createdAt: string; expiresAt: string; current: boolean };
 export const api = {
+  sessions: () => req<{ sessions: AuthSession[] }>("/auth/sessions"),
+  logout: (token: string, all = false) => req<{ ok: boolean }>(all ? "/auth/logout-all" : "/auth/logout", {
+    method: "POST", headers: { Authorization: `Bearer ${token}` },
+  }),
+  revokeSession: (id: string) => req<{ ok: boolean }>(`/auth/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
   getProfile: () => req<Profile>("/profile"),
   updateProfile: (b: UpdateProfileBody) =>
     req<Profile>("/profile", { method: "PATCH", body: JSON.stringify(b) }),
@@ -121,8 +127,9 @@ export const api = {
   freeze: (id: string) => post<Pouch>(`/pouches/${id}/freeze`),
   unfreeze: (id: string) => post<Pouch>(`/pouches/${id}/unfreeze`),
   voiceToken: (signal?: AbortSignal) =>
-    req<{ token: string }>("/auth/voice-token", { method: "POST", signal }),
+    req<{ token: string; expiresAt?: string }>("/auth/voice-token", { method: "POST", signal }),
   merchants: () => req<Merchant[]>("/merchants"),
+  createInstacartLink: (id: string) => post<Order>(`/orders/${encodeURIComponent(id)}/instacart`),
   createOrder: (b: CreateOrderBody) => post<Order>("/orders", b),
   orders: (pouchId?: string) =>
     req<Order[]>(
@@ -134,8 +141,8 @@ export const api = {
   startTopUp: (b: StartTopUpBody) => post<TopUp>("/topups", b),
   completeTopUp: (id: string) => post<TopUp>(`/topups/${id}/complete`),
   cancelTopUp: (id: string) => post<TopUp>(`/topups/${id}/cancel`),
-  listPendingTopUps: (pouchId: string) =>
-    req<TopUp[]>(`/topups?pouchId=${encodeURIComponent(pouchId)}`),
+  listPendingTopUps: (pouchId?: string) =>
+    req<TopUp[]>(`/topups${pouchId ? `?pouchId=${encodeURIComponent(pouchId)}` : ""}`),
   spend: (pouchId: string, bucket: "day" | "hour" = "day") =>
     req<SpendPoint[]>(
       `/stats/spend?pouchId=${encodeURIComponent(pouchId)}&bucket=${bucket}`,
@@ -145,6 +152,8 @@ export const api = {
 export function errMsg(e: unknown): string {
   if (e instanceof ApiRequestError) {
     const messages: Record<string, string> = {
+      InstacartNotConfigured: "Instacart shopping links are not configured yet. No purchase was made.",
+      InstacartUnavailable: "Instacart could not prepare the shopping list. No purchase was made. Try again shortly.",
       PouchFrozen: "This pouch is frozen. Unfreeze it before making a payment.",
       MerchantNotAllowed:
         "This store is not allowed for this pouch. Choose another pouch or update its allowed stores.",

@@ -35,6 +35,7 @@ export function pouchRoutes(deps: Deps) {
   app.post("/", async (c) => {
     const email = c.get("user").email;
     const b = createBody.parse(await c.req.json());
+    return deps.store.withPouchLock(`owner:${email}`,async()=> {
     if ((await deps.store.listPouches(email)).length >= 50) throw new HttpError(409, "Pouch limit reached (50)");
     const pouch: StoredPouch = {
       id: randomBytes(16).toString("hex"),
@@ -52,30 +53,37 @@ export function pouchRoutes(deps: Deps) {
     const { address } = await deps.vault.createPouch(pouch as Pouch);
     pouch.address = address;
     return c.json(publicPouch(await deps.store.savePouch(pouch)), 201);
+    });
   });
 
   app.get("/:id", async (c) => c.json(publicPouch(await getOwnedPouch(deps, c.req.param("id"), c.get("user").email))));
 
   app.patch("/:id/rules", async (c) => {
+    return deps.store.withPouchLock(c.req.param("id"),async()=> {
     const p = await getOwnedPouch(deps, c.req.param("id"), c.get("user").email);
     const b = updateBody.parse(await c.req.json());
     Object.assign(p, Object.fromEntries(Object.entries(b).filter(([, v]) => v !== undefined)));
     await deps.vault.updateRules(p);
     return c.json(publicPouch(await deps.store.savePouch(p)));
+    });
   });
 
   app.post("/:id/freeze", async (c) => {
+    return deps.store.withPouchLock(c.req.param("id"),async()=> {
     const email = c.get("user").email;
     const p = await getOwnedPouch(deps, c.req.param("id"), email);
     await deps.vault.freeze(p.id);
     return c.json(publicPouch(await getOwnedPouch(deps, p.id, email)));
+    });
   });
 
   app.post("/:id/unfreeze", async (c) => {
+    return deps.store.withPouchLock(c.req.param("id"),async()=> {
     const email = c.get("user").email;
     const p = await getOwnedPouch(deps, c.req.param("id"), email);
     await deps.vault.unfreeze(p.id);
     return c.json(publicPouch(await getOwnedPouch(deps, p.id, email)));
+    });
   });
 
   return app;

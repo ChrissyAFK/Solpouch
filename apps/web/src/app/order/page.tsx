@@ -5,8 +5,11 @@ import { OrderSkeleton } from "@/components/Skeletons";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { Merchant, Order, Pouch } from "@solpouch/shared";
-import { isCheckoutReference, toUsdc } from "@solpouch/shared";
+import { isCheckoutReference, orderCurrency, toUsdc } from "@solpouch/shared";
 import { api, ApiRequestError, errMsg } from "@/lib/api";
+import { useAuth } from "@/components/AuthProvider";
+import { getToken } from "@/lib/session";
+import { downloadFile, receiptText } from "@/lib/orderExport";
 import { PouchGlyph } from "@/components/PouchGlyph";
 import s from "./order.module.css";
 import {
@@ -104,6 +107,10 @@ export default function OrderPage() {
 }
 
 function OrderWorkspace() {
+  const { sessionKey } = useAuth();
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const currentSession = () => mounted.current && sessionKey != null && getToken() === sessionKey;
   const searchParams = useSearchParams();
   const query = searchParams.toString();
   const [pouches, setPouches] = useState<Pouch[]>([]);
@@ -121,6 +128,7 @@ function OrderWorkspace() {
   const load = useCallback(async () => {
     const version = ++loadVersion.current;
     setLoading(true);
+    setBusy(false);
     setLoadError(null);
     setMissingOrder(false);
     setError(null);
@@ -168,6 +176,9 @@ function OrderWorkspace() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy || !currentSession()) return;
+    const version = loadVersion.current;
+    const current = () => currentSession() && version === loadVersion.current;
     setBusy(true);
     setError(null);
     try {
@@ -175,6 +186,7 @@ function OrderWorkspace() {
         request: request.trim(),
         pouchId: pouchId || undefined,
       });
+      if (!current()) return;
       setOrder(created);
       window.history.replaceState(
         null,
@@ -182,28 +194,44 @@ function OrderWorkspace() {
         `/order?order=${encodeURIComponent(created.id)}`,
       );
     } catch (e) {
-      setError(errMsg(e));
+      if (current()) setError(errMsg(e));
     } finally {
-      setBusy(false);
+      if (current()) setBusy(false);
     }
   }
+  async function createShoppingList() {
+    if (!order || busy || !currentSession()) return;
+    const version = loadVersion.current;
+    const current = () => currentSession() && version === loadVersion.current;
+    setBusy(true); setError(null);
+    try { const next = await api.createInstacartLink(order.id); if (current()) setOrder(next); }
+    catch (cause) { if (current()) setError(errMsg(cause)); }
+    finally { if (current()) setBusy(false); }
+  }
   async function act(action: "confirm" | "cancel") {
-    if (!order) return;
+    if (!order || busy || !currentSession()) return;
+    const version = loadVersion.current;
+    const current = () => currentSession() && version === loadVersion.current;
     setBusy(true);
     setError(null);
     try {
-      setOrder(await api[action](order.id));
-      setPouches(await api.pouches());
+      const next = await api[action](order.id);
+      if (!current()) return;
+      setOrder(next);
+      const freshPouches = await api.pouches();
+      if (current()) setPouches(freshPouches);
     } catch (e) {
+      if (!current()) return;
       setError(errMsg(e));
       // A declined payment changes server state; show that result rather than a stale draft.
       try {
-        setOrder(await api.order(order.id));
+        const refreshed = await api.order(order.id);
+        if (current()) setOrder(refreshed);
       } catch {
         /* retain the actionable error */
       }
     } finally {
-      setBusy(false);
+      if (current()) setBusy(false);
     }
   }
   const selected = pouches.find((p) => p.id === (order?.pouchId ?? pouchId));
@@ -211,7 +239,7 @@ function OrderWorkspace() {
   const referenceOnly = !!order && isCheckoutReference(order);
   const step = !order ? 1 : isDraft ? 2 : 3;
   const merchant = merchants.find((m) => m.id === order?.merchantId);
-  const paidDate = new Date(order?.createdAt ?? Date.now()).toLocaleDateString(undefined, {
+  const paidDate = new Date(order?.paidAt ?? order?.createdAt ?? Date.now()).toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -385,7 +413,7 @@ function OrderWorkspace() {
                 </div>
                 <p className="mt-3 text-sm text-[var(--muted)]">“{order.request}”</p>
                 {order.status === "paid" && (
-                  <div className={s.receipt} aria-label="Receipt">
+                  <div className={s.receipt} aria-label="Receipt" data-print-receipt>
                     <span className={s.stamp}>Paid</span>
                     {referenceOnly && (
                       <Notice>
@@ -398,7 +426,7 @@ function OrderWorkspace() {
                         {order.store?.name ?? merchant?.name ?? "Your order"}
                       </div>
                       <StoreVia order={order} paper />
-                      <div className={s.receiptMeta}>{paidDate}</div>
+                      <div className={s.receiptMeta}>{order.paidAt ? `Paid ${paidDate}` : `Created ${paidDate} · Payment time unavailable`}</div>
                     </div>
                     <ul className={s.receiptItems}>
                       {order.lines.map((line, i) => (
@@ -460,6 +488,23 @@ function OrderWorkspace() {
                     </div>
                   </div>
                 )}
+                {isDraft && <div className="my-4 space-y-3">
+                  <p className="text-sm text-[var(--muted)]">For groceries, create an Instacart shopping list and review availability, substitutions, fees and the final price there. Creating a link does not move pouch funds or place an order.</p>
+                  <button className={btnSecondary} disabled={busy} onClick={() => void createShoppingList()}>{busy ? "Working…" : "Create Instacart shopping list"}</button>
+                  {order.fulfillment?.linkStatus === "not_configured" && <p role="status">Instacart links are not configured yet.</p>}
+                  {order.fulfillment?.linkStatus === "unavailable" && <p role="status">The shopping link is unavailable. Try creating it again.</p>}
+                  {order.fulfillment?.linkExpiresAt && <p className="text-xs text-[var(--muted)]">Link expires {new Date(order.fulfillment.linkExpiresAt).toLocaleString()}.</p>}
+                </div>}
+                {order.status === "confirmed" && <Notice><p>This order has an older approval status. Refresh it before taking another action; no new payment will be started.</p><button className={btnSecondary} disabled={busy} onClick={() => void load()}>Refresh order status</button></Notice>}
+                {order.status === "paying" && <Notice>
+                  <strong>Checking payment</strong><p>The result is not confirmed yet. Do not create another order or pay again. Check this same payment to recover its result.</p>
+                  {order.txSignature && <p className="break-all text-xs">Transaction: {order.txSignature}</p>}
+                  <button className={btnSecondary} disabled={busy} onClick={() => void act("confirm")}>{busy ? "Checking…" : "Check payment status"}</button>
+                </Notice>}
+                {order.status === "paid" && <div className="my-4 flex flex-wrap gap-3">
+                  <button className={btnSecondary} onClick={() => downloadFile(`solpouch-receipt-${order.id.replace(/[^a-z0-9_-]/gi, "")}.txt`, receiptText(order, order.store?.name ?? merchant?.name ?? order.merchantId), "text/plain;charset=utf-8")}>Download receipt</button>
+                  <button className={btnSecondary} onClick={() => window.print()}>Print receipt</button>
+                </div>}
                 {order.status === "rejected" && (
                   <div role="alert" className={s.rejected}>
                     Your pouch declined this payment:{" "}
@@ -536,7 +581,7 @@ function OrderWorkspace() {
                 </div>
                 <div className="flex items-center justify-between border-t border-[var(--line-strong)] pt-5">
                   <span className="text-sm text-[var(--muted)]">
-                    {referenceOnly ? "Estimated total · CAD" : "Cart total · USDC"}
+                    {`${referenceOnly ? "Estimated total" : "Cart total"} · ${orderCurrency(order)}`}
                   </span>
                   <strong className="num text-3xl tracking-tight">
                     {usd(toUsdc(order.total))}
@@ -571,7 +616,7 @@ function OrderWorkspace() {
                         Cancel order
                       </button>
                     </>
-                  ) : (
+                  ) : order.status !== "paying" && order.status !== "confirmed" ? (
                     <button
                       className={btnPrimary}
                       onClick={() => {
@@ -586,7 +631,7 @@ function OrderWorkspace() {
                     >
                       New order
                     </button>
-                  )}
+                  ) : null}
                 </div>
               </section>
             )}

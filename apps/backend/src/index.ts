@@ -13,16 +13,15 @@ const store = process.env.DATABASE_URL ? await PostgresStore.connect(process.env
 console.log(`store: ${process.env.DATABASE_URL ? "postgres (Tiger Data)" : "memory"}`);
 let vault = createVaultClient(store);
 if (process.env.VAULT_MODE === "chain") {
-  const { ensureOnChain, ChainVaultClient } = await import("./vault/index.js");
   const { SyncedVaultClient } = await import("./vault/synced.js");
-  // Creates missing pouches on devnet and funds each vault up to its stored balance.
-  for (const p of await ensureOnChain(vault as InstanceType<typeof ChainVaultClient>, await store.listPouches())) {
-    await store.savePouch(p);
-  }
+
   vault = new SyncedVaultClient(vault, store);
   for (const p of await store.listPouches()) {
-    const { balance, spentToday } = await vault.getBalance(p.id);
-    await store.savePouch({ ...p, balance, spentToday });
+    await store.withPouchLock(p.id,async()=> {
+      const fresh=(await store.getPouch(p.id))!;
+      const state = vault.getState ? await vault.getState(p.id) : await vault.getBalance(p.id);
+      await store.savePouch({ ...fresh, ...state });
+    });
   }
 }
 const app = createApp({ store, vault });

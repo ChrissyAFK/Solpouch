@@ -1,3 +1,4 @@
+import { consumeAiBudget } from "../security/rateLimit.js";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
@@ -22,6 +23,7 @@ export function chatRoutes(deps: Deps) {
     const { messages } = chatBody.parse(await c.req.json());
     const mode = chatMode();
     const email = c.get("user").email;
+    await consumeAiBudget(deps.store, email);
     const [stored, orders] = await Promise.all([deps.store.listPouches(email), listOwnedOrders(deps, email)]);
     const pouches = stored.map(publicPouch);
     const context = { pouches, orders: [...orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10) };

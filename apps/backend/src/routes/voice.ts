@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
-import { clientIp } from "../security/rateLimit.js";
+import { consumeBudget, clientIp } from "../security/rateLimit.js";
 import { verifyVoiceToken } from "../auth/session.js";
 import { z } from "zod";
 import { isCheckoutReference, toUsdc, type Order } from "@solpouch/shared";
@@ -43,24 +43,13 @@ function safeEqual(a: string, b: string): boolean {
 
 export function voiceRoutes(deps: Deps) {
   const app = new Hono();
-  const fails = new Map<string, { count: number; windowStart: number; lockedUntil: number }>();
 
   app.post("/tools/:tool", async (c) => {
     const secret = process.env.ELEVENLABS_TOOL_SECRET;
     if (secret) {
       const ip = clientIp(c);
-      const now = Date.now();
-      const st = fails.get(ip);
-      if (st && st.lockedUntil > now) {
-        const secs = Math.ceil((st.lockedUntil - now) / 1000);
-        c.header("Retry-After", String(secs));
-        return c.json({ error: `Too many requests. Try again in ${secs} seconds.` }, 429);
-      }
       if (!safeEqual(c.req.header("X-Solpouch-Secret") ?? "", secret)) {
-        const cur = st && st.windowStart + LOCK_MS > now ? st : { count: 0, windowStart: now, lockedUntil: 0 };
-        cur.count++;
-        if (cur.count >= MAX_FAILS) cur.lockedUntil = now + LOCK_MS;
-        fails.set(ip, cur);
+        await consumeBudget(deps.store, `voice-secret:${ip}`, LOCK_MS, MAX_FAILS);
         return c.json({ error: "Unauthorized" }, 401);
       }
     } else if (process.env.NODE_ENV === "production") {
@@ -72,7 +61,9 @@ export function voiceRoutes(deps: Deps) {
     const tool = c.req.param("tool");
     if (!(VOICE_TOOLS as readonly string[]).includes(tool)) return c.json({ error: `Unknown tool: ${tool}` }, 404);
     const body = await c.req.json().catch(() => ({}));
-    const email = await verifyVoiceToken((body as { user_token?: unknown } | null)?.user_token);
+    const authorization = c.req.header("Authorization");
+    const credential = authorization === undefined ? (body as { user_token?: unknown } | null)?.user_token : /^Bearer (.+)$/.exec(authorization)?.[1];
+    const email = await verifyVoiceToken(credential, deps.store);
     if (!email) return c.json({ say: "Please sign in to Solpouch first." }, 401);
 
     switch (tool) {
@@ -110,7 +101,7 @@ export function voiceRoutes(deps: Deps) {
       }
       case "freeze_all": {
         const pouches = await deps.store.listPouches(email);
-        for (const p of pouches) await deps.vault.freeze(p.id);
+        for (const p of pouches) await deps.store.withPouchLock(p.id, () => deps.vault.freeze(p.id));
         return c.json({ say: `Frozen. All ${pouches.length} pouches are locked until you unfreeze them in the app.` });
       }
       default:

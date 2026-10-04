@@ -83,10 +83,10 @@ export function LandingNav() {
           className={`${styles.nav} ${open ? styles.open : ""}`}
           aria-label="Main navigation"
         >
-          <a href="#how-it-works" onClick={closeMenu}>
+          <a href="/#how-it-works" onClick={closeMenu}>
             How it works
           </a>
-          <a href="#questions" onClick={closeMenu}>
+          <a href="/#questions" onClick={closeMenu}>
             Questions
           </a>
           <Link href="/dashboard" className={styles.launch} onClick={closeMenu}>

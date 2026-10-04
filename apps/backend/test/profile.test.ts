@@ -12,15 +12,16 @@ const B = "b@example.com";
 const AV = "data:image/png;base64,iVBORw0KGgo=";
 
 let app: ReturnType<typeof createApp>;
+let store: MemoryStore;
 beforeEach(() => {
-  const store = new MemoryStore([]);
+  store = new MemoryStore([]);
   app = createApp({ store, vault: new MockVaultClient(store, () => undefined, () => 1_000_000) });
 });
 
 const req = async (method: string, path: string, who: string | null, body?: unknown) =>
   app.request(path, {
     method,
-    headers: { "Content-Type": "application/json", ...(who ? await authHeaders(who) : {}) },
+    headers: { "Content-Type": "application/json", ...(who ? await authHeaders(store, who) : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 

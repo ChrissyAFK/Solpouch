@@ -62,9 +62,10 @@ describe("MockVaultClient rules", () => {
     await store.savePouch(p);
     expect(await code(vault.pay(p, thai, $(10), "o1"))).toBe("InsufficientFunds");
   });
-  it("reused order id", async () => {
+  it("reused order id returns the existing result", async () => {
     await vault.pay(await uber(), thai, $(5), "o1");
-    expect(await code(vault.pay(await uber(), thai, $(5), "o1"))).toBe("OrderAlreadyUsed");
+    expect(await code(vault.pay(await uber(), thai, $(5), "o1"))).toBe("ok");
+    expect((await uber()).balance).toBe($(95));
   });
   it("rolls the day after 24h", async () => {
     await vault.pay(await uber(), thai, $(25), "o1");
@@ -80,7 +81,7 @@ describe("HTTP flow", () => {
   const post = async (app: ReturnType<typeof mk>, path: string, body?: unknown, headers: Record<string, string> = {}) =>
     app.request(path, {
       method: "POST",
-      headers: { "content-type": "application/json", ...(await authHeaders()), ...headers },
+      headers: { "content-type": "application/json", ...(path.startsWith("/voice/") ? {} : await authHeaders(store)), ...headers },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
 
@@ -152,12 +153,14 @@ describe("HTTP flow", () => {
   it("pending top-ups list, complete, cancel, ownership", async () => {
     const app = mk();
     const get = async (path: string, email?: string) =>
-      app.request(path, { headers: await authHeaders(email) });
+      app.request(path, { headers: await authHeaders(store, email) });
     const a = await (await post(app, "/topups", { pouchId: "uber-eats", amount: $(5) })).json();
     const b = await (await post(app, "/topups", { pouchId: "uber-eats", amount: $(7), reason: "more" })).json();
     const list = await (await get("/topups?pouchId=uber-eats")).json();
     expect(list.map((t: { id: string }) => t.id).sort()).toEqual([a.id, b.id].sort());
-    expect((await get("/topups")).status).toBe(400);
+    expect((await get("/topups")).status).toBe(200);
+    expect((await (await get("/topups")).json()).map((t:{id:string})=>t.id).sort()).toEqual([a.id,b.id].sort());
+    expect(await (await get("/topups", "other@example.com")).json()).toEqual([]);
     expect((await get("/topups?pouchId=uber-eats", "other@example.com")).status).toBe(404);
 
     const saved = (await store.getTopUp(a.id))!;
@@ -170,9 +173,9 @@ describe("HTTP flow", () => {
 
   it("cancel top-up: owner only, then complete is 409", async () => {
     const app = mk();
-    const get = async (path: string) => app.request(path, { headers: await authHeaders() });
+    const get = async (path: string) => app.request(path, { headers: await authHeaders(store) });
     const b = await (await post(app, "/topups", { pouchId: "uber-eats", amount: $(7), reason: "more" })).json();
-    const otherCancel = await app.request(`/topups/${b.id}/cancel`, { method: "POST", headers: await authHeaders("other@example.com") });
+    const otherCancel = await app.request(`/topups/${b.id}/cancel`, { method: "POST", headers: await authHeaders(store,"other@example.com") });
     expect(otherCancel.status).toBe(404);
     const c = await post(app, `/topups/${b.id}/cancel`);
     expect(c.status).toBe(200);
@@ -184,12 +187,12 @@ describe("HTTP flow", () => {
   it("voice has no top-up tool and cannot move money outside confirm", async () => {
     const app = mk();
     for (const tool of ["top_up", "topup", "start_topup", "complete_topup", "pay"]) {
-      expect((await post(app, `/voice/tools/${tool}`, { pouchId: "uber-eats", amount: 5, user_token: await voiceToken() })).status).toBe(404);
+      expect((await post(app, `/voice/tools/${tool}`, { pouchId: "uber-eats", amount: 5, user_token: await voiceToken(store) })).status).toBe(404);
     }
     expect((await uber()).balance).toBe($(100));
-    const r = await (await post(app, "/voice/tools/create_order", { request: "pad thai", user_token: await voiceToken() })).json();
+    const r = await (await post(app, "/voice/tools/create_order", { request: "pad thai", user_token: await voiceToken(store) })).json();
     expect(r.say).toContain("Total");
-    const f = await post(app, "/voice/tools/freeze_all", { user_token: await voiceToken() });
+    const f = await post(app, "/voice/tools/freeze_all", { user_token: await voiceToken(store) });
     expect(f.status).toBe(200);
     expect((await uber()).frozen).toBe(true);
   });
@@ -198,10 +201,27 @@ describe("HTTP flow", () => {
     process.env.ELEVENLABS_TOOL_SECRET = "s3cret";
     try {
       const app = mk();
-      expect((await post(app, "/voice/tools/get_pouches", { user_token: await voiceToken() })).status).toBe(401);
-      expect((await post(app, "/voice/tools/get_pouches", { user_token: await voiceToken() }, { "X-Solpouch-Secret": "s3cret" })).status).toBe(200);
+      expect((await post(app, "/voice/tools/get_pouches", { user_token: await voiceToken(store) })).status).toBe(401);
+      expect((await post(app, "/voice/tools/get_pouches", { user_token: await voiceToken(store) }, { "X-Solpouch-Secret": "s3cret" })).status).toBe(200);
     } finally {
       delete process.env.ELEVENLABS_TOOL_SECRET;
     }
   });
+});
+
+it("spending is bucketed on payment completion, not the earlier draft date",async()=> {
+  await store.saveOrder({id:"paid-date",pouchId:"uber-eats",merchantId:"thai-express",request:"fixture",lines:[],total:100,status:"paid",createdAt:"2026-01-01T01:00:00.000Z",paidAt:"2026-01-03T01:00:00.000Z"});
+  const response=await createApp({store,vault}).request("/stats/spend?bucket=day",{headers:await authHeaders(store)});
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual([{pouchId:"uber-eats",bucket:"2026-01-03T00:00:00.000Z",spent:100,orders:1}]);
+});
+
+it("keeps undated legacy payments out of date buckets",async()=> {
+  await store.saveOrder({id:"legacy-paid",pouchId:"uber-eats",merchantId:"thai-express",request:"fixture",lines:[],total:100,status:"paid",createdAt:"2026-01-01T01:00:00.000Z"});
+  const app=createApp({store,vault});
+  const response=await app.request("/stats/spend?bucket=day",{headers:await authHeaders(store)});
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual([]);
+  const orders=await app.request("/orders",{headers:await authHeaders(store)});
+  expect((await orders.json()).map((o:{id:string})=>o.id)).toContain("legacy-paid");
 });
