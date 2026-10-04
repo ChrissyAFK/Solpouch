@@ -16,7 +16,7 @@ async function fixture() {
   const data=Buffer.alloc(AccountLayout.span);AccountLayout.encode({mint,owner:authority,amount:5_000_000n,delegateOption:0,delegate:PublicKey.default,state:1,isNativeOption:0,isNative:0n,delegatedAmount:0n,closeAuthorityOption:0,closeAuthority:PublicKey.default},data);
   return info(data,TOKEN_PROGRAM_ID);
  }
- const rpc={getGenesisHash:vi.fn(async()=>"EtWTRABZaYq6iMfeYKouRu166VU2xqa1"),getAccountInfo:vi.fn(async()=>info(data,program)),getMultipleAccountsInfo:vi.fn(async()=>[token(owner),token(pouch)]),getLatestBlockhash:vi.fn(async()=>({blockhash:Keypair.generate().publicKey.toBase58(),lastValidBlockHeight:100})),getFeeForMessage:vi.fn(async()=>({value:5000})),getMinimumBalanceForRentExemption:vi.fn(async()=>2_039_280),getBalance:vi.fn(async()=>10_000_000)};
+ const rpc={getGenesisHash:vi.fn(async()=>"EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"),getAccountInfo:vi.fn(async()=>info(data,program)),getMultipleAccountsInfo:vi.fn(async()=>[token(owner),token(pouch)]),getLatestBlockhash:vi.fn(async()=>({blockhash:Keypair.generate().publicKey.toBase58(),lastValidBlockHeight:100})),getFeeForMessage:vi.fn(async()=>({value:5000})),getMinimumBalanceForRentExemption:vi.fn(async()=>2_039_280),getBalance:vi.fn(async()=>10_000_000)};
  return {rpc,connection:rpc as unknown as Connection,input:{owner,pouch,program,mint,kind:"deposit" as const,amountMicros:1_000_000,network:"devnet" as const},token};
 }
 describe("unsigned owner transfer preparation",()=>{

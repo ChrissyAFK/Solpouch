@@ -56,6 +56,18 @@ describe("task 2: placeholder lookups are not payable", () => {
   });
 });
 
+describe("catalog pouch pick skips frozen pouches", () => {
+  it("lands on the unfrozen any-store pouch", async () => {
+    const base = ownedSeed()[0]!;
+    store = new MemoryStore([
+      { ...base, id: "frozen-allow", allowedMerchantIds: ["mountain-market"], frozen: true },
+      { ...base, id: "open-any", allowedMerchantIds: [], frozen: false },
+    ]);
+    const order = await createDraft({ store, vault }, TEST_USER, "2 eggs");
+    expect(order.pouchId).toBe("open-any");
+  });
+});
+
 describe("task 3: merchant re-check on confirm", () => {
   it("rejects when the pouch no longer allows the merchant", async () => {
     const o = await store.saveOrder(draft({ merchantId: "burnaby-builders" }));

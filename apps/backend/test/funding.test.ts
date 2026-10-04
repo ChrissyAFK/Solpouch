@@ -72,7 +72,7 @@ describe('funding callbacks and recovery',()=>{
  });
  it('finalized mainnet verification checks canonical mint and exact destination net amount',async()=>{
   const balance={accountIndex:0,mint:MAINNET_USDC_MINT,owner:wallet,uiTokenAmount:{amount:'17500000',decimals:6,uiAmount:17.5,uiAmountString:'17.5'}};
-  const rpc={getGenesisHash:vi.fn(async()=>'5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'),getParsedTransaction:vi.fn(async()=>({meta:{err:null,preTokenBalances:[],postTokenBalances:[balance]}}))};
+  const rpc={getGenesisHash:vi.fn(async()=>'5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d'),getParsedTransaction:vi.fn(async()=>({meta:{err:null,preTokenBalances:[],postTokenBalances:[balance]}}))};
   expect(await verifyMainnetUsdcReceipt(rpc as never,'1'.repeat(88),wallet,'17.5')).toBe(true);
   expect(await verifyMainnetUsdcReceipt(rpc as never,'1'.repeat(88),wallet,'18')).toBe(false);
   expect(rpc.getParsedTransaction.mock.calls[0]).toEqual(['1'.repeat(88),{commitment:'finalized',maxSupportedTransactionVersion:0}]);

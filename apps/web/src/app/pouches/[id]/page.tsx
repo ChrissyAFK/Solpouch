@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
-import { WalletLink } from "@/components/WalletLink";
+import { WalletLink, injectedWallet, shortAddress } from "@/components/WalletLink";
 import { StatePanel } from "@/components/StatePanel";
 import { PouchSkeleton } from "@/components/Skeletons";
 import { useParams } from "next/navigation";
@@ -53,6 +53,135 @@ const steps = (waitSeconds: number | null) => [
   waitSeconds ? `Short safety wait (${waitSeconds} s)` : "Short safety wait",
   "Added to pouch",
 ];
+
+function MoveFromWalletSection({
+  pouch,
+  onDone,
+}: {
+  pouch: Pouch;
+  onDone: () => Promise<void>;
+}) {
+  const { user, sessionKey, updateUser } = useAuth();
+  const wallet = user?.wallet;
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [moved, setMoved] = useState<string | null>(null);
+  const [hasProvider, setHasProvider] = useState(true);
+  useEffect(() => {
+    setHasProvider(Boolean(injectedWallet()));
+  }, []);
+
+  async function move(e: React.FormEvent) {
+    e.preventDefault();
+    if (busy || !wallet) return;
+    const n = Number(amount);
+    const micros = toMicros(n);
+    if (!(n > 0) || !Number.isSafeInteger(micros) || micros <= 0) {
+      setError("Enter a valid amount.");
+      return;
+    }
+    if (n > MAX_TOPUP) {
+      setError(`The most you can move at once is ${MAX_TOPUP.toLocaleString()} USDC.`);
+      return;
+    }
+    const provider = injectedWallet();
+    if (!provider) {
+      setHasProvider(false);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setMoved(null);
+    try {
+      const conn = await provider.connect();
+      if (conn.publicKey.toBase58() !== wallet) {
+        setError(`Switch Phantom to your linked wallet ${shortAddress(wallet)}`);
+        return;
+      }
+      const prep = await api.prepareAllocation(pouch.id, micros);
+      const web3 = await import("@solana/web3.js");
+      const tx = web3.Transaction.from(
+        Uint8Array.from(atob(prep.transaction), (c) => c.charCodeAt(0)),
+      );
+      let signature: string;
+      if (provider.signAndSendTransaction) {
+        signature = (await provider.signAndSendTransaction(tx)).signature;
+      } else if (provider.signTransaction) {
+        const signed = (await provider.signTransaction(tx)) as InstanceType<
+          typeof web3.Transaction
+        >;
+        const connection = new web3.Connection(
+          process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? web3.clusterApiUrl("devnet"),
+          "confirmed",
+        );
+        signature = await connection.sendRawTransaction(signed.serialize());
+      } else {
+        setError("This wallet cannot sign transactions. Try Phantom.");
+        return;
+      }
+      const deadline = Date.now() + 60000;
+      for (;;) {
+        try {
+          await api.completeAllocation(prep.allocationId, signature);
+          break;
+        } catch (err) {
+          if (!(err instanceof ApiRequestError && err.status === 422) || Date.now() > deadline)
+            throw err;
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+      setMoved(`Moved ${usd(n)} USDC into this pouch`);
+      setAmount("");
+      await onDone();
+    } catch (err) {
+      const x = err as { code?: number; message?: string };
+      if (x?.code === 4001 || /reject/i.test(x?.message ?? "")) setError("Cancelled in wallet");
+      else {
+        if (err instanceof ApiRequestError && err.code === "WalletRequired" && sessionKey)
+          updateUser({ wallet: undefined }, sessionKey);
+        setError(errMsg(err));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className={card}>
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold tracking-tight">Move from wallet</h2>
+        <p className="mt-1 text-xs text-[var(--muted)]">
+          Send USDC from your linked wallet into this pouch.
+        </p>
+      </div>
+      <ErrorBanner message={error} />
+      {moved && <Notice>{moved}</Notice>}
+      {!wallet && <p className="text-sm text-[var(--ink)]">Link a wallet first</p>}
+      {wallet && !hasProvider && (
+        <p className="text-sm text-[var(--ink)]">
+          Open Solpouch in the Phantom app&apos;s browser to sign.
+        </p>
+      )}
+      <form onSubmit={move} className="mt-3 space-y-3">
+        <div>
+          <label className={label} htmlFor={`move-${pouch.id}`}>Amount · USDC</label>
+          <input
+            id={`move-${pouch.id}`}
+            className={input}
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="25"
+          />
+        </div>
+        <button className={btnPrimary} disabled={busy || !wallet || !amount}>
+          {busy ? "Waiting for wallet…" : "Move to pouch"}
+        </button>
+      </form>
+    </section>
+  );
+}
 
 function TopUpSection({
   pouch,
@@ -854,6 +983,7 @@ export default function PouchDetail() {
         </button>
       )}
       <TopUpSection key={pouch.id} pouch={pouch} onDone={load} />
+      <MoveFromWalletSection key={`m-${pouch.id}`} pouch={pouch} onDone={load} />
       <WithdrawSection
         key={`w-${pouch.id}`}
         pouch={pouch}

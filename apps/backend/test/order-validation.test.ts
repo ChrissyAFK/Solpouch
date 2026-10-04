@@ -3,6 +3,16 @@ import { fallbackParse } from "../src/ai/gemini.js";
 import { OrderInputError, validateOrderLines, validQuantity } from "../src/services/orderValidation.js";
 import type { OrderLine } from "@solpouch/shared";
 const line = (changes: Partial<OrderLine> = {}): OrderLine => ({ requested: "eggs", requestedQty: 2, qty: 2, lineTotal: 10_000_000, matchScore: 1, substitution: false, product: { id: "eggs", merchantId: "store", name: "Eggs", unitPrice: 5_000_000, inStock: true }, ...changes });
+describe("fallbackParse hints and caps", () => {
+  it("does not hint kim job on substrings", () => {
+    for (const s of ["2 study lamps", "kimchi", "jobs list"]) expect(fallbackParse(s).pouchHint).toBeUndefined();
+    expect(fallbackParse("10 studs and screws").pouchHint).toBe("kim job: materials");
+  });
+  it("strips a cap with a currency word", () => {
+    expect(fallbackParse("milk under 15 dollars").items).toEqual([{ requested: "milk", qty: 1 }]);
+  });
+});
+
 describe("safe order amounts", () => {
   it.each([Infinity, NaN, -1, 0, 1.5, 10001, Number.MAX_SAFE_INTEGER])("rejects unsafe quantity %s", value => expect(() => validQuantity(value)).toThrow(OrderInputError));
   it("rejects excessive quantities in ordinary text", () => expect(() => fallbackParse("999999999999999999999999999999999999 eggs")).toThrow(OrderInputError));

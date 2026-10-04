@@ -7,7 +7,7 @@ import { TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction, ge
 import idl from "./idl/solpouch_vault.json" with { type: "json" };
 
 export const MAINNET_USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-const DEVNET_GENESIS = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
+const DEVNET_GENESIS = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 const coder = new BorshAccountsCoder(idl as Idl);
 
 type OwnerTransfer = {

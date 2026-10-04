@@ -184,10 +184,52 @@ describe("voice tools need a voice token", () => {
     expect((await store.getOrder(order.id))!).toMatchObject({ status: "rejected", rejectReason: "OverDailyLimit" });
   });
 
+  it("turns order errors into a spoken answer, not an HTTP error", async () => {
+    await store.savePouch({ ...(await store.getPouch("uber-eats"))!, confirmAbove: 0 });
+    const order = await (await req("POST", "/orders", A, { request: "pad thai" })).json();
+    const user_token = await voiceToken(store, A);
+    const first = await tool("cancel_order", { orderId: order.id, user_token });
+    expect((await first.json()).say).toBe("Okay, cancelled.");
+    const second = await tool("cancel_order", { orderId: order.id, user_token });
+    expect(second.status).toBe(200);
+    expect((await second.json()).say).toMatch(/already cancelled/);
+    const confirm = await tool("confirm_order", { orderId: order.id, user_token });
+    expect(confirm.status).toBe(200);
+    expect(typeof (await confirm.json()).say).toBe("string");
+    const unknown = await tool("confirm_order", { orderId: "nope", user_token });
+    expect(unknown.status).toBe(200);
+    expect(typeof (await unknown.json()).say).toBe("string");
+  });
+
+  it("refuses a correct secret during lockout", async () => {
+    process.env.ELEVENLABS_TOOL_SECRET = "right";
+    try {
+      for (let i = 0; i < 10; i++) await app.request("/voice/tools/get_pouches", { method: "POST", headers: { ...json, "X-Solpouch-Secret": "wrong" }, body: "{}" });
+      const r = await app.request("/voice/tools/get_pouches", { method: "POST", headers: { ...json, "X-Solpouch-Secret": "right" }, body: "{}" });
+      expect(r.status).toBe(429);
+    } finally { delete process.env.ELEVENLABS_TOOL_SECRET; }
+  });
+
+  it("does not apply the 64KB global body limit to /chat", async () => {
+    const messages = Array.from({ length: 20 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", content: "字".repeat(2000) }));
+    messages[19]!.role = "user";
+    const r = await req("POST", "/chat", A, { messages });
+    expect(r.status).not.toBe(413);
+  });
+
+  it("gives a readable message for over-cap pouch limits", async () => {
+    const r = await req("POST", "/pouches", A, { name: "Big", maxPerOrder: 20_000_000_000, dailyLimit: 20_000_000_000, allowedMerchantIds: [] });
+    expect(r.status).toBe(400);
+    const text = JSON.stringify(await r.json());
+    expect(text).toContain("$10,000");
+    expect(text).not.toContain("Number must be");
+  });
+
   it("cannot confirm another user's order", async () => {
     const order = await (await req("POST", "/orders", B, { request: "pad thai" })).json();
     const r = await tool("confirm_order", { orderId: order.id, user_token: await voiceToken(store, A) });
-    expect(r.status).toBe(404);
+    expect(r.status).toBe(200);
+    expect(typeof (await r.json()).say).toBe("string");
     expect((await store.getOrder(order.id))!.status).toBe("draft");
   });
 });

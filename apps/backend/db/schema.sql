@@ -244,3 +244,18 @@ CREATE TABLE IF NOT EXISTS indexer_cursors (
 );
 -- Include not-yet-materialized payments so /stats/spend is current.
 ALTER MATERIALIZED VIEW spend_daily SET (timescaledb.materialized_only = false);
+
+-- Wallet-to-pouch allocations: the user's signed transfer, then the vault top-up it funds.
+CREATE TABLE IF NOT EXISTS allocations (
+  id               text PRIMARY KEY,
+  owner_email      text NOT NULL,
+  pouch_id         text NOT NULL,
+  amount           bigint NOT NULL,
+  wallet           text NOT NULL,
+  status           text NOT NULL,
+  created_at       timestamptz NOT NULL,
+  tx_signature     text,
+  top_up_signature text,
+  completed_at     timestamptz
+);
+CREATE UNIQUE INDEX IF NOT EXISTS allocations_tx_signature_key ON allocations(tx_signature) WHERE tx_signature IS NOT NULL;
