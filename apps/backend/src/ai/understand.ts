@@ -17,6 +17,7 @@ The text may come from speech recognition. Set "clarify" ONLY in these cases, ot
 - "not_shopping": the text is not a request to buy anything. Ask what they would like to order.
 NEVER ask about everyday items that have a sensible default (milk, eggs, bread, coffee, a burger, fries, a pizza, toilet paper): choose the common default and leave "clarify" null.
 A count that is part of how the product is sold stays in "requested" with qty 1: "20 Timbits" is { "requested": "20 pack of Timbits", "qty": 1 }, and the same goes for "10 McNuggets", "a dozen eggs" and "a 12 pack of Coke". Use a qty above 1 only for separate units ("two crunchy tacos", "3 boxes of screws", "ten 2x4 studs").
+"store" is only the name of a specific business ("Popeyes", "Home Depot"). A kind of place ("an Indian restaurant in Burnaby", "a Thai place", "a hardware store") is not a store: set "store" to null and keep those words in each item's "requested" ("butter chicken from an Indian restaurant in Burnaby").
 A store with a budget but no items ("a Popeyes meal under $15") is complete: leave "clarify" null.
 The question is one short spoken sentence, under 20 words. When "clarify" is set, still fill "items" as best you can.`;
 

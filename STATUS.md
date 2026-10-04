@@ -8,6 +8,25 @@ Current audit fixes and local verification are tracked in `docs/AUDIT_FIXES.md`.
 
 Dashboard redesign from `codex/dashboard-design` is merged into `scaffold` (not merged to main).
 
+## Assistant v2 (2026-10-04, branch `feat/assistant-v2`, not merged, not deployed)
+
+Order finding was rebuilt: an understand step (items, store, or one clarifying question), one web search, a price check against the product's own page, and a result cache (24 h when every price was checked, 1 h otherwise). Spec: `docs/superpowers/specs/2026-10-04-assistant-v2-design.md`. Plan: `docs/superpowers/plans/2026-10-04-assistant-v2.md`.
+
+- With an AI key set, the demo catalogs are used only when the request names that merchant, the pouch allows only catalog merchants, or it is a saved re-order. Everything else goes to web search.
+- A request missing a needed detail or that looks misheard gets HTTP 400 `NeedClarification` with the question as the message; voice returns `needsAnswer: true`; the `/order` page shows the question. An AI outage is HTTP 503 `SearchUnavailable` and never builds a cart.
+- Web lines are `estimated: true` unless the price was read from the product page. Estimated orders are never auto-paid.
+- Voice: `voice/prompt.md` has the echo, exact-words, question and estimate rules; `voice/keywords.txt` has 158 recogniser keywords; `node voice/apply-settings.mjs` applies keywords, `speculative_turn=false`, `turn_eagerness=patient` and the prompt to the live agent. It has only been run with `--dry-run`.
+- New env: `ANTHROPIC_SEARCH_MODEL` (search model, default `ANTHROPIC_MODEL`), `VERIFY_PRICES=0` (turn page checks off).
+
+Measured with `apps/backend/eval/run.ts` (40 live requests, 4 at a time, 2026-10-04):
+
+| Search model | Passed | Median | Slowest | Prices checked on the page |
+|---|---|---|---|---|
+| Haiku 4.5 (default, kept) | 36/40, then 6/6 on the restaurant group after a prompt fix | 7.7 s | 11.8 s | 2 of 44 |
+| `claude-sonnet-5-5` | 36/40 | 7.1 s | 12.0 s | 1 of 39 |
+
+Known limits: almost every large retailer answers a direct page fetch with 403 (Save-On-Foods, Rona, Best Buy, Shoppers, Walmart tested), so nearly all prices stay labelled estimates; prices for the same item moved between runs (Edo Japan bowl 15.93 and 11.95). Lowe's no longer trades in Canada and returns not found. Results vary run to run by one or two cases. Backend tests: 470 passed. Not yet done: a signed-in browser run of the whole flow, merge, deploy, applying the voice settings.
+
 ## Backend hardening branch (2026-10-03)
 
 Wallet sign-in, server-side ownership, scoped voice credentials, versioned storage, shared rate limits, verified database TLS, read-only startup, and journaled payment retries are implemented. See [BACKEND-HARDENING.md](BACKEND-HARDENING.md) for migration and recovery steps. Existing pouches stay hidden until an operator assigns their verified owner. This is a devnet, single-owner chain adapter; it does not implement production multi-wallet signing.
