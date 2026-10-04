@@ -48,7 +48,7 @@ export async function understand(text: string): Promise<Understood> {
   if (aiProvider() !== "claude") return parseRequest(text);
   let raw: any;
   try {
-    raw = await claudeJson<any>({ system: UNDERSTAND_PROMPT, prompt: text, schema: UNDERSTAND_SCHEMA, name: "shopping_list", maxTokens: 1024, timeoutMs: 5000, maxRetries: 0 });
+    raw = await claudeJson<any>({ system: UNDERSTAND_PROMPT, prompt: text, schema: UNDERSTAND_SCHEMA, name: "shopping_list", maxTokens: 1024, timeoutMs: 5000 });
   } catch (e) {
     console.warn("[claude] understand failed:", (e as Error).message);
     throw new SearchUnavailableError("The assistant is unavailable right now");

@@ -183,7 +183,7 @@ export async function verifyPrice(c: { name: string; unitPrice: number; url?: st
   }
   if (!html) return { status: "estimate", reason: "page could not be read" };
   const want = tokens(c.name);
-  const caStore = domain.toLowerCase().endsWith(".ca") || (() => { try { const u = new URL(c.url!); return /(^|[\/._-])(en|fr)?[-_]?ca([\/._-]|$)/i.test(u.host + u.pathname); } catch { return false; } })();
+  const caStore = domain.toLowerCase().endsWith(".ca") || (() => { try { const u = new URL(c.url!); return /^ca\./i.test(u.host) || /^\/((en|fr)[-_])?ca(\/|$)/i.test(u.pathname); } catch { return false; } })();
   let ld: { price: number } | undefined;
   let bestCommon = -1;
   for (const p of jsonLdProducts(html)) {

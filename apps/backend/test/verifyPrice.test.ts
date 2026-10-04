@@ -101,6 +101,8 @@ describe("verifyPrice", () => {
     expect((await verifyPrice(com, "store.com", { fetch: vi.fn(async () => page(html)), resolve: pub })).status).toBe("estimate");
     expect((await verifyPrice({ ...item, url: "https://store.ca/p/deck-screws" }, "store.ca", { fetch: vi.fn(async () => page(html)), resolve: pub })).status).toBe("verified");
     expect((await verifyPrice({ ...item, url: "https://store.com/en-ca/p/deck-screws" }, "store.com", { fetch: vi.fn(async () => page(html)), resolve: pub })).status).toBe("verified");
+    for (const u of ["https://store.com/us/ca/los-angeles/deck-screws", "https://store.com/p/ca-deck-screws", "https://store.com/stores/ca"])
+      expect((await verifyPrice({ ...item, url: u }, "store.com", { fetch: vi.fn(async () => page(html)), resolve: pub })).status).toBe("estimate");
   });
   it("never fetches a private address or another domain", async () => {
     const fetch = vi.fn(async () => page(ld("Deck Screws 3 inch 100 pack", 12.99)));
