@@ -88,6 +88,10 @@ export function voiceRoutes(deps: Deps) {
           if (e instanceof HttpError && e.code === "WebCheckoutRequired") {
             return c.json({ say: e.message, status: "draft", code: e.code });
           }
+          if (e instanceof HttpError && e.code === "PaymentPending") {
+            // The outcome is unknown: money may have moved. Never tell the caller it was refused.
+            return c.json({ say: "I sent that payment but can't confirm it yet, so it may have gone through. Don't start a new order. In a minute I can confirm this same order again; that only checks it and never pays twice.", status: "paying", code: e.code });
+          }
           if (e instanceof HttpError && e.code) {
             return c.json({ say: `That payment was refused: ${e.code}. No money moved.`, status: "rejected", code: e.code });
           }

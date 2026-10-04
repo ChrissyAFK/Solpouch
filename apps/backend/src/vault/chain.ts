@@ -63,6 +63,25 @@ const PROGRAM_ERRORS = new Set([
   "VaultNotEmpty",
 ]);
 
+const ERROR_NAMES = new Map<number, string>(((idlJson as { errors?: { code: number; name: string }[] }).errors ?? []).map(e => [e.code, e.name]));
+
+/** Name the vault program error inside a failed transaction status, if it is one. */
+export function statusRejectCode(err: unknown): VaultRejectCode | undefined {
+  const custom = (err as { InstructionError?: [number, { Custom?: number }] } | null)?.InstructionError?.[1]?.Custom;
+  const name = custom === undefined ? undefined : ERROR_NAMES.get(custom);
+  return name && PROGRAM_ERRORS.has(name) ? name as VaultRejectCode : undefined;
+}
+
+/** Name the vault program error that refused a preflight simulation, if it is one. */
+export function preflightRejectCode(e: unknown): VaultRejectCode | undefined {
+  const message = (e as { message?: unknown })?.message;
+  // Only a failed simulation proves the transaction was never processed.
+  if (typeof message !== "string" || !message.startsWith("Simulation failed")) return undefined;
+  try { mapError(e); } catch (mapped) { if (mapped instanceof VaultRejected) return mapped.code; }
+  const hex = /custom program error: (0x[0-9a-f]+)/i.exec(message)?.[1];
+  return hex ? statusRejectCode({ InstructionError: [0, { Custom: Number(hex) }] }) : undefined;
+}
+
 function mapError(e: unknown): never {
   if (e instanceof VaultRejected) throw e;
   const anyE = e as { error?: { errorCode?: { code?: string } }; message?: string; logs?: string[] };
@@ -132,15 +151,16 @@ export class ChainVaultClient implements VaultClient {
     return recoverTransaction(this.store, id, {
       status: async (signature) => {
         const value = (await this.connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
-        return { confirmed: !!value && !value.err && (value.confirmationStatus === "confirmed" || value.confirmationStatus === "finalized"), failed: !!value?.err };
+        return { confirmed: !!value && !value.err && (value.confirmationStatus === "confirmed" || value.confirmationStatus === "finalized"), failed: !!value?.err, seen: !!value, rejectCode: statusRejectCode(value?.err) };
       },
       blockHeight: () => this.connection.getBlockHeight(COMMITMENT),
       broadcast: (bytes) => this.connection.sendRawTransaction(bytes, { skipPreflight: false, maxRetries: 0 }),
       confirm: async (operation) => {
         const tx = Transaction.from(Buffer.from(operation.signedTransaction, "base64"));
         const result = await this.connection.confirmTransaction({ signature: operation.txSignature, blockhash: tx.recentBlockhash!, lastValidBlockHeight: operation.lastValidBlockHeight }, COMMITMENT);
-        return { failed: !!result.value.err };
+        return { failed: !!result.value.err, rejectCode: statusRejectCode(result.value.err) };
       },
+      rejection: preflightRejectCode,
     }, async () => {
       const tx = await build();
       const latest = await this.connection.getLatestBlockhash(COMMITMENT);

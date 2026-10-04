@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PaymentPending } from "../src/vault/recovery.js";
+import { VaultRejected } from "../src/vault/types.js";
 import { createApp } from "../src/app.js";
 import { getMerchant } from "../src/merchants/index.js";
 import { MemoryStore } from "../src/store/memory.js";
@@ -143,6 +145,26 @@ describe("voice tools need a voice token", () => {
     await tool("freeze_all", { user_token: await voiceToken(store, B) });
     expect((await store.getPouch("uber-eats"))!.frozen).toBe(false);
     expect((await store.getPouch("b-uber-eats"))!.frozen).toBe(true);
+  });
+
+  it("never tells the caller an unconfirmed payment was refused", async () => {
+    const order = await (await req("POST", "/orders", A, { request: "pad thai" })).json();
+    const pay = vi.spyOn(MockVaultClient.prototype, "pay").mockRejectedValueOnce(new PaymentPending());
+    const r = await (await tool("confirm_order", { orderId: order.id, user_token: await voiceToken(store, A) })).json();
+    pay.mockRestore();
+    expect(r.status).toBe("paying");
+    expect(r.code).toBe("PaymentPending");
+    expect(r.say).not.toMatch(/refused|no money moved/i);
+    expect((await store.getOrder(order.id))!.status).toBe("paying");
+  });
+
+  it("reports a chain refusal as refused and closes the order", async () => {
+    const order = await (await req("POST", "/orders", A, { request: "pad thai" })).json();
+    const pay = vi.spyOn(MockVaultClient.prototype, "pay").mockRejectedValueOnce(new VaultRejected("OverDailyLimit"));
+    const r = await (await tool("confirm_order", { orderId: order.id, user_token: await voiceToken(store, A) })).json();
+    pay.mockRestore();
+    expect(r).toMatchObject({ status: "rejected", code: "OverDailyLimit" });
+    expect((await store.getOrder(order.id))!).toMatchObject({ status: "rejected", rejectReason: "OverDailyLimit" });
   });
 
   it("cannot confirm another user's order", async () => {
