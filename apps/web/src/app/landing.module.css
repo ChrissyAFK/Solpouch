@@ -429,7 +429,8 @@
 /* Footer */
 .footer {
   border-top: 1px solid var(--line);
-  padding: 64px 0 32px;
+  padding: 72px 0 32px;
+  background: var(--surface);
 }
 .footerTop {
   display: grid;
@@ -443,6 +444,7 @@
   gap: 10px;
   font-size: 22px;
   font-weight: 700;
+  letter-spacing: -0.03em;
   text-decoration: none;
 }
 .footerAbout p {
@@ -458,7 +460,7 @@
 }
 .footer nav h2 {
   margin: 0 0 8px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--muted);
 }
@@ -467,11 +469,15 @@
   align-items: center;
   gap: 6px;
   min-height: 44px;
-  font-size: 16px;
+  font-size: var(--text-base);
+  color: var(--ink-soft);
   text-decoration: none;
+  transition: color var(--dur-hover, 160ms) var(--ease-out);
 }
-.footer nav a:hover {
-  color: var(--solana-green);
+@media (hover: hover) and (pointer: fine) {
+  .footer nav a:hover {
+    color: var(--brand);
+  }
 }
 .footerBottom {
   display: flex;
@@ -482,7 +488,7 @@
   padding-top: 24px;
   border-top: 1px solid var(--line);
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
 }
 .footerBottom p {
   margin: 0;

@@ -89,7 +89,7 @@ Radii: `--r-sm 8` (inputs, chips) · `--r-md 12` (buttons, panels) · `--r-lg 16
 - [x] 2. Landing nav + hero (validator hero: fare card + readout restyle of HeroSequence)
 - [x] 3. Landing "A pouch for every budget" as fare cards
 - [x] 4. Landing how it works, boundary, FAQ, closing panel
-- [ ] 5. Footer (shared) and landing nav on mobile
+- [x] 5. Footer (shared) and landing nav on mobile
 - [ ] 6. App shell: sidebar, top bar, sign-in card, Ask Solpouch button
 - [ ] 7. Info pages: About, Privacy, Terms, Contact, Delete account
 - [ ] 8. Dashboard overview: stat tiles, spending card, pouch list as cards
@@ -101,3 +101,4 @@ Radii: `--r-sm 8` (inputs, chips) · `--r-md 12` (buttons, panels) · `--r-lg 16
 - 01:22 Item 2: landing now on the light palette; hero headline Hanken 800 at -0.035em, "limit." in brand violet, violet CTA with press scale, underlined text link; nav 72px with a bordered Sign in button; HeroSequence restyled as a validator (segmented tabs, black readout panel, mint voice bars, white receipt tape). Build passes; / checked at 1440 and 390.
 - 01:25 Item 3: pouches rebuilt as fare cards (tinted card face per tone with a chip mark, pouch glyph and name on the face, purpose and mono rule table below, one soft money-card shadow); glyph tones moved to transit violet and mint. Build passes; / checked at 1440 and 390.
 - 01:27 Item 4: how-it-works rail with gate-square stops (last one signal green); boundary as a black readout panel; FAQ toggles as bordered squares that rotate on open; closing as the violet brand field with mint second line and a white CTA. Build passes; / checked at 1440 and 390.
+- 01:29 Item 5: shared footer and landing footer on tokens (no font-stretch, muted 13px column labels, ink-soft links with gated brand hover, 36/44px link targets, surface ground); landing mobile nav 64px with a full-width menu of 52px rows and a bordered Sign in. Build passes; /about footer checked at 1440, landing header at 390.
