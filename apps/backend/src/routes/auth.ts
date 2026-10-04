@@ -8,6 +8,7 @@ import { validSignature, validWallet } from "../security/wallet.js";
 import { StoreConflictError, WalletAlreadyLinkedError } from "../store/types.js";
 import { mergedUser } from "./profile.js";
 import { HttpError, type Deps } from "../services/orders.js";
+import { reconcilePouch } from "../services/reconcile.js";
 const googleBody = z.object({ credential: z.string().min(1).max(4096) });
 const challengeBody = z.object({ wallet: z.string().max(44).refine(validWallet, "Invalid wallet address") }).strict();
 const verifyBody = z.object({ id: z.string().regex(/^[a-f0-9]{48}$/), signature: z.string().max(100) }).strict();
@@ -52,17 +53,25 @@ export function authRoutes(deps: Deps, origins: string[] = []) {
   app.use("/account", auth, async (c, next) => deps.store.withPouchLock(`user:${c.get("user").email}`, next));
   app.delete("/account", rateLimit({ store: deps.store, windowMs: 60000, max: 3, key: "auth-delete-account" }), auth, async c => {
     const email = c.get("user").email;
-    const blockers: string[] = [];
-    for (const p of await deps.store.listPouches(email)) {
-      if (p.balance > 0) blockers.push(`${p.name} still holds money. Withdraw or spend the remaining balance first`);
-      if ((await deps.store.listWithdrawals(p.id)).some(w => w.status === "holding" || w.status === "processing")) blockers.push(`${p.name} has a withdrawal in progress`);
-      if ((await deps.store.listTopUps(p.id)).some(t => t.status === "cooling_down" || t.status === "processing")) blockers.push(`${p.name} has a top-up in progress`);
-      if ((await deps.store.listOrders(p.id)).some(o => o.status === "paying")) blockers.push(`${p.name} has a payment in progress`);
-    }
-    if (blockers.length) return c.json({ error: "Your account can't be deleted yet. Empty your pouches and let anything in progress finish first.", code: "AccountNotEmpty", blockers }, 409);
-    await deps.fundingRepository?.deleteOwner(email);
-    await deps.store.deleteAccount(email);
-    return c.json({ ok: true });
+    const ids = (await deps.store.listPouches(email)).map(p => p.id).sort();
+    // Every pouch lock is held (in id order) from the checks to the delete, so no payment or withdrawal can start in between.
+    const locked = (i: number, fn: () => Promise<Response>): Promise<Response> => i < ids.length ? deps.store.withPouchLock(ids[i]!, () => locked(i + 1, fn)) : fn();
+    return locked(0, async () => {
+      const blockers: string[] = [];
+      for (const id of ids) {
+        // The stored balance is a mirror: read the chain first, and refuse (503) when it cannot be read.
+        const p = await reconcilePouch(deps, id);
+        if (p.balance > 0) blockers.push(`${p.name} still holds money. Withdraw or spend the remaining balance first`);
+        if ((await deps.store.listWithdrawals(id)).some(w => w.status === "holding" || w.status === "processing")) blockers.push(`${p.name} has a withdrawal in progress`);
+        if ((await deps.store.listTopUps(id)).some(t => t.status === "cooling_down" || t.status === "processing")) blockers.push(`${p.name} has a top-up in progress`);
+        if ((await deps.store.listOrders(id)).some(o => o.status === "paying")) blockers.push(`${p.name} has a payment in progress`);
+      }
+      if (blockers.length) return c.json({ error: "Your account can't be deleted yet. Empty your pouches and let anything in progress finish first.", code: "AccountNotEmpty", blockers }, 409);
+      await deps.store.deleteAccount(email);
+      // After the account is gone, so a failed delete never leaves it half removed.
+      await deps.fundingRepository?.deleteOwner(email);
+      return c.json({ ok: true });
+    });
   });
   const voiceConfigured = () => Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_AGENT_ID && (process.env.VOICE_WEBHOOK_SECRET || process.env.ELEVENLABS_TOOL_SECRET) && process.env.ELEVENLABS_SECURE_TOOLS_CONFIGURED === "true");
   app.get("/voice-status", auth, (c) => c.json({ enabled: voiceConfigured() }));

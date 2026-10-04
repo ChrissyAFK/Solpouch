@@ -27,7 +27,8 @@ export default function DeleteAccountPage() {
       <h2>What is removed</h2>
       <p>
         Your profile (email, name, photo), all signed-in sessions, your pouches
-        with their order, top-up and withdrawal history, your shopping lists
+        with their order, top-up and withdrawal history, your bank funding
+        requests, your shopping lists
         and your wallet link.
       </p>
       <h2>What is kept, and why</h2>

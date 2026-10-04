@@ -84,4 +84,17 @@ describe("delete account", () => {
   it("requires sign-in", async () => {
     expect((await app.request("/auth/account", { method: "DELETE" })).status).toBe(401);
   });
+  it("reads the chain before deleting: money the stored mirror missed still blocks, and an unreadable chain refuses", async () => {
+    await emptyPouches(A);
+    const mock = new MockVaultClient(store, (id) => getMerchant(id)?.payTo, () => 1_000_000);
+    let read: () => Promise<{ balance: number; spentToday: number }> = async () => ({ balance: 5_000_000, spentToday: 0 });
+    const vault = Object.assign(Object.create(mock), { authorizedOwner: "owner", getState: undefined, getBalance: () => read() });
+    app = createApp({ store, vault, fundingRepository: new MemoryFundingRepository(), verifyGoogle: async () => ({ email: A, name: "A", picture: "" }) });
+    const blocked = await del(A);
+    expect(blocked.status).toBe(409);
+    expect((await blocked.json()).code).toBe("AccountNotEmpty");
+    read = async () => { throw new Error("rpc down"); };
+    expect((await del(A)).status).toBe(503);
+    expect((await store.listPouches(A)).length).toBeGreaterThan(0);
+  });
 });

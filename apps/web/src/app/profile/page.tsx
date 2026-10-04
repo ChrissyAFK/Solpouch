@@ -308,7 +308,7 @@ export default function ProfilePage() {
         <p>Deleting your account permanently removes:</p>
         <ul>
           <li>your profile and every signed-in session</li>
-          <li>your pouches and their order, top-up and withdrawal history</li>
+          <li>your pouches and their order, top-up and withdrawal history, and any bank funding requests</li>
           <li>your shopping lists and your wallet link</li>
         </ul>
         <p>
