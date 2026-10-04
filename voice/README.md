@@ -66,3 +66,5 @@ Test with two users: verify ownership, reject web tokens at voice tools, revoke
 one session without affecting another, and confirm that logout makes old voice
 calls fail. Check the five actual provider tool mappings in a test agent before
 production. Local mocked tests prove application behavior, not provider setup.
+
+Cart edits require fresh approval. The `confirm_order` tool must send the `version` returned with the reviewed cart. Update the provider tool schema from `tools.json` before using edited carts in voice. A missing or stale version cannot authorize a draft payment. This repository change does not update the live provider agent.

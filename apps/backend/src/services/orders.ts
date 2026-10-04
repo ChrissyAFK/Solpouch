@@ -4,7 +4,7 @@ import { PaymentPending } from "../vault/recovery.js";
 import { randomBytes } from "node:crypto";
 import { WEB_PREFIX, isAnyStore, isCheckoutReference, toMicros, type Merchant, type Order, type OrderLine, type Pouch } from "@solpouch/shared";
 import { findOnline } from "../ai/findOnline.js";
-import { catalogFit, matchItems, parseRequest } from "../ai/gemini.js";
+import { catalogFit, fallbackMatch, matchItems, parseRequest, type ParsedItem } from "../ai/gemini.js";
 import { getCatalog, getMerchant, merchants, registerWebMerchant } from "../merchants/index.js";
 import { buildFulfillment, checkoutPayTo } from "./fulfillment.js";
 import type { GoogleUser } from "../auth/google.js";
@@ -59,9 +59,9 @@ export class HttpError extends Error {
 }
 
 /** parse -> pick pouch -> pick merchant -> match -> total. Returns a draft order. */
-export async function createDraft(deps: Deps, ownerEmail: string, request: string, pouchId?: string): Promise<Order> {
+export async function createDraft(deps: Deps, ownerEmail: string, request: string, pouchId?: string, savedItems?: ParsedItem[]): Promise<Order> {
   await consumeAiBudget(deps.store, ownerEmail);
-  const parsed = await parseRequest(request);
+  const parsed = savedItems ? {items:savedItems} : await parseRequest(request);
   if (!parsed.items.length) throw new HttpError(400, "Could not find any items in that request");
   const pouches = await deps.store.listPouches(ownerEmail);
 
@@ -86,6 +86,13 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
   let covered = false;
   if (best && best.fit > 0) {
     catalogLines = await matchItems(parsed.items, getCatalog(best.id));
+    if (savedItems) {
+      const matched = catalogLines;
+      catalogLines = savedItems.map(item => {
+        const line = matched.find(line => line.requested === item.requested) ?? fallbackMatch([item],getCatalog(best.id))[0];
+        return {...line,requested:item.requested,requestedQty:item.qty,qty:line.product ? item.qty : 0,lineTotal:line.product ? line.product.unitPrice*item.qty : 0};
+      });
+    }
     covered = catalogLines.every((l) => l.product && l.matchScore >= 0.3);
   }
 
@@ -205,12 +212,13 @@ function catalogOrder(id: string, pouch: Pouch, merchant: Merchant, request: str
   };
 }
 
-export async function confirmOrder(deps: Deps, ownerEmail: string, id: string): Promise<Order> {
+export async function confirmOrder(deps: Deps, ownerEmail: string, id: string, expectedVersion?: number): Promise<Order> {
   const initial = await getOwnedOrder(deps, id, ownerEmail);
   return deps.store.withPouchLock(initial.pouchId, async () => {
     let order = await getOwnedOrder(deps, id, ownerEmail);
     if (order.status === "paid") return order;
     if (order.status !== "draft" && order.status !== "paying") throw new HttpError(409, `Order is ${order.status}`);
+    if (order.status === "draft" && expectedVersion !== undefined && order.version !== expectedVersion) throw new HttpError(409, "This cart changed. Review it again before approving.", "RecordChanged");
     const pouch = await getOwnedPouch(deps, order.pouchId, ownerEmail);
     const merchant = getMerchant(order.merchantId);
     if (order.status === "draft" && !isAnyStore(pouch) && !pouch.allowedMerchantIds.includes(order.merchantId)) throw new HttpError(422,"This pouch no longer allows this store. Review its store rules before paying.","MerchantNotAllowed");

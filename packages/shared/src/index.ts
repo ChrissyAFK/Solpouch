@@ -194,3 +194,8 @@ export const VAULT_ERRORS = [
   "OrderAlreadyUsed",
 ] as const;
 export type VaultError = (typeof VAULT_ERRORS)[number];
+
+/** Reusable requests, without a stored price or payment authorization. */
+export interface ShoppingListItem { name: string; qty: number }
+export interface ShoppingList { id: string; version?: number; name: string; items: ShoppingListItem[]; createdAt: string; updatedAt: string }
+export interface EditOrderBody { version: number; lines: { index: number; qty: number; productId?: string }[] }

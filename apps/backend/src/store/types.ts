@@ -1,4 +1,4 @@
-import type { Order, Pouch, TopUp } from "@solpouch/shared";
+import type { Order, Pouch, TopUp, ShoppingList } from "@solpouch/shared";
 
 export class StoreConflictError extends Error {
   constructor(message = "Record changed; reload it before retrying") {
@@ -19,7 +19,13 @@ export interface AuthSession { id: string; email: string; name: string; picture:
 
 /** All reads and saves return detached values. Use the version returned by a save. */
 export interface AuthChallenge { id: string; wallet: string; email: string; message: string; expiresAt: string }
+export type StoredShoppingList = ShoppingList & { ownerEmail: string };
 export interface Store {
+  readonly persistentLists?: boolean;
+  listShoppingLists(ownerEmail: string): Promise<StoredShoppingList[]>;
+  getShoppingList(id: string): Promise<StoredShoppingList | undefined>;
+  saveShoppingList(list: StoredShoppingList): Promise<StoredShoppingList>;
+  deleteShoppingList(id: string, ownerEmail: string, version: number): Promise<void>;
   findUserByWallet(wallet: string): Promise<UserProfile | undefined>;
   saveChallenge(challenge: AuthChallenge): Promise<void>;
   consumeChallenge(id: string): Promise<AuthChallenge | undefined>;

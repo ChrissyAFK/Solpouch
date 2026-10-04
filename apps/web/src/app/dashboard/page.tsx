@@ -1,4 +1,6 @@
 "use client";
+import { GettingStarted } from "@/components/GettingStarted";
+import { SpendingInsights } from "@/components/SpendingInsights";
 import { useRequestScope } from "@/lib/useRequestScope";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -132,6 +134,8 @@ export default function OverviewPage() {
           </div>
         </section>
       )}
+      {!loading && !loadError && pouches && !activityLoading && !activityError && orders?.length === 0 && <GettingStarted pouches={pouches} merchants={merchants} onCreated={() => load()} />}
+      {!loading && !loadError && pouches && pouches.length > 0 && !activityLoading && !activityError && orders && <SpendingInsights pouches={pouches} orders={orders} />}
       <section className="wallet-section">
         <div className="section-heading">
           <h2>

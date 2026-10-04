@@ -1,5 +1,6 @@
 import type {
   Merchant,
+  Product,
   Pouch,
   Order,
   TopUp,
@@ -86,6 +87,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
         code: body.code,
       });
     }
+    if (res.status === 204) return undefined as T;
     if (data === undefined)
       throw new ApiRequestError(res.status, {
         error: "We couldn't read the response. Try again.",
@@ -137,7 +139,17 @@ export type WalletUser = {
 
 export type FundingRequest = { id: string; direction: "BUY" | "SELL"; country: "US" | "CA"; currency: "USD" | "CAD"; amount: string; wallet: string; environment: "staging"; status: "created" | "session_ready" | "session_uncertain" | "processing" | "provider_completed" | "sandbox_completed" | "confirmed" | "failed" | "cancelled" | "refunded"; createdAt: string; updatedAt: string; providerOrderId?: string; txSignature?: string; cryptoAmount?: string; message?: string };
 export type FundingConfig = { environment: "staging"; productionEnabled: false; configured: boolean; countries: { country: "US" | "CA"; currency: "USD" | "CAD"; buyEnabled: boolean; sellEnabled: boolean }[]; notice: string };
+export type ShoppingListItem = { name: string; qty: number };
+export type ShoppingList = { id: string; version?: number; name: string; items: ShoppingListItem[]; createdAt: string; updatedAt: string };
 export const api = {
+  shoppingListStatus: () => req<{ temporary: boolean }>("/shopping-lists/status"),
+  shoppingLists: () => req<ShoppingList[]>("/shopping-lists"),
+  saveShoppingList: (body: { name: string; items: ShoppingListItem[] }) => post<ShoppingList>("/shopping-lists", body),
+  updateShoppingList: (id: string, body: { version: number; name: string; items: ShoppingListItem[] }) => req<ShoppingList>(`/shopping-lists/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteShoppingList: (id: string, version: number) => req<void>(`/shopping-lists/${encodeURIComponent(id)}`, { method: "DELETE", body: JSON.stringify({ version }) }),
+  draftShoppingList: (id: string, version: number, pouchId?: string) => post<Order>(`/shopping-lists/${encodeURIComponent(id)}/draft`, { version, pouchId }),
+  products: (merchantId: string) => req<Product[]>(`/merchants/${encodeURIComponent(merchantId)}/products`),
+  editOrder: (id: string, version: number, lines: { index: number; qty: number; productId?: string }[]) => req<Order>(`/orders/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ version, lines }) }),
   fundingConfig: () => req<FundingConfig>("/funding/config"),
   fundingRequests: () => req<FundingRequest[]>("/funding"),
   startFunding: (body: { country: "US" | "CA"; direction: "BUY" | "SELL"; amount: string; idempotencyKey: string }) => post<{ request: FundingRequest; widgetUrl?: string }>("/funding", body),
@@ -179,7 +191,7 @@ export const api = {
       `/orders${pouchId ? `?pouchId=${encodeURIComponent(pouchId)}` : ""}`,
     ),
   order: (id: string) => req<Order>(`/orders/${id}`),
-  confirm: (id: string) => post<Order>(`/orders/${id}/confirm`),
+  confirm: (id: string, version?: number) => post<Order>(`/orders/${id}/confirm`, { version }),
   cancel: (id: string) => post<Order>(`/orders/${id}/cancel`),
   startTopUp: (b: StartTopUpBody) => post<TopUp>("/topups", b),
   topUp: (id: string) => req<TopUp>(`/topups/${encodeURIComponent(id)}`),

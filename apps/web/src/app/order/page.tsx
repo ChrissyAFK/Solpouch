@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { CartEditor } from "./CartEditor";
 import { StatePanel } from "@/components/StatePanel";
 import { OrderSkeleton } from "@/components/Skeletons";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
@@ -120,6 +121,7 @@ function OrderWorkspace() {
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [cartDirty, setCartDirty] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [missingOrder, setMissingOrder] = useState(false);
@@ -200,7 +202,7 @@ function OrderWorkspace() {
     }
   }
   async function createShoppingList() {
-    if (!order || busy || !currentSession()) return;
+    if (!order || busy || cartDirty || !currentSession()) return;
     const version = loadVersion.current;
     const current = () => currentSession() && version === loadVersion.current;
     setBusy(true); setError(null);
@@ -209,13 +211,13 @@ function OrderWorkspace() {
     finally { if (current()) setBusy(false); }
   }
   async function act(action: "confirm" | "cancel") {
-    if (!order || busy || !currentSession()) return;
+    if (!order || busy || cartDirty || !currentSession()) return;
     const version = loadVersion.current;
     const current = () => currentSession() && version === loadVersion.current;
     setBusy(true);
     setError(null);
     try {
-      const next = await api[action](order.id);
+      const next = action === "confirm" ? await api.confirm(order.id, order.version ?? 0) : await api.cancel(order.id);
       if (!current()) return;
       setOrder(next);
       const freshPouches = await api.pouches();
@@ -408,7 +410,7 @@ function OrderWorkspace() {
                     <p className="mt-1 text-sm text-[var(--muted)]">
                       {order.store?.name ?? merchant?.name ?? "Your order"}
                     </p>
-                    {order.status !== "paid" && <StoreVia order={order} />}
+                    {order.status !== "paid" && !cartDirty && <StoreVia order={order} />}
                   </div>
                   <span className={s.statusPill}>{order.status}</span>
                 </div>
@@ -489,9 +491,10 @@ function OrderWorkspace() {
                     </div>
                   </div>
                 )}
+                {isDraft && <CartEditor key={`${order.id}:${order.version ?? 0}`} order={order} disabled={busy} onSaved={setOrder} onDirty={setCartDirty} />}
                 {isDraft && <div className="my-4 space-y-3">
                   <p className="text-sm text-[var(--muted)]">For groceries, create an Instacart shopping list and review availability, substitutions, fees and the final price there. Creating a link does not move pouch funds or place an order.</p>
-                  <button className={btnSecondary} disabled={busy} onClick={() => void createShoppingList()}>{busy ? "Working…" : "Create Instacart shopping list"}</button>
+                  <button className={btnSecondary} disabled={busy || cartDirty} onClick={() => void createShoppingList()}>{busy ? "Working…" : "Create Instacart shopping list"}</button>
                   {order.fulfillment?.linkStatus === "not_configured" && <p role="status">Instacart links are not configured yet.</p>}
                   {order.fulfillment?.linkStatus === "unavailable" && <p role="status">The shopping link is unavailable. Try creating it again.</p>}
                   {order.fulfillment?.linkExpiresAt && <p className="text-xs text-[var(--muted)]">Link expires {new Date(order.fulfillment.linkExpiresAt).toLocaleString()}.</p>}
@@ -603,7 +606,7 @@ function OrderWorkspace() {
                     <>
                       <button
                         className={btnPrimary}
-                        disabled={busy || order.total <= 0 || referenceOnly}
+                        disabled={busy || cartDirty || order.total <= 0 || referenceOnly}
                         onClick={() => void act("confirm")}
                       >
                         {referenceOnly
@@ -614,7 +617,7 @@ function OrderWorkspace() {
                       </button>
                       <button
                         className={btnSecondary}
-                        disabled={busy}
+                        disabled={busy || cartDirty}
                         onClick={() => void act("cancel")}
                       >
                         Cancel order

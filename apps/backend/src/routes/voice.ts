@@ -77,15 +77,16 @@ export function voiceRoutes(deps: Deps) {
       case "create_order": {
         const b = requestBody.parse(body);
         const order = await createDraft(deps, email, b.request, b.pouchId);
-        return c.json({ say: readback(order), orderId: order.id, total: usd(order.total), needsConfirmation: !isCheckoutReference(order), checkoutRequired: isCheckoutReference(order) });
+        return c.json({ say: readback(order), orderId: order.id, version: order.version, total: usd(order.total), needsConfirmation: !isCheckoutReference(order), checkoutRequired: isCheckoutReference(order) });
       }
       case "confirm_order": {
-        const { orderId } = orderIdBody.parse(body);
+        const { orderId, version } = orderIdBody.extend({version:z.number().int().positive().optional()}).parse(body);
         try {
-          const order = await confirmOrder(deps, email, orderId);
+          const order = await confirmOrder(deps, email, orderId, version ?? -1);
           return c.json({ say: `Done. Paid ${usd(order.total)}.`, status: order.status });
         } catch (e) {
-          if (e instanceof HttpError && e.code === "WebCheckoutRequired") {
+          if (e instanceof HttpError && e.code === "PaymentPending") return c.json({say:e.message,status:"paying",code:e.code});
+          if (e instanceof HttpError && (e.code === "WebCheckoutRequired" || e.code === "RecordChanged")) {
             return c.json({ say: e.message, status: "draft", code: e.code });
           }
           if (e instanceof HttpError && e.code) {

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start -p 3000",
     "typecheck": "tsc --noEmit",
-    "test:browser": "node --test test/auth-browser.test.mjs test/order-browser.test.mjs test/workspace-browser.test.mjs test/cart-browser.test.mjs test/funding-browser.test.mjs",
+    "test:browser": "node --test test/auth-browser.test.mjs test/order-browser.test.mjs test/workspace-browser.test.mjs test/cart-browser.test.mjs test/funding-browser.test.mjs test/shopping-browser.test.mjs test/insights-browser.test.mjs",
     "test:security": "node --test test/security.test.mjs",
     "test:smoke": "node --test test/smoke.test.mjs"
   },

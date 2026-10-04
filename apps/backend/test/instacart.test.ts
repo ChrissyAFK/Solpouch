@@ -40,6 +40,6 @@ describe("Instacart shopping-list handoff", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     expect((await store.getPouch("groceries"))!.balance).toBe(balance);
     expect((await store.getOrder(order.id))!.status).toBe("draft");
-    const pay=await app.request(`/orders/${order.id}/confirm`,{method:"POST",headers});expect(pay.status).toBe(422);
+    const pay=await app.request(`/orders/${order.id}/confirm`,{method:"POST",headers:{...headers,"Content-Type":"application/json"},body:JSON.stringify({version:(await store.getOrder(order.id))!.version})});expect(pay.status).toBe(422);
   });
 });

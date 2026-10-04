@@ -1,6 +1,6 @@
 import { toMicros, type Order, type Pouch, type TopUp } from "@solpouch/shared";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { StoreConflictError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredPouch, type UserProfile } from "./types.js";
+import { StoreConflictError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredShoppingList, type StoredPouch, type UserProfile } from "./types.js";
 
 // TODO: PostgresStore backed by Tiger Data (see db/schema.sql). Swap in src/index.ts.
 
@@ -51,6 +51,7 @@ export function seedPouches(): Pouch[] {
 }
 
 export class MemoryStore implements Store {
+  private shoppingLists = new Map<string, StoredShoppingList>();
   private pouches = new Map<string, StoredPouch>();
   private orders = new Map<string, Order>();
   private topups = new Map<string, TopUp>();
@@ -91,6 +92,18 @@ export class MemoryStore implements Store {
     const saved = structuredClone({ ...record, version: (current?.version ?? 0) + 1 });
     map.set(record.id, saved);
     return structuredClone(saved);
+  }
+  async listShoppingLists(ownerEmail: string) { return structuredClone([...this.shoppingLists.values()].filter(l => l.ownerEmail === ownerEmail).sort((a,b) => b.updatedAt.localeCompare(a.updatedAt))); }
+  async getShoppingList(id: string) { return structuredClone(this.shoppingLists.get(id)); }
+  async saveShoppingList(list: StoredShoppingList) {
+    const current = this.shoppingLists.get(list.id);
+    if (current && current.ownerEmail !== list.ownerEmail) throw new StoreConflictError();
+    return this.save(this.shoppingLists, list);
+  }
+  async deleteShoppingList(id: string, ownerEmail: string, version: number) {
+    const current = this.shoppingLists.get(id);
+    if (!current || current.ownerEmail !== ownerEmail || current.version !== version) throw new StoreConflictError();
+    this.shoppingLists.delete(id);
   }
   async listPouches(ownerEmail?: string) { return structuredClone([...this.pouches.values()].filter(p => !ownerEmail || p.ownerEmail === ownerEmail)); }
   async getPouch(id: string) { return structuredClone(this.pouches.get(id)); }

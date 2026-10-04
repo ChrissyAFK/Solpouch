@@ -19,7 +19,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const ordersRoute =
     pathname === "/orders" || pathname.startsWith("/orders/");
   const pageLabel =
-    pathname === "/funding" ? "Wallet funding" : pathname === "/dashboard"
+    pathname === "/lists" ? "Shopping lists" : pathname === "/funding" ? "Wallet funding" : pathname === "/dashboard"
       ? "Overview"
       : pouchRoute
         ? "Pouches"
@@ -77,6 +77,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       active: pouchRoute,
     },
     { href: "/funding", label: "Add / withdraw", icon: "pouch", active: pathname === "/funding" },
+    { href: "/lists", label: "Shopping lists", icon: "cart", active: pathname === "/lists" },
     { href: "/orders", label: "Orders", icon: "receipt", active: ordersRoute },
     {
       href: "/order",

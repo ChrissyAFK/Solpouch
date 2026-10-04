@@ -5,10 +5,11 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import type { Order, Pouch, TopUp } from "@solpouch/shared";
-import { StoreConflictError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredPouch, type UserProfile } from "./types.js";
+import { StoreConflictError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredShoppingList, type StoredPouch, type UserProfile } from "./types.js";
 
 const iso = (v: Date | string) => (v instanceof Date ? v.toISOString() : new Date(v).toISOString());
 type Row = Record<string, any>;
+function toShoppingList(r: Row): StoredShoppingList { return { id:r.id, ownerEmail:r.owner_email, version:Number(r.version), name:r.name, items:structuredClone(r.items), createdAt:iso(r.created_at), updatedAt:iso(r.updated_at) }; }
 function toPouch(r: Row): StoredPouch {
   return { id: r.id, address: r.address, name: r.name, balance: Number(r.balance), maxPerOrder: Number(r.max_per_order), dailyLimit: Number(r.daily_limit), spentToday: Number(r.spent_today), confirmAbove: Number(r.confirm_above), allowedMerchantIds: structuredClone(r.allowed_merchant_ids), frozen: r.frozen, version: Number(r.version), ...(r.owner_email ? { ownerEmail: r.owner_email } : {}) };
 }
@@ -45,6 +46,7 @@ const LOCK_WAIT_MS = 10_000;
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export class PostgresStore implements Store {
+  readonly persistentLists = true;
   private context = new AsyncLocalStorage<{ client: pg.PoolClient; locks: Set<string>; state: { error?: Error } }>();
   private nextCleanupAt = 0;
   private async cleanupExpired() {
@@ -127,7 +129,7 @@ export class PostgresStore implements Store {
   }
   withPouchLock<T>(id: string, fn: () => Promise<T>) { return this.lock(`pouch:${id}`, fn); }
 
-  private async save(table: "pouches" | "orders" | "topups", record: { id: string; version?: number; createdAt?: string }, fields: Record<string, unknown>): Promise<Row> {
+  private async save(table: "pouches" | "orders" | "topups" | "shopping_lists", record: { id: string; version?: number; createdAt?: string }, fields: Record<string, unknown>): Promise<Row> {
     // Timescale's primary keys include created_at. Serialize by logical ID so a
     // changed timestamp cannot create a second object with the same public ID.
     return this.lock(`record:${table}:${record.id}`, async () => {
@@ -136,6 +138,7 @@ export class PostgresStore implements Store {
       const row = current[0];
       if (row ? record.version !== Number(row.version) : record.version !== undefined) throw new StoreConflictError();
       if (row && record.createdAt && iso(row.created_at) !== iso(record.createdAt)) throw new StoreConflictError("Creation time cannot change");
+      if (row && table === "shopping_lists" && row.owner_email !== fields.owner_email) throw new StoreConflictError();
       const columns = Object.keys(fields);
       const values = Object.values(fields);
       if (!row) {
@@ -153,6 +156,13 @@ export class PostgresStore implements Store {
     });
   }
 
+  async listShoppingLists(ownerEmail: string) { return (await this.query("SELECT * FROM shopping_lists WHERE owner_email=$1 ORDER BY updated_at DESC",[ownerEmail])).rows.map(toShoppingList); }
+  async getShoppingList(id: string) { const {rows} = await this.query("SELECT * FROM shopping_lists WHERE id=$1",[id]); return rows[0] ? toShoppingList(rows[0]) : undefined; }
+  async saveShoppingList(list: StoredShoppingList) { return toShoppingList(await this.save("shopping_lists",list,{owner_email:list.ownerEmail,name:list.name,items:JSON.stringify(list.items),created_at:list.createdAt,updated_at:list.updatedAt})); }
+  async deleteShoppingList(id: string, ownerEmail: string, version: number) {
+    const result = await this.query("DELETE FROM shopping_lists WHERE id=$1 AND owner_email=$2 AND version=$3",[id,ownerEmail,version]);
+    if (result.rowCount !== 1) throw new StoreConflictError();
+  }
   async listPouches(ownerEmail?: string) { return (await this.query(`SELECT * FROM pouches ${ownerEmail ? "WHERE owner_email=$1 " : ""}ORDER BY created_at, id`, ownerEmail ? [ownerEmail] : undefined)).rows.map(toPouch); }
   async getPouch(id: string) { const { rows } = await this.query("SELECT * FROM pouches WHERE id=$1", [id]); return rows[0] ? toPouch(rows[0]) : undefined; }
   async savePouch(p: StoredPouch) {

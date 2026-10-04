@@ -1,3 +1,4 @@
+import { editDraft, editDraftBody } from "../services/shopping.js";
 import { createInstacartList, trustedInstacartUrl } from "../services/instacart.js";
 import { HttpError } from "../services/orders.js";
 import { Hono } from "hono";
@@ -34,7 +35,12 @@ export function orderRoutes(deps: Deps) {
     return c.json(order);
   });
 
-  app.post("/:id/confirm", async (c) => c.json(await confirmOrder(deps, c.get("user").email, c.req.param("id"))));
+  app.patch("/:id", async c => c.json(await editDraft(deps,c.get("user").email,c.req.param("id"),editDraftBody.parse(await c.req.json()))));
+  app.post("/:id/confirm", async (c) => {
+    const text = await c.req.text();
+    const b = z.object({version:z.number().int().positive().optional()}).strict().parse(text ? JSON.parse(text) : {});
+    return c.json(await confirmOrder(deps, c.get("user").email, c.req.param("id"), b.version ?? -1));
+  });
   app.post("/:id/cancel", async (c) => c.json(await cancelOrder(deps, c.get("user").email, c.req.param("id"))));
 
   return app;

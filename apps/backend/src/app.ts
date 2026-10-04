@@ -1,3 +1,4 @@
+import { shoppingListRoutes } from "./routes/shoppingLists.js";
 import { fundingRoutes, fundingWebhookRoutes } from "./routes/funding.js";
 import { StoreConflictError } from "./store/types.js";
 import { InstacartError } from "./services/instacart.js";
@@ -54,7 +55,7 @@ export function createApp(deps: Deps) {
   app.use("/voice/*", rateLimit({ store: deps.store, windowMs: MIN, max: 60, key: "voice" }));
 
   app.get("/health", (c) => c.json({ ok: true }));
-  for (const base of ["/pouches", "/orders", "/topups", "/stats", "/profile", "/funding"]) app.use(`${base}/*`, requireUser(deps.store));
+  for (const base of ["/shopping-lists", "/pouches", "/orders", "/topups", "/stats", "/profile", "/funding"]) app.use(`${base}/*`, requireUser(deps.store));
   // GET /chat/status is public (mode only); everything else under /chat needs a user.
   app.use("/chat/*", async (c, next) => (c.req.method === "GET" && c.req.path === "/chat/status" ? next() : requireUser(deps.store)(c as never, next)));
   app.route("/funding", fundingRoutes(deps));
@@ -62,6 +63,7 @@ export function createApp(deps: Deps) {
   app.route("/auth", authRoutes(deps, origins));
   app.route("/profile", profileRoutes(deps));
   app.route("/pouches", pouchRoutes(deps));
+  app.route("/shopping-lists", shoppingListRoutes(deps));
   app.route("/orders", orderRoutes(deps));
   app.route("/topups", topupRoutes(deps));
   app.route("/merchants", merchantRoutes());

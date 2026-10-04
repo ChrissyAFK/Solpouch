@@ -245,6 +245,8 @@ describe.skipIf(!url)("isolated real PostgreSQL (relational schema; fixture RPC)
     const savedJournal = await b.getOperation("topup:restart-topup");
     expect(savedJournal).toBeDefined();
     expect((await b.getTopUp("restart-topup"))?.status).toBe("processing");
+    const listTime = new Date().toISOString();
+    const savedList = await a.saveShoppingList({id:"restart-list",ownerEmail:"test@example.com",name:"Week",items:[{name:"milk",qty:3}],createdAt:listTime,updatedAt:listTime});
     const beforeRestart = await admin.query("SELECT pg_postmaster_start_time() AS started");
     await Promise.all(stores.splice(0).map(store => store.close()));
     await admin.end();
@@ -254,6 +256,7 @@ describe.skipIf(!url)("isolated real PostgreSQL (relational schema; fixture RPC)
     const afterRestart = await admin.query("SELECT pg_postmaster_start_time() AS started");
     expect(afterRestart.rows[0].started.getTime()).toBeGreaterThan(beforeRestart.rows[0].started.getTime());
     a = connectStore(); b = connectStore();
+    expect(await b.getShoppingList("restart-list")).toEqual(savedList);
     expect(await b.getOperation("topup:restart-topup")).toEqual(savedJournal);
     const after = rpcFixture();
     after.status = vi.fn(async () => ({ confirmed: true, failed: false }));
@@ -289,6 +292,25 @@ describe.skipIf(!url)("isolated real PostgreSQL (relational schema; fixture RPC)
     await a.savePouch(fixturePouch("metadata"));
     const order=await a.saveOrder({id:"metadata-order",pouchId:"metadata",merchantId:"web:fixture.example",request:"fixture",total:1,lines:[],status:"paid",createdAt:new Date().toISOString(),paidAt:new Date().toISOString(),store:{name:"Fixture",domain:"fixture.example"},fulfillment:{via:"instacart",label:"Instacart",checkoutUrl:"https://www.instacart.com/fixture",linkStatus:"ready"}});
     expect(await b.getOrder(order.id)).toEqual(order);
+  });
+
+  it("persists owner-scoped shopping lists and rejects racing writes and deletes across pools", async()=>{
+    const now=new Date().toISOString();
+    const list=await a.saveShoppingList({id:"weekly-list",ownerEmail:"test@example.com",name:"Week",items:[{name:"milk",qty:2}],createdAt:now,updatedAt:now});
+    expect(await b.getShoppingList(list.id)).toEqual(list);
+    expect(await b.listShoppingLists("another@example.com")).toEqual([]);
+    await expect(b.saveShoppingList({...list,ownerEmail:"another@example.com"})).rejects.toBeInstanceOf(StoreConflictError);
+    const results=await Promise.allSettled([a.saveShoppingList({...list,name:"First"}),b.saveShoppingList({...list,name:"Second"})]);
+    expect(results.filter(r=>r.status==="fulfilled")).toHaveLength(1);
+    expect(results.filter(r=>r.status==="rejected")).toHaveLength(1);
+    const changed=(await b.getShoppingList(list.id))!;
+    await expect(b.deleteShoppingList(list.id,list.ownerEmail,list.version!)).rejects.toBeInstanceOf(StoreConflictError);
+    await expect(b.deleteShoppingList(list.id,"another@example.com",changed.version!)).rejects.toBeInstanceOf(StoreConflictError);
+    const reconnected=connectStore();
+    expect(await reconnected.getShoppingList(list.id)).toEqual(changed);
+    await reconnected.deleteShoppingList(list.id,list.ownerEmail,changed.version!);
+    expect(await a.getShoppingList(list.id)).toBeUndefined();
+    await expect(a.saveShoppingList(changed)).rejects.toBeInstanceOf(StoreConflictError);
   });
 
 });

@@ -36,7 +36,7 @@ export function ChatOrderCards({ refreshKey }: { refreshKey: number }) {
     setBusy(order.id);
     setError(null);
     try {
-      const result = await api.confirm(order.id);
+      const result = await api.confirm(order.id, order.version ?? 0);
       if (!current()) return;
       sequence.current++;
       setOrders(list => list.map(item => item.id === result.id ? result : item));

@@ -93,7 +93,7 @@ describe("HTTP flow", () => {
     expect(order.status).toBe("draft");
     expect(order.pouchId).toBe("uber-eats");
     expect(order.total).toBe($(15.5));
-    const paid = await (await post(app, `/orders/${order.id}/confirm`)).json();
+    const paid = await (await post(app, `/orders/${order.id}/confirm`, {version:order.version})).json();
     expect(paid.status).toBe("paid");
     expect(paid.txSignature).toBeTruthy();
   });
@@ -101,7 +101,7 @@ describe("HTTP flow", () => {
   it("rejected order returns ApiError with code", async () => {
     const app = mk();
     const order = await (await post(app, "/orders", { request: "3 pad thai" })).json();
-    const res = await post(app, `/orders/${order.id}/confirm`);
+    const res = await post(app, `/orders/${order.id}/confirm`, {version:order.version});
     expect(res.status).toBe(422);
     expect((await res.json()).code).toBe("OverPerOrderLimit");
     expect((await store.getOrder(order.id))!.status).toBe("rejected");

@@ -172,3 +172,14 @@ CREATE TABLE IF NOT EXISTS auth_challenges (
 -- Challenges are bound to the signed-in Google account. Old rows without an email are unusable and expire.
 ALTER TABLE auth_challenges ADD COLUMN IF NOT EXISTS email text;
 CREATE INDEX IF NOT EXISTS auth_challenges_expiry_idx ON auth_challenges(expires_at);
+
+CREATE TABLE IF NOT EXISTS shopping_lists (
+  id text PRIMARY KEY,
+  owner_email text NOT NULL,
+  name text NOT NULL,
+  items jsonb NOT NULL,
+  version integer NOT NULL DEFAULT 1,
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS shopping_lists_owner ON shopping_lists(owner_email, updated_at DESC);
