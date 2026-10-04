@@ -141,6 +141,21 @@ original text prepended.
   `eval/run.ts`, run by hand against the live pipeline. Prints a table and totals. Not
   part of `pnpm test` (it costs money).
 
+## Amendments made while planning (2026-10-04)
+
+The plan (`docs/superpowers/plans/2026-10-04-assistant-v2.md`) differs from the text
+above in four places, chosen for speed and lower risk on demo day:
+
+- Files live in the existing `apps/backend/src/ai/` folder (`understand.ts`,
+  `findCart.ts`, `verifyPrice.ts`), and the existing `findOnline` stays as the search
+  step, with a smaller search budget and a 20 s total limit.
+- A clarifying question is returned as HTTP 400 with code `NeedClarification` and the
+  question as the message (the shape the old `NeedItems` case used), not a 200 body.
+- With no store named there is still one search call for the whole list, not one per
+  item; the search budget grows with the item count.
+- The cache is in memory and holds whole results: 24 h when every price is verified,
+  1 h when any is an estimate. No `product_cache` table.
+
 ## Out of scope
 
 Real checkout at retailers, per-store APIs, location-specific pricing, accounts or
