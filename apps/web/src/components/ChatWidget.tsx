@@ -409,10 +409,10 @@ function ChatPanel() {
             <div>
               <h2>Ask Solpouch</h2>
               <span className={styles.mode}>
-                {voiceMode ? (voiceMode === "voice" ? "Voice connected" : "Agent connected") : mode === "checking"
+                {voiceMode ? (voiceMode === "voice" ? (agent.isSpeaking ? "Speaking…" : "Listening…") : "Voice and text agent") : mode === "checking"
                   ? "Checking connection…"
                   : mode === "demo"
-                    ? "Demo helper"
+                    ? "Assistant"
                     : mode === "gemini" || mode === "claude"
                       ? mode === "claude" ? "Powered by Claude" : "Powered by Gemini"
                       : "Connection unavailable"}
@@ -447,13 +447,6 @@ function ChatPanel() {
             </div>
           ) : (
           <>
-          <div className={styles.voiceBar}>
-            <button type="button" disabled={!user || !voiceEnabled || (!connecting && !active.current && pending)} onClick={() => void toggleVoice()}>
-              {connecting ? "Cancel connection" : voiceMode ? "End agent session" : "Talk"}
-            </button>
-            <span>{voiceEnabled ? "Agent sessions end after 30 minutes." : "Voice unavailable. The text helper is available."}</span>
-          </div>
-          {notice && <p className={styles.notice} role="status">{notice}</p>}
           <div
             className={styles.history}
             ref={history}
@@ -497,6 +490,11 @@ function ChatPanel() {
                 <p>{message.content}</p>
               </div>
             ))}
+            {notice && (
+              <p className={styles.pending} role="status">
+                {notice}
+              </p>
+            )}
             {pending && (
               <p className={styles.pending} role="status">
                 Waiting for a reply…
@@ -559,13 +557,24 @@ function ChatPanel() {
             />
             <div className={styles.composerBottom}>
               <span id="solpouch-chat-help">Shift + Enter for a new line</span>
+              <button
+                type="button"
+                className={styles.voice}
+                onClick={() => void toggleVoice()}
+                disabled={!voiceEnabled || (!connecting && !active.current && pending)}
+                title={voiceEnabled ? undefined : "Voice is off right now"}
+                aria-pressed={!!voiceMode}
+              >
+                {connecting ? "Cancel" : voiceMode ? "End call" : "Talk"}
+              </button>
               <button type="submit" disabled={pending || connecting || !draft.trim()}>
                 {pending ? "Sending…" : "Send"}
               </button>
             </div>
             <p className={styles.boundary}>
-              {voiceEnabled ? "The agent can use your pouch tools. Payments must stay within your pouch rules." : "The text helper cannot move funds or place orders."}
-              {mode === "demo" && " Limited preset replies; live AI is not connected."}
+              {voiceMode
+                ? "Orders always wait for your yes. The assistant can't top up pouches."
+                : "Chat cannot move funds or place orders."}
             </p>
           </form>
           </>
