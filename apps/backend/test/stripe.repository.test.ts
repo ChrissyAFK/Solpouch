@@ -1,0 +1,6 @@
+import { EventEmitter } from 'node:events';
+import { expect, it, vi } from 'vitest';
+import type { Pool } from 'pg';
+import { PostgresStripeRepository, StripeBusy } from '../src/stripe/repository.js';
+it('fails closed after advisory lock connection loss', async () => { const client = Object.assign(new EventEmitter(), { query: vi.fn(async () => ({ rows: [{ locked: true }] })), release: vi.fn() }); const pool = { connect: vi.fn(async () => client) }; const repo = new PostgresStripeRepository(pool as unknown as Pool); await expect(repo.withLock('request', async () => { client.emit('error', Error('connection lost')); await repo.update('request', r => r); })).rejects.toThrow('lock connection was lost'); expect(pool.connect).toHaveBeenCalledTimes(1); expect(client.release).toHaveBeenCalledWith(true); });
+it('does not run work or unlock another holder when lock is busy', async () => { const client = Object.assign(new EventEmitter(), { query: vi.fn(async () => ({ rows: [{ locked: false }] })), release: vi.fn() }); const repo = new PostgresStripeRepository({ connect: async () => client } as unknown as Pool); const work = vi.fn(); await expect(repo.withLock('request', work)).rejects.toBeInstanceOf(StripeBusy); expect(work).not.toHaveBeenCalled(); expect(client.query).toHaveBeenCalledTimes(1); });

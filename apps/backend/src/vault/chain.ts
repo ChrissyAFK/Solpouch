@@ -197,7 +197,7 @@ export class ChainVaultClient implements VaultClient {
     return allowedPayTos(p, this.payToOf, () => checkoutPayTo("chain")).map(s => new PublicKey(s));
   }
 
-  private async assertDevnet() {
+  async assertDevnet() {
     if (await this.connection.getGenesisHash() !== "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG") {
       throw new Error("Chain signing is restricted to Solana devnet");
     }

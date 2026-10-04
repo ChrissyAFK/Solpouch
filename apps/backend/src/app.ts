@@ -1,3 +1,4 @@
+import { stripeRoutes, stripeWebhookRoutes } from './routes/stripe.js';
 import { shoppingListRoutes } from "./routes/shoppingLists.js";
 import { fundingRoutes, fundingWebhookRoutes } from "./routes/funding.js";
 import { StoreConflictError } from "./store/types.js";
@@ -45,18 +46,19 @@ export function createApp(deps: Deps) {
   app.use("*", secureHeaders());
   app.use("*", async(c,next) => { c.header("Cache-Control","no-store"); await next(); });
   app.use("*", bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "Request body too large" } satisfies ApiError, 413) }));
-  app.use(
-    "*",
-    cors({
+  const stripeWebhook = (c: {req:{method:string;path:string}}) => c.req.method === "POST" && c.req.path === "/funding-webhooks/stripe";
+  const corsMiddleware = cors({
       origin: (o) => (origins.includes(o) ? o : null),
       allowHeaders: ["Content-Type", "X-Solpouch-Secret", "Authorization"],
-    }),
-  );
+    });
+  app.use("*", (c,next)=>stripeWebhook(c)?next():corsMiddleware(c,next));
 
   const writes = rateLimit({ store: deps.store, windowMs: MIN, max: 30, key: "write" });
   const topups = rateLimit({ store: deps.store, windowMs: MIN, max: 5, key: "topup" });
-  app.use("*", rateLimit({ store: deps.store, windowMs: MIN, max: 120, key: "all" }));
+  const globalLimit=rateLimit({ store: deps.store, windowMs: MIN, max: 120, key: "all" });
+  app.use("*", (c,next)=>stripeWebhook(c)?next():globalLimit(c,next));
   app.use("*", async (c, next) => {
+    if(stripeWebhook(c)) return next();
     const m = c.req.method;
     return m === "POST" || m === "PATCH" || m === "DELETE" ? writes(c, next) : next();
   });
@@ -76,6 +78,8 @@ export function createApp(deps: Deps) {
   });
   // GET /chat/status is public (mode only); everything else under /chat needs a user.
   app.use("/chat/*", async (c, next) => (c.req.method === "GET" && c.req.path === "/chat/status" ? next() : requireUser(deps.store)(c as never, next)));
+  app.route("/funding", stripeRoutes(deps));
+  app.route("/funding-webhooks", stripeWebhookRoutes(deps));
   app.route("/funding", fundingRoutes(deps));
   app.route("/funding-webhooks", fundingWebhookRoutes(deps));
   app.route("/auth", authRoutes(deps, origins));

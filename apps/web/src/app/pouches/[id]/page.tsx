@@ -260,6 +260,7 @@ function TopUpSection({
         {resumeError && <div role="alert"><p>Pending top-ups could not be checked. Retry before adding more funds.</p><button className={btnSecondary} onClick={() => setResumeAttempt(n => n + 1)}>Retry pending top-ups</button></div>}
         {processing && <Notice><strong>Checking top-up</strong><p>The transfer result is not confirmed. Do not start another top-up for the same funds.</p><button className={btnSecondary} disabled={busy} onClick={() => void complete(false)}>Check top-up status</button></Notice>}
         <ErrorBanner message={error} />
+        {error && /insufficient|not enough|balance/i.test(error) && <Link className="underline text-sm" href="/funding">Add money to your wallet</Link>}
         {added && (
           <Notice>
             {added}

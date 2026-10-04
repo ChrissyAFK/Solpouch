@@ -106,12 +106,13 @@ export interface Order {
   txSignature?: string;
   createdAt: string;
   store?: { name: string; domain: string; url?: string };
-  fulfillment?: { via: "direct" | "instacart" | "service"; label: string; checkoutUrl?: string; linkStatus?: "ready" | "unavailable" | "not_configured"; linkCreatedAt?: string; linkExpiresAt?: string };
+  fulfillment?: { via: "direct" | "instacart" | "service" | "demo"; label: string; demo?: { sourceCurrency: "CAD"; sourceTotal: number; sourceLines: OrderLine[]; usdPerCad: string; payTo: string; preparedAt: string }; checkoutUrl?: string; linkStatus?: "ready" | "unavailable" | "not_configured"; linkCreatedAt?: string; linkExpiresAt?: string };
 }
 
 /** Web search results are references, never retailer-authorized payment quotes.
  * Inspect legacy fields too: old drafts have no explicit quote provenance. */
 export function isCheckoutReference(order: Order): boolean {
+  if (order.fulfillment?.via === "demo" && order.fulfillment.demo) return false;
   return order.merchantId.startsWith(WEB_PREFIX) || !!order.store ||
     !!(order.fulfillment && order.fulfillment.via !== "direct") ||
     order.lines.some((line) => line.product?.estimated === true);
@@ -119,6 +120,7 @@ export function isCheckoutReference(order: Order): boolean {
 
 /** Creating a checkout link does not convert the original quote currency. */
 export function orderCurrency(order: Order): "CAD" | "USDC" {
+  if (order.fulfillment?.via === "demo" && order.fulfillment.demo) return "USDC";
   return order.merchantId.startsWith(WEB_PREFIX) || !!order.store || order.lines.some(l=>l.product?.estimated) ? "CAD" : "USDC";
 }
 

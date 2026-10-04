@@ -10,6 +10,7 @@ export async function recordPaidOrder(store: Store, order: Order): Promise<void>
     console.warn("payments metrics write failed:", (e as Error).message);
   }
   try {
+    if (order.fulfillment?.via === "demo") return; // Converted test quotes are not retailer CAD prices.
     const time = order.paidAt;
     const seen = new Set<string>();
     const rows = [];

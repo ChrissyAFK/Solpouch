@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { DemoCheckoutSummary } from "@/components/DemoCheckoutSummary";
 import { CartEditor } from "./CartEditor";
 import { StatePanel } from "@/components/StatePanel";
 import { OrderSkeleton } from "@/components/Skeletons";
@@ -283,14 +284,14 @@ function OrderWorkspace() {
     catch (cause) { if (current()) setError(errMsg(cause)); }
     finally { if (current()) setBusy(false); }
   }
-  async function act(action: "confirm" | "cancel") {
+  async function act(action: "confirm" | "cancel" | "demo") {
     if (!order || busy || cartDirty || !currentSession()) return;
     const version = loadVersion.current;
     const current = () => currentSession() && version === loadVersion.current;
     setBusy(true);
     setError(null);
     try {
-      const next = action === "confirm" ? await api.confirm(order.id, order.version ?? 0) : await api.cancel(order.id);
+      const next = action === "demo" ? await api.prepareDemoCheckout(order.id, order.version ?? 0) : action === "confirm" ? await api.confirm(order.id, order.version ?? 0) : await api.cancel(order.id);
       if (!current()) return;
       setOrder(next);
       try {
@@ -313,6 +314,7 @@ function OrderWorkspace() {
   }
   const selected = pouches.find((p) => p.id === (order?.pouchId ?? pouchId));
   const isDraft = order?.status === "draft";
+  const demoCheckout = order?.fulfillment?.via === "demo";
   const referenceOnly = !!order && isCheckoutReference(order);
   const isPaying = order?.status === "paying";
   const step = !order ? 1 : isDraft || isPaying ? 2 : 3;
@@ -494,6 +496,7 @@ function OrderWorkspace() {
                   <span className={s.statusPill}>{order.status}</span>
                 </div>
                 <p className="mt-3 text-sm text-[var(--muted)]">“{order.request}”</p>
+                <DemoCheckoutSummary order={order} />
                 {order.status === "paid" && (
                   <div className={s.receipt} aria-label="Receipt" data-print-receipt>
                     <span className={s.stamp}>Paid</span>
@@ -573,7 +576,7 @@ function OrderWorkspace() {
                     </div>
                   </div>
                 )}
-                {isDraft && <CartEditor key={`${order.id}:${order.version ?? 0}`} order={order} disabled={busy} onSaved={setOrder} onDirty={setCartDirty} />}
+                {isDraft && !demoCheckout && <CartEditor key={`${order.id}:${order.version ?? 0}`} order={order} disabled={busy} onSaved={setOrder} onDirty={setCartDirty} />}
                 {isDraft && <div className="my-4 space-y-3">
                   <p className="text-sm text-[var(--muted)]">For groceries, create an Instacart shopping list and review availability, substitutions, fees and the final price there. Creating a link does not move pouch funds or place an order.</p>
                   <button className={btnSecondary} disabled={busy || cartDirty} onClick={() => void createShoppingList()}>{busy ? "Working…" : "Create Instacart shopping list"}</button>
@@ -675,7 +678,7 @@ function OrderWorkspace() {
                 <p className="mt-2 text-xs text-[var(--muted)]">
                   {referenceOnly
                     ? "Search estimate only. Check the current price and complete checkout with the retailer. Solpouch has not placed an order."
-                    : "Prices come from the store’s catalog."}
+                    : demoCheckout ? "This demo checkout uses the reviewed estimate, converted to devnet test-USDC." : "Prices come from the store’s catalog."}
                 </p>
                 </>
                 )}
@@ -686,6 +689,7 @@ function OrderWorkspace() {
                     </button>
                   ) : isDraft ? (
                     <>
+                      {referenceOnly && orderCurrency(order) === "CAD" && <button className={btnSecondary} disabled={busy || cartDirty || order.total <= 0} onClick={() => void act("demo")}>Prepare devnet demo checkout</button>}
                       <button
                         className={btnPrimary}
                         disabled={busy || cartDirty || order.total <= 0 || referenceOnly}
@@ -695,7 +699,7 @@ function OrderWorkspace() {
                           ? "Complete checkout with the retailer"
                           : busy
                           ? "Processing…"
-                          : `Approve ${usd(toUsdc(order.total))} & pay`}
+                          : demoCheckout ? `Pay demo checkout · ${toUsdc(order.total).toFixed(6)} test-USDC` : `Approve ${usd(toUsdc(order.total))} & pay`}
                       </button>
                       <button
                         className={btnSecondary}

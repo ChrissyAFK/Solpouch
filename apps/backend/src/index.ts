@@ -72,7 +72,28 @@ if (!fundingRepository && process.env.FUNDING_DATABASE_URL) {
     throw error;
   }
 }
-const app = createApp({ store, vault, fundingRepository });
+// Stripe demo storage is separate from Transak and never uses an in-memory server repository.
+// A bad Stripe setting must not take the rest of the API offline.
+let stripeRepository: import("./stripe/repository.js").PostgresStripeRepository | undefined;
+let stripePool: import("pg").Pool | undefined;
+const stripeDatabase = process.env.FUNDING_DATABASE_URL || process.env.DATABASE_URL;
+if (stripeDatabase && (process.env.FUNDING_PROVIDER === "stripe" || process.env.STRIPE_SECRET_KEY)) {
+  const { default: pg } = await import("pg");
+  const { PostgresStripeRepository } = await import("./stripe/repository.js");
+  try {
+    stripePool = new pg.Pool({ ...postgresPoolConfig(stripeDatabase), max: 10, connectionTimeoutMillis: 3000 });
+    stripePool.on("error", () => console.warn("Stripe funding database connection closed."));
+    const repository = new PostgresStripeRepository(stripePool);
+    await repository.initialize();
+    stripeRepository = repository;
+  } catch {
+    await stripePool?.end().catch(() => {});
+    stripePool = undefined;
+    console.warn("Stripe funding storage is unavailable; card checkout is disabled.");
+  }
+}
+const { createDevnetMint } = await import("./stripe/mint.js");
+const app = createApp({ store, vault, fundingRepository, stripeRepository, stripeMint: createDevnetMint() });
 
 // Pays withdrawals whose hold is over. Uses the base store (system access), never a user-scoped one.
 const { payDueWithdrawals } = await import("./services/withdrawals.js");
@@ -96,7 +117,7 @@ if (!indexerOff && store instanceof PostgresStore) {
   console.warn(`indexer: not started (${indexerOff})`);
 }
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.once(signal, () => { void (indexer?.stop() ?? Promise.resolve()).finally(() => process.exit(0)); });
+  process.once(signal, () => { void Promise.allSettled([indexer?.stop() ?? Promise.resolve(), stripePool?.end() ?? Promise.resolve()]).finally(() => process.exit(0)); });
 }
 
 const port = Number(process.env.BACKEND_PORT ?? 8787);
