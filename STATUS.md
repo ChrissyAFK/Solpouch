@@ -148,7 +148,7 @@ The public product page lives at `/`. The existing demo overview moved to `/dash
 - Startup rule re-sync (push stored rules on chain when they differ) only runs with `RESYNC_RULES_ON_START=1`.
 - Profile has a Preferences card: appearance (auto, light, dark), motion, text size, saved per browser under `solpouch.prefs`. The landing page stays dark (`.force-dark`).
 - Production: backend `tsx src/index.ts` (no watch) on 8787 and `next start` on 3019 from this checkout on `scaffold`; logs in `backend-run.log` and `web-run.log`.
-- Not verified: a real payment to the new checkout wallet after the upgrade. `ENABLE_INDEXER` is still off.
+- Not verified: a real payment to the new checkout wallet after the upgrade.
 
 ## 2026-10-03 late: review fixes, supervisor, `main` fast-forwarded
 
@@ -164,3 +164,4 @@ The public product page lives at `/`. The existing demo overview moved to `/dash
 - Landing, About, Terms and footer copy now say what the product does: you approve each order, and auto-pay is an opt-in limit per pouch.
 - Overview top area is three stat tiles plus one spending card.
 - Supervisor: the Windows scheduled task "Solpouch Tunnel" runs `~/.cf-solpouch/.cloudflared/tunnel-check.ps1` every minute. It starts cloudflared, the API (8787) and the web server (3019) when they are not running. Create `.deploying` in this checkout during a deploy so it leaves the API and web server alone, and delete it after.
+- After this commit: the indexer was switched on in production (`ENABLE_INDEXER=true` in `.env`); the public devnet RPC rate-limits its backfill (429 lines in `backend-run.log`). PR #1 was closed.
