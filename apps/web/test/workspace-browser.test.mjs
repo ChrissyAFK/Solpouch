@@ -122,8 +122,8 @@ test('alerts require opt-in, are deduplicated and do not follow another account'
     if (path === '/topups') { topupRequests++; await route.fulfill({ json: topupReady ? [{ id: 'ready', pouchId: 'p', status: 'cooling_down', readyAt: '2026-01-01T00:00:00Z' }] : [] }); return true; }
     return false;
   });
-  await page.goto(`${origin}/profile`); await page.getByRole('checkbox').waitFor(); assert.equal(topupRequests, 0);
-  await page.getByRole('checkbox').check();
+  await page.goto(`${origin}/profile`); await page.getByRole('switch').waitFor({state:'attached'}); assert.equal(topupRequests, 0);
+  await page.locator('.sp-switch-track').click();
   await page.getByRole('link', { name: /80% of today's limit/ }).waitFor();
   await page.getByRole('link', { name: /top-up for Shopping is ready/ }).waitFor();
   await page.getByRole('button', { name: /Dismiss: Shopping/ }).click();
@@ -132,12 +132,12 @@ test('alerts require opt-in, are deduplicated and do not follow another account'
   topupReady = false;
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await page.getByRole('link', { name: /top-up for Shopping is ready/ }).waitFor({ state: 'detached' });
-  await page.reload(); await page.getByRole('checkbox').waitFor();
-  assert.equal(await page.getByRole('checkbox').isChecked(), true);
+  await page.reload(); await page.getByRole('switch').waitFor({state:'attached'});
+  assert.equal(await page.getByRole('switch').isChecked(), true);
   assert.equal(await page.getByRole('link', { name: /80% of today's limit/ }).count(), 0);
   await switchAccount(page, b);
   assert.equal(await page.getByRole('complementary', { name: 'Spending alerts', exact: true }).count(), 0);
-  assert.equal(await page.getByRole('checkbox').isChecked(), false);
+  assert.equal(await page.getByRole('switch').isChecked(), false);
 });
 test('information navigation links lead to landing-page sections', async t => {
   const page = await setup(t); await page.goto(`${origin}/about`);
@@ -219,7 +219,7 @@ test('top-ups need a linked wallet; a WalletRequired reply swaps the form for th
   assert.deepEqual(starts, ['alice@example.test']);
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('solpouch.session')).user.wallet), undefined);
   // No injected wallet in this browser: the prompt explains instead of offering a dead button.
-  await page.getByText(/No wallet found/).waitFor();
+  await page.getByText(/No Solana wallet in this browser/).waitFor();
   await switchAccount(page, b);
   await prompt.waitFor();
   assert.equal(await amount.count(), 0);

@@ -3,10 +3,12 @@ packages:
   - "packages/*"
 allowBuilds:
   '@google/genai': true
+  '@reown/appkit': false
   # Native build off on purpose: the advisory (buffer overflow in toBigIntLE) is in the C binding; without it the package uses its JS path.
   bigint-buffer: false
   bufferutil: true
   esbuild: true
+  keccak: false
   protobufjs: true
   utf-8-validate: true
 

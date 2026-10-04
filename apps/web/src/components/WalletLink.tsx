@@ -26,6 +26,24 @@ export function injectedWallet(): Wallet | undefined {
   };
   return browser.phantom?.solana ?? browser.solana ?? browser.solflare;
 }
+let embedded: Wallet | undefined;
+export function setEmbeddedWallet(w?: Wallet) {
+  embedded = w;
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("solpouch:wallet-change"));
+}
+export function embeddedWallet(): Wallet | undefined {
+  return embedded;
+}
+/** The wallet matching `address` (embedded first, then injected), else injected ?? embedded. */
+export function findWallet(address?: string): Wallet | undefined {
+  const injected = typeof window === "undefined" ? undefined : injectedWallet();
+  if (address) {
+    if (embedded?.publicKey?.toBase58() === address) return embedded;
+    if (injected?.publicKey?.toBase58() === address) return injected;
+    return undefined;
+  }
+  return injected ?? embedded;
+}
 function toBase64(bytes: Uint8Array) {
   let bin = "";
   bytes.forEach((b) => (bin += String.fromCharCode(b)));
@@ -33,6 +51,30 @@ function toBase64(bytes: Uint8Array) {
 }
 export function shortAddress(a: string) {
   return `${a.slice(0, 4)}…${a.slice(-4)}`;
+}
+
+/** Challenge/verify flow for a wallet. Returns the verified address; throws on failure. */
+export async function linkWallet(
+  wallet: Wallet,
+  updateUser: ReturnType<typeof useAuth>["updateUser"],
+  isCurrent: () => boolean = () => true,
+) {
+  const token = getToken();
+  if (!token) return;
+  if (!wallet.signMessage) throw new Error("This wallet cannot sign messages.");
+  const { publicKey } = await wallet.connect();
+  if (!isCurrent()) return;
+  const address = publicKey.toBase58();
+  const challenge = await api.walletChallenge(address);
+  if (!isCurrent()) return;
+  const signed = await wallet.signMessage(new TextEncoder().encode(challenge.message), "utf8");
+  if (!isCurrent()) return;
+  if (wallet.publicKey?.toBase58() !== address)
+    throw new Error("Your wallet changed while linking. Try again.");
+  if (signed.signature.length !== 64)
+    throw new Error("The wallet returned an invalid signature. Try again.");
+  const { user: next } = await api.walletVerify(challenge.id, toBase64(signed.signature));
+  updateUser({ wallet: next.wallet ?? address }, token);
 }
 
 /** Links a Solana wallet to the signed-in account by signing a challenge (proves ownership; moves no money). */
@@ -45,7 +87,9 @@ export function WalletLink() {
   const linked = user?.wallet;
 
   useEffect(() => {
-    setAvailable(Boolean(injectedWallet()));
+    const refresh = () => setAvailable(Boolean(injectedWallet() || embeddedWallet()));
+    refresh();
+    window.addEventListener("solpouch:wallet-change", refresh);
     const provider = injectedWallet();
     // A different account in the extension means the signed proof no longer matches: ask to link again.
     const changed = () => {
@@ -53,13 +97,16 @@ export function WalletLink() {
         setError("Your wallet account changed. Unlink and link it again.");
     };
     provider?.on?.("accountChanged", changed);
-    return () => provider?.removeListener?.("accountChanged", changed);
+    return () => {
+      window.removeEventListener("solpouch:wallet-change", refresh);
+      provider?.removeListener?.("accountChanged", changed);
+    };
   }, [linked]);
 
   async function link() {
     if (linking.current || !sessionKey) return;
     const token = sessionKey;
-    const provider = injectedWallet();
+    const provider = findWallet();
     if (!provider?.signMessage) {
       setAvailable(false);
       return;
@@ -68,25 +115,7 @@ export function WalletLink() {
     setBusy(true);
     setError(null);
     try {
-      const { publicKey } = await provider.connect();
-      if (getToken() !== token) return;
-      const address = publicKey.toBase58();
-      const challenge = await api.walletChallenge(address);
-      if (getToken() !== token) return;
-      const signed = await provider.signMessage(
-        new TextEncoder().encode(challenge.message),
-        "utf8",
-      );
-      if (getToken() !== token) return;
-      if (provider.publicKey?.toBase58() !== address)
-        throw new Error("Your wallet changed while linking. Try again.");
-      if (signed.signature.length !== 64)
-        throw new Error("The wallet returned an invalid signature. Try again.");
-      const { user: next } = await api.walletVerify(
-        challenge.id,
-        toBase64(signed.signature),
-      );
-      updateUser({ wallet: next.wallet ?? address }, token);
+      await linkWallet(provider, updateUser, () => getToken() === token);
     } catch (cause) {
       const rejected =
         (cause as { code?: unknown } | null)?.code === 4001 ||
@@ -127,6 +156,9 @@ export function WalletLink() {
           <span className={`num ${styles.addr}`} title={linked}>
             {shortAddress(linked)}
           </span>
+          {embeddedWallet()?.publicKey?.toBase58() === linked && (
+            <span className={styles.hint}>Built-in wallet</span>
+          )}
           <button
             type="button"
             className={styles.link}

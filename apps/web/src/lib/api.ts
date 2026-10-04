@@ -174,6 +174,7 @@ export const api = {
   }),
   revokeSession: (id: string) => req<{ ok: boolean }>(`/auth/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
   deleteAccount: () => req<{ ok: boolean }>("/auth/account", { method: "DELETE" }),
+  privyToken: () => req<{ token: string; expiresAt: string }>("/auth/privy-token"),
   getProfile: () => req<Profile>("/profile"),
   updateProfile: (b: UpdateProfileBody) =>
     req<Profile>("/profile", { method: "PATCH", body: JSON.stringify(b) }),

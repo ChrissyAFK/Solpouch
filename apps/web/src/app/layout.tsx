@@ -3,6 +3,7 @@ import { Geist_Mono, Hanken_Grotesk } from "next/font/google";
 import { headers } from "next/headers";
 import { connection } from "next/server";
 import { AuthProvider } from "@/components/AuthProvider";
+import { EmbeddedWalletLoader } from "@/components/EmbeddedWalletLoader";
 import { PrefsSync } from "@/components/PrefsSync";
 import { ServiceWorker } from "@/components/ServiceWorker";
 import { Shell } from "@/components/Shell";
@@ -73,6 +74,7 @@ export default async function RootLayout({
         <PrefsSync />
         <ServiceWorker />
         <AuthProvider nonce={nonce}>
+          {process.env.NEXT_PUBLIC_PRIVY_APP_ID && <EmbeddedWalletLoader />}
           <Shell>{children}</Shell>
         </AuthProvider>
       </body>

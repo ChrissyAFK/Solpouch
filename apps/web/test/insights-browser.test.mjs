@@ -26,8 +26,8 @@ test('insights exclude unpaid/retailer/undated orders and cap spending by balanc
  await section.getByTestId('period-spend').waitFor();
  assert.match(await section.getByTestId('period-spend').innerText(),/20\.00/);
  assert.match(await section.getByTestId('available-today').innerText(),/10\.00/);
- await section.getByText(/Includes 1 simulated payment/).waitFor();
- await section.getByText(/1 old or invalid payment dates were excluded/).waitFor();
+ await section.getByText(/Includes 1 simulated payment/).waitFor({state:'attached'});
+ await section.getByText(/1 payment with an old or invalid date was left out/).waitFor({state:'attached'});
 });
 test('7 and 30 day filters use paid date rather than draft creation date',async t=>{
  const oldDate=new Date(today-10*day).toISOString();

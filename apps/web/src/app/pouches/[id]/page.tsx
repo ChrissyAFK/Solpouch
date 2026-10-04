@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
-import { WalletLink, injectedWallet, shortAddress } from "@/components/WalletLink";
+import { WalletLink, findWallet, shortAddress } from "@/components/WalletLink";
 import { StatePanel } from "@/components/StatePanel";
 import { PouchSkeleton } from "@/components/Skeletons";
 import { useParams } from "next/navigation";
@@ -69,8 +69,11 @@ function MoveFromWalletSection({
   const [moved, setMoved] = useState<string | null>(null);
   const [hasProvider, setHasProvider] = useState(true);
   useEffect(() => {
-    setHasProvider(Boolean(injectedWallet()));
-  }, []);
+    const refresh = () => setHasProvider(Boolean(findWallet(wallet)));
+    refresh();
+    window.addEventListener("solpouch:wallet-change", refresh);
+    return () => window.removeEventListener("solpouch:wallet-change", refresh);
+  }, [wallet]);
 
   async function move(e: React.FormEvent) {
     e.preventDefault();
@@ -85,7 +88,7 @@ function MoveFromWalletSection({
       setError(`The most you can move at once is ${MAX_TOPUP.toLocaleString()} USDC.`);
       return;
     }
-    const provider = injectedWallet();
+    const provider = findWallet(wallet);
     if (!provider) {
       setHasProvider(false);
       return;
@@ -96,7 +99,7 @@ function MoveFromWalletSection({
     try {
       const conn = await provider.connect();
       if (conn.publicKey.toBase58() !== wallet) {
-        setError(`Switch Phantom to your linked wallet ${shortAddress(wallet)}`);
+        setError(`Switch your wallet to your linked wallet ${shortAddress(wallet)}`);
         return;
       }
       const prep = await api.prepareAllocation(pouch.id, micros);

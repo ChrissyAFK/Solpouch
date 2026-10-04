@@ -13,6 +13,11 @@
   },
   "dependencies": {
     "@elevenlabs/react": "^1.16.0",
+    "@privy-io/react-auth": "^3.47.0",
+    "@solana-program/memo": "^0.15.0",
+    "@solana-program/system": "^0.15.0",
+    "@solana-program/token": "^0.17.0",
+    "@solana/kit": "^8.4.0",
     "@solana/web3.js": "^1.99.0",
     "@solpouch/shared": "workspace:*",
     "next": "latest",

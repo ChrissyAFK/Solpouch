@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { GoogleAuthError, verifyGoogleIdToken } from "../auth/google.js";
 import { AuthUnavailableError, requireUser, signSession, signVoiceToken, type AuthEnv } from "../auth/session.js";
+import { privyJwks, signPrivyToken } from "../auth/privy.js";
 import { rateLimit } from "../security/rateLimit.js";
 import { validSignature, validWallet } from "../security/wallet.js";
 import { StoreConflictError, WalletAlreadyLinkedError } from "../store/types.js";
@@ -34,6 +35,13 @@ export function authRoutes(deps: Deps, origins: string[] = []) {
     } catch { throw new AuthUnavailableError("Sign-in is temporarily unavailable. Try again shortly"); }
   });
   app.get("/me", auth, async c => c.json({ user: await mergedUser(deps.store, c.get("user")), expiresAt: c.get("session").expiresAt }));
+  // Privy custom auth: a short-lived ES256 token plus a public JWKS Privy fetches server to server (no Origin, no auth).
+  app.get("/privy-token", rateLimit({ store: deps.store, windowMs: 60000, max: 20, key: "auth-privy-token" }), auth, async c => c.json(await signPrivyToken(c.get("user").email)));
+  app.get("/privy-jwks", async c => {
+    const jwks = await privyJwks();
+    c.header("Cache-Control", "public, max-age=300");
+    return c.json(jwks);
+  });
   app.post("/voice-token", auth, async c => c.json(await signVoiceToken(c.get("session"))));
   app.post("/logout", auth, async c => { await deps.store.deleteSession(c.get("session").id); return c.json({ ok:true }); });
   app.post("/logout-all", auth, async c => { await deps.store.deleteSessions(c.get("user").email); return c.json({ ok:true }); });
