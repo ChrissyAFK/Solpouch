@@ -8,7 +8,17 @@ const nextConfig = {
   poweredByHeader: false,
   devIndicators: false,
   async headers() {
-    return [{ source: "/(.*)", headers: securityHeaders }];
+    return [
+      { source: "/(.*)", headers: securityHeaders },
+      // The worker file must always revalidate so updates reach installed apps.
+      {
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache" },
+          { key: "Content-Type", value: "text/javascript; charset=utf-8" },
+        ],
+      },
+    ];
   },
 };
 export default nextConfig;

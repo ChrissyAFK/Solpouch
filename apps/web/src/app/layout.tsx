@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { connection } from "next/server";
 import { AuthProvider } from "@/components/AuthProvider";
 import { PrefsSync } from "@/components/PrefsSync";
+import { ServiceWorker } from "@/components/ServiceWorker";
 import { Shell } from "@/components/Shell";
 import { pageMetadata, siteDescription, siteUrl } from "@/lib/site";
 import "./globals.css";
@@ -71,6 +72,7 @@ export default async function RootLayout({
       </head>
       <body>
         <PrefsSync />
+        <ServiceWorker />
         <AuthProvider nonce={nonce}>
           <Shell>{children}</Shell>
         </AuthProvider>

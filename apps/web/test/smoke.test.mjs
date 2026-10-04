@@ -71,6 +71,10 @@ test("manifest, icons, social image and private crawler files are served", async
   assert.equal(manifestResponse.status, 200);
   const manifest = await manifestResponse.json();
   assert.equal(manifest.name, "Solpouch");
+  assert.deepEqual(
+    manifest.shortcuts.map((s) => s.url),
+    ["/order", "/pouches", "/orders"],
+  );
   assert.ok(manifest.icons.some((icon) => icon.purpose === "maskable"));
   for (const path of [
     "/favicon.ico",
@@ -88,4 +92,16 @@ test("manifest, icons, social image and private crawler files are served", async
   const sitemap = await (await get("/sitemap.xml")).text();
   assert.match(sitemap, /<urlset/);
   assert.doesNotMatch(sitemap, /<loc>/);
+});
+
+test("Android wrapper files: asset links, offline worker and offline page", async () => {
+  const links = await get("/.well-known/assetlinks.json", { redirect: "manual" });
+  assert.equal(links.status, 200);
+  assert.match(links.headers.get("content-type"), /application\/json/);
+  assert.equal((await links.json())[0].target.package_name, "tech.solpouch.app");
+  const worker = await get("/sw.js");
+  assert.equal(worker.status, 200);
+  assert.match(worker.headers.get("content-type"), /javascript/);
+  assert.match(worker.headers.get("cache-control"), /no-cache/);
+  assert.equal((await get("/offline")).status, 200);
 });

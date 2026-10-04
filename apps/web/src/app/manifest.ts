@@ -1,6 +1,12 @@
 import type { MetadataRoute } from "next";
 import { siteDescription } from "@/lib/site";
 
+const shortcutIcon = {
+  src: "/icons/icon-192.png",
+  sizes: "192x192",
+  type: "image/png",
+};
+
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
@@ -11,6 +17,13 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: "/",
     scope: "/",
     display: "standalone",
+    orientation: "any",
+    categories: ["finance", "shopping"],
+    shortcuts: [
+      { name: "New order", url: "/order", icons: [shortcutIcon] },
+      { name: "Pouches", url: "/pouches", icons: [shortcutIcon] },
+      { name: "Orders", url: "/orders", icons: [shortcutIcon] },
+    ],
     background_color: "#101014",
     theme_color: "#101014",
     icons: [
