@@ -23,23 +23,33 @@ export function isPrivateAddress(ip: string): boolean {
       (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224;
   }
   if (v === 6) {
-    const s = ip.toLowerCase();
-    // Private by special case
-    if (s === "::" || s === "::1") return true;
-    // Handle ::ffff: (IPv4-mapped)
-    if (s.startsWith("::ffff:")) {
-      const remainder = s.slice(7);
-      if (!/^\d+\.\d+\.\d+\.\d+$/.test(remainder)) return true; // Not dotted IPv4 -> private
-      return isPrivateAddress(remainder);
+    let s = ip.toLowerCase().replace(/^\[|\]$/g, "").replace(/%.*$/, "");
+    const tail = /^(.*:)(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(s);
+    if (tail) {
+      const o = tail.slice(2).map(Number);
+      if (o.some((n) => n > 255)) return true;
+      s = `${tail[1]}${((o[0] << 8) | o[1]).toString(16)}:${((o[2] << 8) | o[3]).toString(16)}`;
     }
-    // Private prefixes
-    if (s.startsWith("64:ff9b:") || s.startsWith("2002:") || s.startsWith("fec0:")) return true;
-    // Handle ::a.b.c.d (IPv4-compatible addresses)
-    if (s.startsWith("::") && /^\d+\.\d+\.\d+\.\d+$/.test(s.slice(2))) {
-      return isPrivateAddress(s.slice(2));
+    const halves = s.split("::");
+    if (halves.length > 2) return true;
+    const parse = (p: string) => (p === "" ? [] : p.split(":"));
+    const head = parse(halves[0]);
+    const rest = halves.length === 2 ? parse(halves[1]) : [];
+    let parts: string[];
+    if (halves.length === 2) {
+      const fill = 8 - head.length - rest.length;
+      if (fill < 1) return true;
+      parts = [...head, ...Array<string>(fill).fill("0"), ...rest];
+    } else parts = head;
+    if (parts.length !== 8 || !parts.every((p) => /^[0-9a-f]{1,4}$/.test(p))) return true;
+    const g = parts.map((p) => parseInt(p, 16));
+    const firstSixZero = g.slice(0, 6).every((x) => x === 0);
+    if (g.slice(0, 5).every((x) => x === 0) && (g[5] === 0xffff || (g[5] === 0 && (g[6] !== 0 || g[7] > 1)))) {
+      return isPrivateAddress(`${g[6] >> 8}.${g[6] & 255}.${g[7] >> 8}.${g[7] & 255}`);
     }
-    // Other ranges
-    return /^f[cd]/.test(s) || /^fe[89ab]/.test(s) || s.startsWith("ff");
+    if (firstSixZero && g[6] === 0 && g[7] <= 1) return true; // :: and ::1
+    return (g[0] & 0xfe00) === 0xfc00 || (g[0] & 0xff80) === 0xfe80 || (g[0] & 0xffc0) === 0xfec0 || (g[0] & 0xff00) === 0xff00 ||
+      g[0] === 0x2002 || (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) || (g[0] === 0x2001 && g[1] === 0xdb8);
   }
   return true;
 }
@@ -105,14 +115,11 @@ export function textHasPrice(text: string, name: string, price: number): boolean
   const re = new RegExp(`(?<![\\d.,])${price.toFixed(2).replace(".", "[.,]")}(?!\\d)`, "g");
   for (const m of lower.matchAll(re)) {
     // Skip if price has currency marker before it (US$, USD, US, €, £)
-    const beforeText = lower.slice(Math.max(0, m.index - 20), m.index);
-    const beforeNonSpace = beforeText.replace(/\s+/g, "");
-    const last4Before = beforeNonSpace.slice(-4);
-    if (/(?:us\$|usd|us|€|£)$/.test(last4Before)) continue;
+    const beforeText = lower.slice(Math.max(0, m.index - 8), m.index);
+    if (/(?<![a-z])(?:us\$|usd|us|€|£)\s*\$?\s*$/.test(beforeText)) continue;
     // Skip if price has currency marker after it (USD, US, EUR, €)
     const afterText = lower.slice(m.index + m[0].length, m.index + m[0].length + 20);
-    const afterNonSpace = afterText.replace(/\s+/g, "");
-    if (/^(?:usd|us|eur|€)/.test(afterNonSpace)) continue;
+    if (/^\s*(?:(?:usd|us|eur)\b|€)/.test(afterText)) continue;
 
     const near = new Set(tokens(lower.slice(Math.max(0, m.index - 300), m.index + 300)));
     if (want.filter((t) => near.has(t)).length / want.length >= 0.5) return true;

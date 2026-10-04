@@ -13,6 +13,10 @@ describe("isPrivateAddress", () => {
     for (const ip of ["10.0.0.1", "127.0.0.1", "192.168.1.5", "172.16.0.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "fd00::1", "fe80::1", "::ffff:127.0.0.1", "::ffff:7f00:1", "64:ff9b::1", "2002::1", "fec0::1", "::127.0.0.1", "not-an-ip"]) expect(isPrivateAddress(ip), ip).toBe(true);
     for (const ip of ["93.184.216.34", "8.8.8.8", "2606:4700::1111"]) expect(isPrivateAddress(ip), ip).toBe(false);
   });
+  it("expands IPv6 fully before deciding", () => {
+    for (const ip of ["::", "fec1::1", "febf::1", "fe80::1%eth0", "0:0:0:0:0:0:0:1", "ff02::1", "2001:db8::1", "::7f00:1", "0:0:0:0:0:ffff:a00:1", "::ffff:10.0.0.1", "[::1]", "fc00::1", "64:ff9b::808:808"]) expect(isPrivateAddress(ip), ip).toBe(true);
+    for (const ip of ["::ffff:5db8:d822", "::ffff:93.184.216.34", "2001:4860:4860::8888", "2606:4700::1111"]) expect(isPrivateAddress(ip), ip).toBe(false);
+  });
 });
 
 describe("jsonLdProducts / textHasPrice", () => {
@@ -44,6 +48,11 @@ describe("jsonLdProducts / textHasPrice", () => {
     // Still work with $ and CA$
     expect(textHasPrice("Deck Screws 3 inch 100 pack $12.99", "Deck Screws 3 inch", 12.99)).toBe(true);
     expect(textHasPrice("Deck Screws 3 inch 100 pack CA$12.99", "Deck Screws 3 inch", 12.99)).toBe(true);
+  });
+  it("only treats a currency marker as a marker when it is not part of a longer word", () => {
+    const has = (s: string) => textHasPrice(`Deck Screws 3 inch 100 pack ${s}`, "Deck Screws 3 inch", 12.99);
+    for (const s of ["US$12.99", "US $12.99", "USD 12.99", "€12.99", "£12.99", "12.99 USD", "12.99 US", "12.99 EUR", "12.99 €", "12.99€"]) expect(has(s), s).toBe(false);
+    for (const s of ["$12.99", "CA$12.99", "C$12.99", "CAD 12.99", "Plus $12.99", "Bonus $12.99", "Bonus 12.99", "Focus $12.99", "Menus $12.99", "Deck Screws Plus $12.99", "$12.99 used", "$12.99 USB cable", "$12.99 User reviews", "$12.99 usually", "$12.99 Europe"]) expect(has(s), s).toBe(true);
   });
 });
 
