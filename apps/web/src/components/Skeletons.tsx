@@ -23,18 +23,9 @@ export function MetricsSkeleton() {
     <Loading label="Loading balances">
       <div className="wallet-metrics">
         {[0, 1, 2].map((i) => (
-          <div
-            key={i}
-            className={`wallet-metric ${i === 0 ? "main-metric" : ""}`}
-          >
-            <div className={styles.metric}>
-              <Block width={95} />
-              <Block
-                width={i === 0 ? "65%" : "45%"}
-                height={i === 0 ? 39 : 30}
-              />
-              <Block width={110} height={12} />
-            </div>
+          <div key={i} className="wallet-metric">
+            <Block width={70} />
+            <Block width={i === 0 ? 96 : 80} height={18} />
           </div>
         ))}
       </div>
@@ -58,8 +49,13 @@ export function RowsSkeleton({
         {[0, 1, 2].map((i) => (
           <div
             key={i}
-            className={`${styles.row} ${kind === "orders" ? styles.orderRow : ""}`}
+            className={`${styles.row} ${kind === "orders" ? styles.orderRow : styles.pouchRow}`}
           >
+            {kind === "pouches" && (
+              <div className={styles.glyph}>
+                <Block width={44} height={56} />
+              </div>
+            )}
             <div className={styles.identity}>
               <Block width={i === 1 ? "65%" : "80%"} />
               <Block width="55%" height={12} />
@@ -124,18 +120,16 @@ export function OrderSkeleton({ heading = false }: { heading?: boolean }) {
 export function PouchSkeleton() {
   return (
     <Loading label="Loading pouch">
-      <div className={styles.heading}>
-        <Block width={100} height={12} />
-        <Block width={180} height={30} />
+      <div className={styles.pouchHead}>
+        <Block width={120} height={150} />
+        <div className={styles.form}>
+          <Block width={180} height={30} />
+          <Block width={150} height={30} />
+          <Block width={220} height={12} />
+        </div>
       </div>
       <div className={styles.pouchGrid}>
         <div className={styles.form}>
-          <div className={styles.balance}>
-            <Block width={130} />
-            <Block width="55%" height={48} />
-            <Block width={100} height={12} />
-            <Block height={3} />
-          </div>
           <div className="sp-card">
             <Block width={150} />
             <div className={styles.chart}>

@@ -11,12 +11,12 @@ import { PouchForm } from "@/components/PouchForm";
 import {
   ErrorBanner,
   Notice,
-  Progress,
   btnPrimary,
   btnSecondary,
   usd,
 } from "@/components/ui";
 import { Icon } from "@/components/Icons";
+import { PouchGlyph } from "@/components/PouchGlyph";
 
 export default function PouchesPage() {
   const [pouches, setPouches] = useState<Pouch[] | null>(null);
@@ -119,27 +119,27 @@ export default function PouchesPage() {
         </StatePanel>
       ) : (
         <section className="wallet-metrics" aria-label="Spending overview">
-          <div className="wallet-metric main-metric">
-            <p>
-              Balance <span>USDC</span>
-            </p>
+          <div className="wallet-metric">
+            <p>Balance</p>
             <strong>{pouches ? usd(toUsdc(balance)) : "—"}</strong>
-            <span>Across {pouches?.length ?? "—"} pouches</span>
+            <span>USDC across {pouches?.length ?? "—"} pouches</span>
           </div>
           <div className="wallet-metric">
             <p>Spent today</p>
-            <strong>{pouches ? usd(toUsdc(spent)) : "—"}</strong>
-            <span>{pouches ? usd(toUsdc(limit)) : "—"} daily limit</span>
+            <strong>
+              {pouches ? usd(toUsdc(spent)) : "—"}
+              <span> / {pouches ? usd(toUsdc(limit)) : "—"}</span>
+            </strong>
           </div>
           <div className="wallet-metric">
-            <p>Active pouches</p>
+            <p>Active</p>
             <strong>
               {pouches ? active : "—"}
               <span> / {pouches?.length ?? "—"}</span>
             </strong>
-            <span>
-              {pouches ? `${pouches.length - active} frozen` : "Loading"}
-            </span>
+            {pouches && pouches.length - active > 0 && (
+              <span>{pouches.length - active} frozen</span>
+            )}
           </div>
         </section>
       )}
@@ -166,61 +166,76 @@ export default function PouchesPage() {
         {!loading && !loadError && pouches && pouches.length > 0 && (
           <div className="pouch-table">
             <div className="pouch-table-head" aria-hidden="true">
+              <span />
               <span>Pouch</span>
               <span>Balance</span>
-              <span>Daily spending</span>
+              <span>Left today</span>
               <span>Status</span>
               <span />
             </div>
-            {pouches.map((p) => (
-              <article className="pouch-row" key={p.id}>
-                <div className="pouch-identity">
-                  <h3>
-                    <Link href={`/pouches/${p.id}`}>{p.name}</Link>
-                  </h3>
-                  <span>
-                    {p.allowedMerchantIds.length}{" "}
-                    {p.allowedMerchantIds.length === 1 ? "store" : "stores"} ·{" "}
-                    {usd(toUsdc(p.maxPerOrder))} per order
-                  </span>
-                </div>
-                <div className="pouch-row-balance">
-                  <span className="mobile-label">Balance</span>
-                  <strong>{usd(toUsdc(p.balance))}</strong>
-                </div>
-                <div className="pouch-row-spending">
-                  <span className="mobile-label">Daily spending</span>
-                  <div>
-                    {usd(toUsdc(p.spentToday))}{" "}
-                    <span>/ {usd(toUsdc(p.dailyLimit))}</span>
+            {pouches.map((p) => {
+              const left = Math.max(0, p.dailyLimit - p.spentToday);
+              return (
+                <article className="pouch-row" key={p.id}>
+                  <div className="pouch-glyph">
+                    <PouchGlyph
+                      name={p.name}
+                      remaining={left}
+                      limit={p.dailyLimit}
+                      size="sm"
+                      frozen={p.frozen}
+                    />
                   </div>
-                  <Progress value={p.spentToday} max={p.dailyLimit} />
-                </div>
-                <span className={`pouch-status ${p.frozen ? "is-frozen" : ""}`}>
-                  <span />
-                  {p.frozen ? "Frozen" : "Active"}
-                </span>
-                <div className="row-actions">
-                  <button
-                    disabled={busy === p.id}
-                    onClick={() => void toggle(p)}
-                    aria-label={`${p.frozen ? "Unfreeze" : "Freeze"} ${p.name}`}
+                  <div className="pouch-identity">
+                    <h3>
+                      <Link href={`/pouches/${p.id}`}>{p.name}</Link>
+                    </h3>
+                    <span>
+                      {p.allowedMerchantIds.length}{" "}
+                      {p.allowedMerchantIds.length === 1 ? "store" : "stores"} ·{" "}
+                      <span className="num">
+                        {usd(toUsdc(p.maxPerOrder))}
+                      </span>{" "}
+                      per order
+                    </span>
+                  </div>
+                  <div className="pouch-row-balance">
+                    <span className="mobile-label">Balance</span>
+                    <strong>{usd(toUsdc(p.balance))}</strong>
+                  </div>
+                  <div className="pouch-row-left">
+                    <span className="mobile-label">Left today</span>
+                    <strong>{usd(toUsdc(left))}</strong>
+                    <span>of {usd(toUsdc(p.dailyLimit))}</span>
+                  </div>
+                  <span
+                    className={`pouch-status ${p.frozen ? "is-frozen" : ""}`}
                   >
-                    {busy === p.id
-                      ? "Updating…"
-                      : p.frozen
-                        ? "Unfreeze"
-                        : "Freeze"}
-                  </button>
-                  <Link
-                    href={`/pouches/${p.id}`}
-                    aria-label={`Manage ${p.name}`}
-                  >
-                    Manage <Icon name="arrow" size={14} />
-                  </Link>
-                </div>
-              </article>
-            ))}
+                    <span />
+                    {p.frozen ? "Frozen" : "Active"}
+                  </span>
+                  <div className="row-actions">
+                    <button
+                      disabled={busy === p.id}
+                      onClick={() => void toggle(p)}
+                      aria-label={`${p.frozen ? "Unfreeze" : "Freeze"} ${p.name}`}
+                    >
+                      {busy === p.id
+                        ? "Updating…"
+                        : p.frozen
+                          ? "Unfreeze"
+                          : "Freeze"}
+                    </button>
+                    <Link
+                      href={`/pouches/${p.id}`}
+                      aria-label={`Manage ${p.name}`}
+                    >
+                      Manage <Icon name="arrow" size={14} />
+                    </Link>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
         {showForm && !loading && !loadError && (

@@ -24,6 +24,7 @@ import { toMicros, toUsdc } from "@solpouch/shared";
 import { api, ApiRequestError, errMsg } from "@/lib/api";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import { PouchForm } from "@/components/PouchForm";
+import { PouchGlyph } from "@/components/PouchGlyph";
 import {
   ErrorBanner,
   Notice,
@@ -117,7 +118,7 @@ function TopUpSection({
       <div className="mb-5 flex items-center gap-3">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Add funds</h2>
-          <p className="mt-1 text-xs text-[#a9a5b9]">
+          <p className="mt-1 text-xs text-[var(--muted)]">
             Top-ups require a waiting period.
           </p>
         </div>
@@ -159,7 +160,7 @@ function TopUpSection({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
             />
-            <p className="mt-2 text-xs text-[#a9a5b9]">
+            <p className="mt-2 text-xs text-[var(--muted)]">
               At least 10 characters. A waiting period applies before you can
               complete the top-up.
             </p>
@@ -176,14 +177,14 @@ function TopUpSection({
         </form>
       ) : (
         <div className="space-y-4">
-          <div className="rounded bg-[#211d2d] p-5">
-            <p className="text-xs font-medium uppercase tracking-wider text-[#a9a5b9]">
+          <div className="rounded bg-[var(--surface-raised)] p-5">
+            <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">
               {ready ? "Ready to add" : "Cooling down"}
             </p>
             <p className="mt-2 text-3xl font-semibold tracking-tight">
               {usd(toUsdc(topup.amount))}
             </p>
-            <p className="mt-2 text-sm text-[#a9a5b9]">{topup.reason}</p>
+            <p className="mt-2 text-sm text-[var(--muted)]">{topup.reason}</p>
           </div>
           <p className="text-sm font-medium" role="status">
             {ready
@@ -197,7 +198,7 @@ function TopUpSection({
           >
             {busy ? "Completing…" : "Complete top-up"}
           </button>
-          <p className="text-xs leading-5 text-[#a9a5b9]">
+          <p className="text-xs leading-5 text-[var(--muted)]">
             Keep this page open to complete this top-up. Pending top-ups cannot
             currently be recovered from the dashboard after a reload.
           </p>
@@ -303,24 +304,55 @@ export default function PouchDetail() {
     <div className="space-y-7">
       <Link
         href="/dashboard"
-        className="inline-flex items-center gap-2 text-sm font-medium text-[#14f195] hover:text-[#14f195]"
+        className="inline-flex items-center gap-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)]"
       >
         ← All pouches
       </Link>
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#a9a5b9]">
-            Your pouch
+      <header className="flex flex-wrap items-center gap-6">
+        <PouchGlyph
+          name={pouch.name}
+          remaining={available}
+          limit={pouch.dailyLimit}
+          size="lg"
+          frozen={pouch.frozen}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+              {pouch.name}
+            </h1>
+            <span
+              className={`rounded px-3 py-1 text-sm font-medium ${pouch.frozen ? "bg-[var(--danger-surface)] text-[var(--danger)]" : "bg-[var(--ok-surface)] text-[var(--ok)]"}`}
+            >
+              {pouch.frozen ? "Frozen" : "Active"}
+            </span>
+          </div>
+          <p className="num mt-3 text-3xl font-semibold">
+            {usd(toUsdc(pouch.balance))}{" "}
+            <span className="text-sm font-normal text-[var(--muted)]">
+              USDC balance
+            </span>
           </p>
-          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            {pouch.name}
-          </h1>
+          <p className="num mt-1 text-sm text-[var(--muted)]">
+            <span className="text-[var(--ink)]">{usd(toUsdc(available))}</span>{" "}
+            left today of {usd(toUsdc(pouch.dailyLimit))} daily limit
+          </p>
+          <div className="mt-3 max-w-md">
+            <Progress value={pouch.spentToday} max={pouch.dailyLimit} />
+          </div>
+          <dl className="num mt-4 grid max-w-md grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-sm">
+            <dt className="text-[var(--muted)]">Per order</dt>
+            <dd>{usd(toUsdc(pouch.maxPerOrder))}</dd>
+            <dt className="text-[var(--muted)]">Daily</dt>
+            <dd>{usd(toUsdc(pouch.dailyLimit))}</dd>
+            <dt className="text-[var(--muted)]">Stores</dt>
+            <dd className="font-sans">
+              {pouch.allowedMerchantIds.length > 0
+                ? pouch.allowedMerchantIds.map(mname).join(", ")
+                : "None"}
+            </dd>
+          </dl>
         </div>
-        <span
-          className={`rounded px-4 py-2 text-xs font-medium ${pouch.frozen ? "bg-[#23243d] text-[#b9baff]" : "bg-[#102e24] text-[#14f195]"}`}
-        >
-          {pouch.frozen ? "●  Frozen" : "●  Active"}
-        </span>
       </header>
       <ErrorBanner message={error} />
       {error && (
@@ -334,47 +366,19 @@ export default function PouchDetail() {
       )}
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(300px,1fr)]">
         <div className="min-w-0 space-y-6">
-          <section className="border-b border-[#373041] pb-6 text-white">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm text-[#d9d1e6]">Available balance</p>
-                <p className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl">
-                  {usd(toUsdc(pouch.balance))}
-                </p>
-                <p className="mt-2 text-xs text-[#bcb3cc]">
-                  USDC · Pouch balance
-                </p>
-              </div>
-            </div>
-            <div className="mt-8 border-t border-white/15 pt-5">
-              <div className="mb-3 flex flex-wrap justify-between gap-2 text-sm">
-                <span className="text-[#d9d1e6]">Today's spending</span>
-                <span>
-                  {usd(toUsdc(pouch.spentToday))}{" "}
-                  <span className="text-[#bcb3cc]">
-                    / {usd(toUsdc(pouch.dailyLimit))}
-                  </span>
-                </span>
-              </div>
-              <Progress value={pouch.spentToday} max={pouch.dailyLimit} />
-              <p className="mt-3 text-xs text-[#d9d1e6]">
-                {usd(toUsdc(available))} remaining under your daily limit
-              </p>
-            </div>
-          </section>
           <section className={card}>
             <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold tracking-tight">
                 Spending activity
               </h2>
-              <span className="rounded bg-[#211d2d] px-3 py-1 text-xs text-[#a9a5b9]">
+              <span className="rounded bg-[var(--surface-raised)] px-3 py-1 text-xs text-[var(--muted)]">
                 Daily (UTC) · USDC
               </span>
             </div>
             {chart.length === 0 ? (
-              <div className="py-8 text-sm text-[#a9a5b9]">
+              <div className="py-8 text-sm text-[var(--muted)]">
                 <p className="font-medium">No spending yet.</p>
-                <p className="mt-2 text-sm text-[#a9a5b9]">
+                <p className="mt-2 text-sm text-[var(--muted)]">
                   Completed payments will appear here.
                 </p>
               </div>
@@ -392,36 +396,36 @@ export default function PouchDetail() {
                     <CartesianGrid
                       strokeDasharray="4 4"
                       vertical={false}
-                      stroke="#373041"
+                      stroke="var(--line-strong)"
                     />
                     <XAxis
                       dataKey="bucket"
                       axisLine={false}
                       tickLine={false}
-                      tick={{ fill: "#a9a5b9", fontSize: 11 }}
+                      tick={{ fill: "var(--muted)", fontSize: 12 }}
                       dy={8}
                     />
                     <YAxis
                       tickFormatter={(v) => `$${v}`}
                       axisLine={false}
                       tickLine={false}
-                      tick={{ fill: "#a9a5b9", fontSize: 11 }}
+                      tick={{ fill: "var(--muted)", fontSize: 12 }}
                     />
                     <Tooltip
                       formatter={(v) => usd(Number(v))}
                       contentStyle={{
                         borderRadius: 4,
-                        background: "#1c1826",
-                        color: "#f1edf8",
-                        border: "1px solid #373041",
-                        fontSize: 13,
+                        background: "var(--surface)",
+                        color: "var(--ink)",
+                        border: "1px solid var(--line-strong)",
+                        fontSize: 14,
                       }}
-                      cursor={{ fill: "#211d2d" }}
+                      cursor={{ fill: "var(--surface-raised)" }}
                     />
                     <Bar
                       name="Spent"
                       dataKey="spent"
-                      fill="#14f195"
+                      fill="var(--ok)"
                       radius={[6, 6, 0, 0]}
                       maxBarSize={42}
                     />
@@ -435,14 +439,14 @@ export default function PouchDetail() {
               <h2 className="text-lg font-semibold tracking-tight">
                 Order history
               </h2>
-              <span className="text-xs text-[#a9a5b9]">
+              <span className="text-xs text-[var(--muted)]">
                 {orders.length} {orders.length === 1 ? "order" : "orders"}
               </span>
             </div>
             {orders.length === 0 ? (
               <div className="py-7 text-center">
                 <p className="font-medium">No orders yet.</p>
-                <p className="mt-2 text-sm text-[#a9a5b9]">
+                <p className="mt-2 text-sm text-[var(--muted)]">
                   Orders and their status will appear here.
                 </p>
                 <Link
@@ -453,18 +457,18 @@ export default function PouchDetail() {
                 </Link>
               </div>
             ) : (
-              <ul className="divide-y divide-[#373041]">
+              <ul className="divide-y divide-[var(--line-strong)]">
                 {orders.map((o) => (
                   <li key={o.id} className="py-4 first:pt-0 last:pb-0">
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
                         <Link
                           href={`/order?order=${encodeURIComponent(o.id)}`}
-                          className="break-words text-sm font-medium text-[#14f195] underline decoration-[#705293] underline-offset-4 hover:decoration-[#14f195]"
+                          className="break-words text-sm font-medium text-[var(--ok)] underline decoration-[var(--line-strong)] underline-offset-4 hover:decoration-[var(--ok)]"
                         >
                           {o.request}
                         </Link>
-                        <p className="mt-1 text-xs text-[#a9a5b9]">
+                        <p className="mt-1 text-xs text-[var(--muted)]">
                           {mname(o.merchantId)} ·{" "}
                           {new Date(o.createdAt).toLocaleDateString(undefined, {
                             month: "short",
@@ -479,12 +483,12 @@ export default function PouchDetail() {
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <span
-                        className={`rounded px-2.5 py-1 text-[11px] font-medium capitalize ${o.status === "rejected" ? "bg-[#361c28] text-[#ffa6bb]" : o.status === "paid" ? "bg-[#102e24] text-[#14f195]" : "bg-[#211d2d] text-[#a9a5b9]"}`}
+                        className={`rounded px-2.5 py-1 text-xs font-medium capitalize ${o.status === "rejected" ? "bg-[var(--danger-surface)] text-[var(--danger)]" : o.status === "paid" ? "bg-[var(--ok-surface)] text-[var(--ok)]" : "bg-[var(--surface-raised)] text-[var(--muted)]"}`}
                       >
                         {o.status === "draft" ? "Awaiting approval" : o.status}
                       </span>
                       {o.rejectReason && (
-                        <span className="text-xs text-[#ffa6bb]">
+                        <span className="text-xs text-[var(--danger)]">
                           {o.rejectReason}
                         </span>
                       )}
@@ -502,7 +506,7 @@ export default function PouchDetail() {
                 Spending limits
               </h2>
             </div>
-            <p className="mb-5 text-sm leading-6 text-[#a9a5b9]">
+            <p className="mb-5 text-sm leading-6 text-[var(--muted)]">
               Limits apply to every payment from this pouch.
             </p>
             {saved && <Notice>Spending rules saved.</Notice>}
@@ -521,12 +525,12 @@ export default function PouchDetail() {
                 setSaved(true);
               }}
             />
-            <div className="mt-6 border-t border-[#373041] pt-5">
+            <div className="mt-6 border-t border-[var(--line-strong)] pt-5">
               <div className="mb-4">
                 <h3 className="text-sm font-medium">
                   {pouch.frozen ? "Resume payments" : "Pause payments"}
                 </h3>
-                <p className="mt-1 text-xs leading-5 text-[#a9a5b9]">
+                <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
                   {pouch.frozen
                     ? "Unfreeze this pouch to allow new payments."
                     : "Freeze this pouch to pause payments. You can unfreeze it anytime."}

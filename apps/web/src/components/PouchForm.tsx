@@ -108,7 +108,7 @@ export function PouchForm({
               value={maxPerOrder}
               onChange={(e) => setMax(e.target.value)}
             />
-            <p className="mt-2 text-xs leading-5 text-[#a9a5b9]">
+            <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
               The most a single order can cost.
             </p>
           </div>
@@ -128,14 +128,14 @@ export function PouchForm({
               value={dailyLimit}
               onChange={(e) => setDaily(e.target.value)}
             />
-            <p className="mt-2 text-xs leading-5 text-[#a9a5b9]">
+            <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
               Maximum total spending per day.
             </p>
           </div>
         </div>
         <fieldset>
           <legend className={label}>Allowed stores</legend>
-          <p className="mb-3 text-sm text-[#a9a5b9]">
+          <p className="mb-3 text-sm text-[var(--muted)]">
             Choose where this pouch can be used.
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -144,11 +144,11 @@ export function PouchForm({
               return (
                 <label
                   key={m.id}
-                  className={`flex min-h-12 cursor-pointer items-center gap-3 rounded border px-4 py-3 text-sm font-medium transition-colors ${checked ? "border-[#9945ff] bg-[#201b2b] text-[#f1edf8]" : "border-[#373041] bg-[#14121b] text-[#f1edf8]"}`}
+                  className={`flex min-h-12 cursor-pointer items-center gap-3 rounded border px-4 py-3 text-sm font-medium transition-colors ${checked ? "border-[var(--solana-purple)] bg-[var(--surface-raised)] text-[var(--ink)]" : "border-[var(--line-strong)] bg-[var(--surface)] text-[var(--ink)]"}`}
                 >
                   <input
                     type="checkbox"
-                    className="h-4 w-4 accent-[#14f195]"
+                    className="h-4 w-4 accent-[var(--ok)]"
                     checked={checked}
                     onChange={() =>
                       setAllowed((current) =>
@@ -160,7 +160,7 @@ export function PouchForm({
                   />
                   <span>
                     {m.name}
-                    <span className="mt-1 block text-xs font-normal capitalize text-[#a9a5b9]">
+                    <span className="mt-1 block text-xs font-normal capitalize text-[var(--muted)]">
                       {m.kind.replaceAll("_", " ")}
                     </span>
                   </span>
@@ -169,18 +169,18 @@ export function PouchForm({
             })}
           </div>
           {merchants.length === 0 && (
-            <p className="rounded bg-[#211d2d] p-4 text-sm text-[#a9a5b9]">
+            <p className="rounded bg-[var(--surface-raised)] p-4 text-sm text-[var(--muted)]">
               No stores are available. Reload the page to try again.
             </p>
           )}
           {merchants.length > 0 && allowed.length === 0 && (
-            <p className="mt-3 text-xs text-[#f4c879]">
+            <p className="mt-3 text-xs text-[var(--warn)]">
               No stores selected. This pouch will not be able to make purchases.
             </p>
           )}
         </fieldset>
       </fieldset>
-      <div className="rounded bg-[#211d2d] px-4 py-3 text-xs leading-5 text-[#a9a5b9]">
+      <div className="rounded bg-[var(--surface-raised)] px-4 py-3 text-xs leading-5 text-[var(--muted)]">
         Every order requires approval before payment.
       </div>
       <button
