@@ -26,7 +26,7 @@ export async function completeTopUp(deps: Deps, ownerEmail: string, id: string) 
     } catch (error) {
       if (error instanceof VaultRejected) {
         // The program refused it, so no tokens moved. Close it as failed with the reason; the owner can start a new one.
-        await deps.store.saveTopUp({ ...topup, status: "failed", failReason: error.code });
+        await deps.store.saveTopUp({ ...topup, status: "failed", failReason: error.code, completedAt: new Date().toISOString() });
         throw new HttpError(422, `Top-up failed: ${error.code}`, error.code);
       }
       if (error instanceof PaymentPending) throw new HttpError(503, error.message, "PaymentPending");

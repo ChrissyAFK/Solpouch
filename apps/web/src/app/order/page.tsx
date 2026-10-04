@@ -255,6 +255,7 @@ function OrderWorkspace() {
       );
       if (!current()) return;
       setOrder(created);
+      if (created.autoPayError) setError(created.autoPayError.message);
       if (created.status !== "draft") {
         try {
           const freshPouches = await api.pouches();
@@ -466,7 +467,7 @@ function OrderWorkspace() {
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-4 border-t border-[var(--line-strong)] pt-5">
                   <p className="max-w-64 text-xs leading-relaxed text-[var(--muted)]">
-                    No payment until you approve the order.
+                    You approve the order before it is paid, unless the pouch pays small exact matches automatically.
                   </p>
                   <button
                     className={btnPrimary}
@@ -740,7 +741,7 @@ function OrderWorkspace() {
                   pouch allows any store.
                 </p>
                 <p className="mt-3 text-xs text-[var(--muted)]">
-                  Approval required for every order.
+                  Orders wait for your approval unless the pouch is set to pay automatically.
                 </p>
               </div>
             )}

@@ -41,6 +41,8 @@ if (process.env.VAULT_MODE === "chain") {
         let state;
         try { state = await read(); } catch (err) {
           if (!/differ from the chain/.test((err as Error).message)) throw err;
+          // Pushing stored rules on chain without review is opt-in: a wrong payTo in config would otherwise be allowlisted for every pouch.
+          if (process.env.RESYNC_RULES_ON_START !== "1") throw err;
           // Same owner-signed setRules call the rules PATCH route uses: push the stored rules (with current checkout key) on chain.
           await vault.updateRules(fresh);
           console.warn(`startup sync: re-synced on-chain allowlist for pouch ${p.id}`);

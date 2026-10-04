@@ -186,7 +186,7 @@ export const api = {
   merchants: () => req<Merchant[]>("/merchants"),
   createInstacartLink: (id: string) => post<Order>(`/orders/${encodeURIComponent(id)}/instacart`),
   createOrder: (b: CreateOrderBody, opts?: { autoPay?: boolean }) =>
-    post<Order>("/orders", opts?.autoPay === undefined ? b : { ...b, autoPay: opts.autoPay }),
+    post<Order & { autoPaid?: boolean; autoPayError?: { code: string; message: string } }>("/orders", opts?.autoPay === undefined ? b : { ...b, autoPay: opts.autoPay }),
   orders: (pouchId?: string) =>
     req<Order[]>(
       `/orders${pouchId ? `?pouchId=${encodeURIComponent(pouchId)}` : ""}`,
