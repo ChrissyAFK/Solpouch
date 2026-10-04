@@ -7,6 +7,7 @@ const { serve } = await import("@hono/node-server");
 const { createApp } = await import("./app.js");
 const { MemoryStore } = await import("./store/memory.js");
 const { createVaultClient } = await import("./vault/index.js");
+const { aiProvider } = await import("./ai/provider.js");
 
 const { PostgresStore } = await import("./store/postgres.js");
 if (process.env.VAULT_MODE === "chain" && !process.env.DATABASE_URL) {
@@ -31,5 +32,5 @@ const app = createApp({ store, vault });
 
 const port = Number(process.env.BACKEND_PORT ?? 8787);
 serve({ fetch: app.fetch, port }, () => {
-  console.log(`solpouch backend on :${port} (vault=${process.env.VAULT_MODE ?? "mock"}, gemini=${process.env.GEMINI_API_KEY ? "on" : "offline fallback"})`);
+  console.log(`solpouch backend on :${port} (vault=${process.env.VAULT_MODE ?? "mock"}, ai=${aiProvider()})`);
 });

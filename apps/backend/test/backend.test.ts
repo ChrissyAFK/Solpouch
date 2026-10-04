@@ -8,6 +8,7 @@ import { MockVaultClient } from "../src/vault/mock.js";
 import { VaultRejected } from "../src/vault/types.js";
 
 delete process.env.GEMINI_API_KEY;
+delete process.env.ANTHROPIC_API_KEY;
 const VOICE_SECRET = "fixture-only-voice-secret";
 process.env.VOICE_WEBHOOK_SECRET = VOICE_SECRET;
 

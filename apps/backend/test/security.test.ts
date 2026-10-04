@@ -15,6 +15,7 @@ let vault: MockVaultClient;
 beforeEach(async () => {
   auth = await authHeaders();
   vi.stubEnv("GEMINI_API_KEY", "");
+  vi.stubEnv("ANTHROPIC_API_KEY", "");
   vi.stubEnv("TRUSTED_PROXY_IPS", "");
   vi.stubEnv("VOICE_WEBHOOK_SECRET", VOICE_SECRET);
   store = new MemoryStore(ownedSeed());

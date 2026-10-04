@@ -7,7 +7,7 @@ import { GoogleButton, useAuth } from "./AuthProvider";
 import styles from "./ChatWidget.module.css";
 
 type Message = { role: "user" | "assistant"; content: string };
-type Mode = "checking" | "gemini" | "demo" | "unavailable";
+type Mode = "checking" | "claude" | "gemini" | "demo" | "unavailable";
 function ChatIcon() {
   return (
     <svg
@@ -204,7 +204,7 @@ function ChatPanel() {
       .then(async (response) => {
         if (!response.ok) throw new Error();
         const data = await response.json();
-        if (data.mode !== "demo" && data.mode !== "gemini") throw new Error();
+        if (data.mode !== "demo" && data.mode !== "gemini" && data.mode !== "claude") throw new Error();
         if (!controller.signal.aborted) setMode(data.mode);
       })
       .catch(() => {
@@ -320,7 +320,7 @@ function ChatPanel() {
         );
       if (
         typeof data?.reply !== "string" ||
-        (data.mode !== "demo" && data.mode !== "gemini")
+        (data.mode !== "demo" && data.mode !== "gemini" && data.mode !== "claude")
       )
         throw new Error(
           "The assistant returned an invalid reply. Please retry.",
@@ -413,8 +413,8 @@ function ChatPanel() {
                   ? "Checking connection…"
                   : mode === "demo"
                     ? "Demo helper"
-                    : mode === "gemini"
-                      ? "Powered by Gemini"
+                    : mode === "gemini" || mode === "claude"
+                      ? mode === "claude" ? "Powered by Claude" : "Powered by Gemini"
                       : "Connection unavailable"}
               </span>
             </div>
