@@ -1,4 +1,4 @@
-import { prepareDemoCheckout } from "../services/demoCheckout.js";
+import { demoCheckoutEnabled, prepareDemoCheckout } from "../services/demoCheckout.js";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { consumeBudget, clientIp, RateLimitError } from "../security/rateLimit.js";
@@ -38,10 +38,11 @@ export function readback(order: Order): string {
   });
   if (order.fulfillment?.via === "demo" && order.fulfillment.demo) {
     const demo = order.fulfillment.demo;
-    return `${parts.join("; ")}. Source estimate CAD ${usd(demo.sourceTotal)}, converted at ${demo.usdPerCad} USD per CAD. Pay ${toUsdc(order.total).toFixed(2)} USDC to ${demo.payTo}. Do you approve this payment?`;
+    return `${parts.join("; ")}. That's $${toUsdc(order.total).toFixed(2)} from your pouch for the CAD ${usd(demo.sourceTotal)} estimate. Do you approve this payment?`;
   }
   if (isCheckoutReference(order)) {
     const est = order.lines.some((l) => l.product?.estimated);
+    if (demoCheckoutEnabled()) return `From ${merchant}: ${parts.join("; ")}. ${est ? "Estimated total" : "Total"} CAD ${usd(order.total)}.${est ? " Prices are estimates." : ""} Want me to pay for it from your pouch?`;
     return `From ${merchant}: ${parts.join("; ")}. ${est ? "Estimated total" : "Total"} CAD ${usd(order.total)}. ${est ? "This is a search estimate only. Check current prices and complete" : "Complete"} checkout with the retailer using the link on the order page. Solpouch has not placed an order.`;
   }
   return `From ${merchant}: ${parts.join("; ")}. Total ${usd(order.total)}. Should I place it?`;
@@ -126,7 +127,7 @@ export function voiceRoutes(deps: Deps) {
               : `I tried to pay this automatically but it was refused: ${autoPayError.code ?? autoPayError.message}. No money moved. ${itemsReadback(order)}`;
             return c.json({ say, orderId: order.id, version: order.version, total: usd(order.total), status: order.status, autoPaid: false, needsConfirmation: order.status === "draft", checkoutRequired: false, code: autoPayError.code });
           }
-          return c.json({ say: readback(order), orderId: order.id, version: order.version, total: usd(order.total), needsConfirmation: !isCheckoutReference(order), checkoutRequired: isCheckoutReference(order) });
+          return c.json({ say: readback(order), orderId: order.id, version: order.version, total: usd(order.total), needsConfirmation: !isCheckoutReference(order), checkoutRequired: isCheckoutReference(order), checkoutAvailable: isCheckoutReference(order) && demoCheckoutEnabled() });
         } catch (e) {
           if (e instanceof HttpError) return c.json({ say: e.message, needsConfirmation: false, ...(e.code === "NeedClarification" ? { needsAnswer: true } : {}), ...(e.code ? { code: e.code } : {}) });
           throw e;

@@ -312,7 +312,7 @@ function ChatPanel({ landing }: { landing: boolean }) {
     let credentials;
     try { credentials = await api.voiceSession(controller.signal); }
     finally { clearTimeout(setupTimeout); }
-    const { token, expiresAt, signedUrl } = credentials;
+    const { token, expiresAt, signedUrl, conversationToken } = credentials;
     if (!isCurrent() || generation !== sequence.current) return;
     const expiry = new Date(expiresAt).getTime();
     if (!Number.isFinite(expiry) || expiry <= Date.now()) throw new Error("Voice session expired. Reconnect to continue.");
@@ -323,12 +323,17 @@ function ChatPanel({ landing }: { landing: boolean }) {
     }, Math.min(expiry - Date.now(), 15 * 60_000));
     agentSequence.current = generation;
     let connectTimeout: ReturnType<typeof setTimeout> | undefined;
-    try { await Promise.race([agent.startSession({
+    try { await Promise.race([(!textOnly && conversationToken ? agent.startSession({
+      // WebRTC (LiveKit) has a native jitter buffer; websocket PCM crackles on phones.
+      conversationToken,
+      connectionType: "webrtc",
+      dynamicVariables: { secret__solpouch_voice_token: `Bearer ${token}` },
+    }) : agent.startSession({
       signedUrl,
       connectionType: "websocket",
       dynamicVariables: { secret__solpouch_voice_token: `Bearer ${token}` },
       ...(textOnly ? { textOnly: true } : {}),
-    }), new Promise<never>((_, reject) => {
+    })), new Promise<never>((_, reject) => {
       connectTimeout = setTimeout(() => reject(new Error("The agent connection timed out.")), 15000);
     })]);
     } catch {

@@ -103,7 +103,7 @@
   },
   {
     "name": "prepare_demo_checkout",
-    "description": "Only after explicit request to pay for a retailer estimate, convert it to a USDC quote. Does not pay by itself. Read the returned say verbatim and wait for a new explicit yes before confirm_order.",
+    "description": "Only when the user asks to place or pay for a store estimate (create_order returned checkoutAvailable true). Turns it into a payable quote; does not pay. Read the say and wait for yes before confirm_order.",
     "parameters": {
       "type": "object",
       "properties": {

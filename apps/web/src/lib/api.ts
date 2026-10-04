@@ -191,7 +191,7 @@ export const api = {
   voiceToken: (signal?: AbortSignal) =>
     req<{ token: string; expiresAt?: string }>("/auth/voice-token", { method: "POST", signal }),
   voiceSession: (signal?: AbortSignal) =>
-    req<{ signedUrl: string; token: string; expiresAt: number | string }>("/auth/voice-session", { method: "POST", signal }),
+    req<{ signedUrl: string; conversationToken?: string; token: string; expiresAt: number | string }>("/auth/voice-session", { method: "POST", signal }),
   voiceStatus: () => req<{ enabled: boolean }>("/auth/voice-status"),
   walletChallenge: (wallet: string) =>
     post<{ id: string; message: string; expiresAt: string }>("/auth/wallet/challenge", { wallet }),

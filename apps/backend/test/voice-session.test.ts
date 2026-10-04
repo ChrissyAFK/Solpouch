@@ -14,7 +14,9 @@ async function setup() {
   const store = new MemoryStore(ownedSeed());
   const app = createApp({ store, vault: new MockVaultClient(store, () => undefined) });
   const headers = await authHeaders(store);
-  const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ signed_url: 'wss://api.elevenlabs.io/v1/convai/conversation?token=fixture' })));
+  const fetch = vi.fn().mockImplementation(async (url: URL) => String(url).includes('/conversation/token')
+    ? new Response(JSON.stringify({ token: 'rtc-fixture-token' }))
+    : new Response(JSON.stringify({ signed_url: 'wss://api.elevenlabs.io/v1/convai/conversation?token=fixture' })));
   vi.stubGlobal('fetch', fetch);
   return { store, app, headers, fetch };
 }
@@ -45,6 +47,24 @@ describe('authenticated ElevenLabs session bridge', () => {
     const toolHeaders = { authorization: `Bearer ${body.token}`, 'X-Solpouch-Secret': 'private-tool-secret' };
     expect((await app.request('/voice/tools/get_pouches', { method: 'POST', headers: toolHeaders, body: '{}' })).status).toBe(200);
     expect((await app.request('/voice/tools/get_pouches', { method: 'POST', headers: { ...toolHeaders, 'X-Solpouch-Secret': 'wrong' }, body: '{}' })).status).toBe(401);
+  });
+  it('returns a WebRTC conversationToken and degrades to websocket-only when the token call fails', async () => {
+    const { app, headers, fetch } = await setup();
+    const ok = await (await app.request('/auth/voice-session', { method: 'POST', headers })).json();
+    expect(ok.conversationToken).toBe('rtc-fixture-token');
+    expect(ok.signedUrl).toMatch(/^wss:/);
+    const tokenCall = fetch.mock.calls.find(([u]) => String(u).includes('/conversation/token'));
+    expect(tokenCall![0].searchParams.get('agent_id')).toBe('test-agent');
+    expect(tokenCall![1].headers['xi-api-key']).toBe('private-provider-key');
+    const signed = (url: URL) => !String(url).includes('/conversation/token');
+    for (const failure of [() => new Response('nope', { status: 500 }), () => new Response('{}'), () => new Response(JSON.stringify({ token: 'x'.repeat(5000) })), () => { throw new Error('timeout'); }]) {
+      fetch.mockImplementation(async (url: URL) => signed(url) ? new Response(JSON.stringify({ signed_url: 'wss://api.elevenlabs.io/v1/convai/conversation?token=fixture' })) : failure());
+      const res = await app.request('/auth/voice-session', { method: 'POST', headers });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.signedUrl).toMatch(/^wss:/);
+      expect(body.conversationToken).toBeUndefined();
+    }
   });
   it('rejects provider errors and untrusted URLs without leaking provider details', async () => {
     const { store, app, headers, fetch } = await setup();

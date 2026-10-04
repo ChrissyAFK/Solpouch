@@ -86,10 +86,24 @@ export function authRoutes(deps: Deps, origins: string[] = []) {
   app.post("/voice-session", auth, async (c) => {
     if (!voiceConfigured()) throw new HttpError(503, "Voice is not configured. You can still use the text helper");
     let signedUrl: string;
+    // WebRTC (LiveKit) token: optional. Phones crackle on the websocket PCM path, so the client prefers this and falls back to signedUrl.
+    const fetchConversationToken = async () => {
+      try {
+        const tokenUrl = new URL("https://api.elevenlabs.io/v1/convai/conversation/token");
+        tokenUrl.searchParams.set("agent_id", process.env.ELEVENLABS_AGENT_ID!);
+        const res = await fetch(tokenUrl, { headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY! }, signal: AbortSignal.timeout(10000) });
+        if (!res.ok) return undefined;
+        const body = await res.json() as { token?: unknown };
+        return typeof body.token === "string" && body.token.length > 0 && body.token.length <= 4096 ? body.token : undefined;
+      } catch { return undefined; }
+    };
+    let conversationTokenPromise: Promise<string | undefined> = Promise.resolve(undefined);
     try {
       const url = new URL("https://api.elevenlabs.io/v1/convai/conversation/get-signed-url");
       url.searchParams.set("agent_id", process.env.ELEVENLABS_AGENT_ID!);
-      const response = await fetch(url, { headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY! }, signal: AbortSignal.timeout(10000) });
+      const responsePromise = fetch(url, { headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY! }, signal: AbortSignal.timeout(10000) });
+      conversationTokenPromise = fetchConversationToken();
+      const response = await responsePromise;
       if (!response.ok) throw new Error("Provider unavailable");
       const data = await response.json() as { signed_url?: unknown };
       if (typeof data.signed_url !== "string") throw new Error("Missing URL");
@@ -99,7 +113,8 @@ export function authRoutes(deps: Deps, origins: string[] = []) {
     } catch {
       throw new HttpError(503, "Voice could not connect. Try again or use the text helper");
     }
-    return c.json({ signedUrl, ...(await signVoiceToken(c.get("session"))) });
+    const conversationToken = await conversationTokenPromise;
+    return c.json({ signedUrl, ...(conversationToken ? { conversationToken } : {}), ...(await signVoiceToken(c.get("session"))) });
   });
   // Link a Solana wallet to the signed-in account by signing a challenge. Proves ownership; moves no money.
   const walletLimit = rateLimit({ store: deps.store, windowMs: 60000, max: 20, key: "auth-wallet" });

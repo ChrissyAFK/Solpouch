@@ -18,6 +18,9 @@ function converted(lines: OrderLine[], rate: string): OrderLine[] {
     return {...line,product:{...line.product,unitPrice:Number(price)},lineTotal:Number(price)*line.qty};
   });
 }
+export function demoCheckoutEnabled(): boolean {
+  return process.env.DEMO_RETAILER_PAYMENTS === "1" && process.env.VAULT_MODE === "chain";
+}
 export async function requireDemo(deps: Deps) {
   if (process.env.DEMO_RETAILER_PAYMENTS !== "1" || process.env.VAULT_MODE !== "chain" || !deps.vault.assertDevnet) throw new HttpError(503,"Checkout is not enabled.","DemoUnavailable");
   await deps.vault.assertDevnet();
