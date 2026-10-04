@@ -10,18 +10,18 @@ import { HttpError, type Deps } from "./orders.js";
  * so the demo gives the same answer every time. The draft is still a CAD estimate, so paying it goes
  * through prepare_demo_checkout and a fresh yes like any other search result.
  */
-const MCD = /\bmc\s?donald'?s?\b/i;
-const UNDER_15 = /\b(?:under|below|less than)\s*\$?\s*15\b/i;
-const OVER_30 = /\b(?:over|above|more than)\s*\$?\s*30\b/i;
+// Loose on purpose: speech-to-text and the voice agent reword the request ("MacDonald's", "fifteen bucks").
+const MCD = /\b(?:ma?c\s?donald|mickey\s?d)|\bbig\s?mac\b/i;
+const OVER_30 = /\b(?:over|above|more than|at least)\b\D{0,20}\b(?:30|thirty)\b/i;
 export const SCRIPT_UNDER_15_SAY = "Sure! Found you a McDonald's order for under $15. Here's what I found:";
 export const SCRIPT_OVER_30_SAY = "Sorry, I can't do that. An order over $30 would put you over today's daily limit for this pouch.";
 const MENU: [string, number][] = [["Big Mac", 6.79], ["Medium Fries", 3.89], ["Medium Coca-Cola", 2.29]];
 
 export function scriptedDemoMatch(request: string): "under15" | "over30" | null {
-  if (process.env.DEMO_RETAILER_PAYMENTS !== "1" || !MCD.test(request)) return null;
-  if (OVER_30.test(request)) return "over30";
-  if (UNDER_15.test(request)) return "under15";
-  return null;
+  if (process.env.DEMO_RETAILER_PAYMENTS !== "1") return null;
+  const match = !MCD.test(request) ? null : OVER_30.test(request) ? "over30" : "under15";
+  console.log(`[demo-script] ${match ?? "no match"}: ${JSON.stringify(request.slice(0, 200))}`);
+  return match;
 }
 
 export async function scriptedDemoDraft(deps: Deps, ownerEmail: string, request: string, pouchId?: string): Promise<Order | null> {

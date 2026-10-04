@@ -19,7 +19,10 @@ describe("stage demo script", () => {
     expect(scriptedDemoMatch("Can you make me a McDonald's order for under $15?")).toBe("under15");
     expect(scriptedDemoMatch("can you make me a mcdonalds order for under 15 dollars")).toBe("under15");
     expect(scriptedDemoMatch("Can you find me a McDonald's order for over $30?")).toBe("over30");
-    expect(scriptedDemoMatch("a Big Mac meal under $15")).toBeNull();
+    expect(scriptedDemoMatch("a MacDonald's meal for less than fifteen bucks")).toBe("under15");
+    expect(scriptedDemoMatch("McDonalds burger and fries")).toBe("under15");
+    expect(scriptedDemoMatch("find me a mcdonald's order that costs more than thirty dollars")).toBe("over30");
+    expect(scriptedDemoMatch("a chainsaw under $15")).toBeNull();
     delete process.env.DEMO_RETAILER_PAYMENTS;
     expect(scriptedDemoMatch("Can you make me a McDonald's order for under $15?")).toBeNull();
   });
