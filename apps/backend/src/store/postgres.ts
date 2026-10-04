@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import type { Order, Pouch, SpendPoint, TopUp } from "@solpouch/shared";
-import { StoreConflictError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredPouch, type UserProfile, type PaymentIndex, type VaultEventRecord, type PaymentRecord, type IndexerCursor } from "./types.js";
+import { StoreConflictError, WalletAlreadyLinkedError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredPouch, type UserProfile, type PaymentIndex, type VaultEventRecord, type PaymentRecord, type IndexerCursor } from "./types.js";
 
 const iso = (v: Date | string) => (v instanceof Date ? v.toISOString() : new Date(v).toISOString());
 type Row = Record<string, any>;
@@ -196,9 +196,12 @@ export class PostgresStore implements Store, PaymentIndex {
   async findUserByWallet(wallet: string) { const { rows } = await this.query("SELECT * FROM users WHERE wallet=$1", [wallet]); return rows[0] ? toUser(rows[0]) : undefined; }
   async setWallet(email: string, wallet: string | null) {
     try {
+      // Conditional upsert: a link only lands when the account has no wallet or already has this one.
       const { rows } = await this.query(
         `INSERT INTO users (email, wallet, created_at, updated_at) VALUES ($1,$2,now(),now())
-         ON CONFLICT (email) DO UPDATE SET wallet=$2, updated_at=now() RETURNING *`, [email, wallet]);
+         ON CONFLICT (email) DO UPDATE SET wallet=$2, updated_at=now()
+         WHERE $2::text IS NULL OR users.wallet IS NULL OR users.wallet = $2::text RETURNING *`, [email, wallet]);
+      if (!rows[0]) throw new WalletAlreadyLinkedError();
       return toUser(rows[0]);
     } catch (error) {
       if ((error as { code?: string }).code === "23505") throw new StoreConflictError("This wallet is linked to another account");
@@ -273,5 +276,14 @@ export class PostgresStore implements Store, PaymentIndex {
       : "SELECT time_bucket('1 hour', time) AS bucket, pouch_id, sum(amount) AS spent, count(*) AS orders FROM payments WHERE pouch_id = ANY($1::text[]) GROUP BY 1, 2 ORDER BY 1, 2";
     const { rows } = await this.query(sql, [pouchIds]);
     return rows.map((r) => ({ bucket: iso(r.bucket), pouchId: r.pouch_id, spent: Number(r.spent), orders: Number(r.orders) }));
+  }
+
+  async indexedOrderIds(pouchIds: string[], orderIds: string[]): Promise<Set<string>> {
+    if (!pouchIds.length || !orderIds.length) return new Set();
+    const { rows } = await this.query(
+      "SELECT DISTINCT lower(order_id) AS order_id FROM payments WHERE pouch_id = ANY($1::text[]) AND lower(order_id) = ANY($2::text[])",
+      [pouchIds, orderIds.map((id) => id.toLowerCase())],
+    );
+    return new Set(rows.map((r) => String(r.order_id)));
   }
 }

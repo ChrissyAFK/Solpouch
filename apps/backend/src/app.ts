@@ -8,6 +8,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { ZodError } from "zod";
 import type { ApiError } from "@solpouch/shared";
 import { CheckoutConfigurationError } from "./services/fulfillment.js";
+import { VaultRejected } from "./vault/types.js";
 import { HttpError, type Deps } from "./services/orders.js";
 import { merchantRoutes } from "./routes/merchants.js";
 import { orderRoutes } from "./routes/orders.js";
@@ -73,6 +74,8 @@ export function createApp(deps: Deps) {
     if (err instanceof RateLimitError) { c.header("Retry-After", String(err.retryAfterSeconds)); return c.json({error:err.message},429); }
     if (err instanceof AuthUnavailableError || err instanceof RateLimitUnavailableError) return c.json({error:err.message},503);
     if (err instanceof CheckoutConfigurationError) return c.json({ error: err.message, code: "CheckoutNotConfigured" } satisfies ApiError, 503);
+    // The program refused the instruction, so nothing changed on chain.
+    if (err instanceof VaultRejected) return c.json({ error: `Vault rejected: ${err.code}`, code: err.code } satisfies ApiError, 422);
     if (err instanceof HttpError) {
       const body: ApiError = { error: err.message, code: err.code };
       return c.json(body, err.status);

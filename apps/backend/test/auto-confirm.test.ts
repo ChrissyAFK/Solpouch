@@ -72,7 +72,8 @@ describe("auto-confirm through the order and voice routes", () => {
   let store: MemoryStore;
   let vault: MockVaultClient;
   beforeEach(() => {
-    store = new MemoryStore(ownedSeed());
+    // Seeds always ask (confirmAbove 0); these tests opt Groceries into a $30 auto-pay amount.
+    store = new MemoryStore(ownedSeed().map((p) => (p.id === "groceries" ? { ...p, confirmAbove: $(30) } : p)));
     vault = new MockVaultClient(store, (id) => getMerchant(id)?.payTo);
   });
   const postOrder = async (request: string) => (await createApp({ store, vault }).request("/orders", {

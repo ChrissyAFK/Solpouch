@@ -178,6 +178,7 @@ export function errMsg(e: unknown): string {
       ZeroLimit: "Limits must be more than zero.",
       PerOrderOverDaily: "The limit per order cannot be higher than the daily limit.",
       DuplicateMerchant: "Each store can only be added to a pouch once.",
+      ConfirmAboveTooHigh: "The automatic payment amount cannot be higher than the limit per order.",
       MerchantTokenNotAta: "This store's payment account is not set up correctly. No money moved.",
       WalletRequired: "Link a wallet to add money.",
       WalletProofInvalid: "The wallet signature was invalid or expired. Try linking again.",

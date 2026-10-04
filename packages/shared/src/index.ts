@@ -24,6 +24,21 @@ export const isAnyStore = (p: Pick<Pouch, "allowedMerchantIds">) => p.allowedMer
 /** The vault program stores at most this many merchant wallets per pouch (MAX_MERCHANTS in programs/solpouch_vault). */
 export const MAX_ALLOWED_MERCHANTS = 10;
 
+/** Rule errors the backend reports with a 422. These mirror check_rules in the vault program. */
+export type PouchRuleError = "TooManyMerchants" | "ZeroLimit" | "PerOrderOverDaily" | "DuplicateMerchant";
+
+/**
+ * Checks pouch limits the same way, and in the same order, as the vault program's check_rules.
+ * Returns the program's error code, or undefined when the rules are valid.
+ */
+export function pouchRuleError(r: { maxPerOrder: number; dailyLimit: number; allowedMerchantIds: string[] }): PouchRuleError | undefined {
+  if (r.allowedMerchantIds.length > MAX_ALLOWED_MERCHANTS) return "TooManyMerchants";
+  if (r.maxPerOrder <= 0 || r.dailyLimit <= 0) return "ZeroLimit";
+  if (r.maxPerOrder > r.dailyLimit) return "PerOrderOverDaily";
+  if (new Set(r.allowedMerchantIds).size !== r.allowedMerchantIds.length) return "DuplicateMerchant";
+  return undefined;
+}
+
 export interface Pouch {
   version?: number;
   id: string;

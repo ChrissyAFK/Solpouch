@@ -76,20 +76,28 @@ function finishParse(parsed: any): ParsedRequest | null {
   return items.length ? { pouchHint: parsed.pouchHint || undefined, items } : null;
 }
 
-function finishMatch(rows: MatchRow[], catalog: Product[]): OrderLine[] | null {
-  if (!Array.isArray(rows) || !rows.length) return null;
-  const lines = rows.map((r) => {
-    const product = catalog.find((p) => p.id === r.productId && p.inStock) ?? null;
-    const qty = product ? validQuantity(Number(r.qty ?? r.requestedQty ?? 1)) : 0;
+/**
+ * Turns the model's rows into order lines, one per parsed item and in the same order.
+ * requested and requestedQty always come from the parsed request, never from the match call,
+ * so a model that changes a quantity produces qty !== requestedQty (and a note), which blocks auto-pay.
+ * Returns null (use the offline fallback) when the rows do not line up with the parsed items.
+ */
+function finishMatch(rows: MatchRow[], items: ParsedItem[], catalog: Product[]): OrderLine[] | null {
+  if (!Array.isArray(rows) || !rows.length || rows.length !== items.length) return null;
+  const lines = rows.map((r, i) => {
+    const item = items[i];
+    const product = catalog.find((p) => p.id === r?.productId && p.inStock) ?? null;
+    const qty = product ? validQuantity(Number(r.qty ?? item.qty)) : 0;
+    const qtyChanged = !!product && (qty !== item.qty || Number(r.requestedQty ?? item.qty) !== item.qty);
     return {
-      requested: r.requested,
-      requestedQty: validQuantity(Number(r.requestedQty ?? 1)),
+      requested: item.requested,
+      requestedQty: item.qty,
       product,
       qty,
       lineTotal: product ? product.unitPrice * qty : 0,
       matchScore: product ? Math.min(1, Math.max(0, r.matchScore)) : 0,
       substitution: product ? !!r.substitution : false,
-      note: r.note || (product ? undefined : "No matching product"),
+      note: r?.note || (!product ? "No matching product" : qtyChanged ? `Quantity changed: you asked for ${item.qty}, the cart has ${qty}` : undefined),
     };
   });
   validateOrderLines(lines);
@@ -151,7 +159,7 @@ export async function matchItems(items: ParsedItem[], catalog: Product[]): Promi
         system: MATCH_PROMPT + '\nReturn the rows in the "lines" array.', prompt: JSON.stringify({ items, catalog: slim }),
         schema: MATCH_JSON_SCHEMA, name: "matched_lines", maxTokens: 4096,
       });
-      const done = finishMatch(out?.lines ?? [], catalog);
+      const done = finishMatch(out?.lines ?? [], items, catalog);
       if (done) return done;
     } catch (e) {
       if (e instanceof OrderInputError) throw e;
@@ -187,7 +195,7 @@ export async function matchItems(items: ParsedItem[], catalog: Product[]): Promi
           },
         },
       });
-      const done = finishMatch(JSON.parse(res.text ?? "[]") as MatchRow[], catalog);
+      const done = finishMatch(JSON.parse(res.text ?? "[]") as MatchRow[], items, catalog);
       if (done) return done;
     } catch (e) {
       if (e instanceof OrderInputError) throw e;

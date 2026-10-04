@@ -108,6 +108,46 @@ describe("claude provider", () => {
     expect(lines.map((l) => [l.product?.id ?? null, l.qty, l.lineTotal])).toEqual([["p1", 2, 8_000_000], [null, 0, 0]]);
   });
 
+  it("takes requestedQty from the parsed request, so a model that changes the quantity cannot make a line look exact", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "fake");
+    const catalog = [{ id: "p1", name: "Oat Milk", unitPrice: 4_000_000, inStock: true }] as any;
+    // The match call claims 3 were requested; the parsed request asked for 1.
+    sdk.create.mockResolvedValue({ content: [{ type: "tool_use", name: "matched_lines", input: { lines: [
+      { requested: "oat milk", requestedQty: 3, productId: "p1", qty: 3, matchScore: 1, substitution: false },
+    ] } }] });
+    const [line] = await matchItems([{ requested: "oat milk", qty: 1 }], catalog);
+    expect(line).toMatchObject({ requestedQty: 1, qty: 3, note: expect.stringContaining("asked for 1") });
+  });
+
+  it("uses the offline matcher when the model's lines do not line up with the parsed items", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "fake");
+    const catalog = [{ id: "p1", name: "Oat Milk", unitPrice: 4_000_000, inStock: true }, { id: "p2", name: "Soy Milk", unitPrice: 3_000_000, inStock: true }] as any;
+    sdk.create.mockResolvedValue({ content: [{ type: "tool_use", name: "matched_lines", input: { lines: [
+      { requested: "oat milk", requestedQty: 2, productId: "p1", qty: 2, matchScore: 1, substitution: false },
+    ] } }] });
+    const lines = await matchItems([{ requested: "oat milk", qty: 2 }, { requested: "soy milk", qty: 1 }], catalog);
+    expect(lines.map((l) => [l.requested, l.product?.id, l.requestedQty, l.qty])).toEqual([["oat milk", "p1", 2, 2], ["soy milk", "p2", 1, 1]]);
+  });
+
+  it("does not auto-pay when the match call returns qty 3 / requestedQty 3 for a request of 1", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "fake");
+    const store = new MemoryStore(ownedSeed());
+    const g = (await store.getPouch("groceries"))!;
+    await store.savePouch({ ...g, confirmAbove: g.maxPerOrder });
+    const app = createApp({ store, vault: new MockVaultClient(store, (id) => getMerchant(id)?.payTo) });
+    sdk.create
+      .mockResolvedValueOnce({ content: [{ type: "tool_use", name: "shopping_list", input: { items: [{ requested: "large eggs", qty: 1 }] } }] })
+      .mockResolvedValueOnce({ content: [{ type: "tool_use", name: "matched_lines", input: { lines: [
+        { requested: "large eggs", requestedQty: 3, productId: "mm-eggs", qty: 3, matchScore: 1, substitution: false, note: null },
+      ] } }] });
+    const res = await app.request("/orders", { method: "POST", headers: { "Content-Type": "application/json", ...await authHeaders(store) }, body: JSON.stringify({ request: "large eggs", pouchId: "groceries" }) });
+    expect(res.status).toBe(201);
+    const o = await res.json();
+    expect(o.status).toBe("draft");
+    expect(o.lines[0]).toMatchObject({ requestedQty: 1, qty: 3 });
+    expect((await store.getPouch("groceries"))!.balance).toBe(g.balance);
+  });
+
   it("falls back to the offline parser when Claude errors", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "fake");
     sdk.create.mockRejectedValue(new Error("boom"));
