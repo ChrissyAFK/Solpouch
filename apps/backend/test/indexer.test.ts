@@ -194,7 +194,7 @@ describe("indexer gating", () => {
 });
 
 describe("/stats/spend with indexed payments", () => {
-  it("uses indexed payments when present, scoped to the account, else falls back to paid orders", async () => {
+  it("uses indexed payments plus not-yet-indexed paid orders, scoped to the account", async () => {
     const store = new MemoryStore([...ownedSeed(), { ...ownedSeed()[0]!, id: "other-pouch", address: "other", ownerEmail: "other@example.com" }]);
     const app = createApp({ store, vault: new MockVaultClient(store, () => undefined) });
     const headers = await authHeaders(store);
@@ -207,8 +207,37 @@ describe("/stats/spend with indexed payments", () => {
       payments: [{ txSignature: signature, eventIndex: 0, time: "2026-01-05T10:30:00.000Z", pouchId, merchantId: null, orderId: "0".repeat(32), amount: 250 }],
     });
     for (const [sig, pouch] of [["x1", "uber-eats"], ["x2", "other-pouch"]] as const) { const r = ev(sig, pouch); await store.recordVaultEvents(r.events, r.payments); }
-    expect(await (await app.request("/stats/spend?bucket=hour", { headers })).json()).toEqual([{ pouchId: "uber-eats", bucket: "2026-01-05T10:00:00.000Z", spent: 250, orders: 1 }]);
+    // "paid-order" has no indexed payment yet, so it still counts; other-pouch's payment does not.
+    expect(await (await app.request("/stats/spend?bucket=hour", { headers })).json()).toEqual([
+      { pouchId: "uber-eats", bucket: "2026-01-03T01:00:00.000Z", spent: 100, orders: 1 },
+      { pouchId: "uber-eats", bucket: "2026-01-05T10:00:00.000Z", spent: 250, orders: 1 },
+    ]);
     expect(await (await app.request("/stats/spend?bucket=day&pouchId=groceries", { headers })).json()).toEqual([]);
     expect((await app.request("/stats/spend?pouchId=other-pouch", { headers })).status).toBe(404);
+  });
+
+  it("counts a paid order once: from the order while the indexer lags, then from its indexed payment", async () => {
+    const store = new MemoryStore(ownedSeed());
+    const app = createApp({ store, vault: new MockVaultClient(store, () => undefined) });
+    const headers = await authHeaders(store);
+    const paid = (id: string, total: number, at: string) => store.saveOrder({ id, pouchId: "uber-eats", merchantId: "thai-express", request: "x", lines: [], total, status: "paid", createdAt: at, paidAt: at });
+    const a = "a".repeat(32), b = "b".repeat(32);
+    await paid(a, 300, "2026-02-01T09:00:00.000Z");
+    await paid(b, 700, "2026-02-01T15:00:00.000Z");
+    // Only order a is indexed (orderId hex = orders.id); b is still waiting for the indexer.
+    await store.recordVaultEvents(
+      [{ signature: "s-a", eventIndex: 0, name: "PaymentMade", pouchAddress: null, amount: 300, time: "2026-02-01T09:00:05.000Z", slot: 1, data: {} }],
+      [{ txSignature: "s-a", eventIndex: 0, time: "2026-02-01T09:00:05.000Z", pouchId: "uber-eats", merchantId: null, orderId: a.toUpperCase(), amount: 300 }],
+    );
+    expect(await (await app.request("/stats/spend?bucket=day", { headers })).json()).toEqual([
+      { pouchId: "uber-eats", bucket: "2026-02-01T00:00:00.000Z", spent: 1000, orders: 2 },
+    ]);
+    await store.recordVaultEvents(
+      [{ signature: "s-b", eventIndex: 0, name: "PaymentMade", pouchAddress: null, amount: 700, time: "2026-02-01T15:00:05.000Z", slot: 2, data: {} }],
+      [{ txSignature: "s-b", eventIndex: 0, time: "2026-02-01T15:00:05.000Z", pouchId: "uber-eats", merchantId: null, orderId: b, amount: 700 }],
+    );
+    expect(await (await app.request("/stats/spend?bucket=day&pouchId=uber-eats", { headers })).json()).toEqual([
+      { pouchId: "uber-eats", bucket: "2026-02-01T00:00:00.000Z", spent: 1000, orders: 2 },
+    ]);
   });
 });

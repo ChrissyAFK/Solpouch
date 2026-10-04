@@ -56,6 +56,8 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("PostgresStore", () => {
     expect(day).toHaveLength(1);
     expect(day![0]).toMatchObject({ pouchId: id, spent: 250, orders: 1 });
     expect((await store.indexedSpend([id], "hour"))![0]).toMatchObject({ spent: 250, orders: 1 });
+    expect(await store.indexedOrderIds([id], ["0".repeat(32), "f".repeat(32)])).toEqual(new Set(["0".repeat(32)]));
+    expect(await store.indexedOrderIds(["other"], ["0".repeat(32)])).toEqual(new Set());
     await store.saveIndexerCursor(`test-${id}`, { signature: id, slot: 5 });
     expect(await store.getIndexerCursor(`test-${id}`)).toEqual({ signature: id, slot: 5 });
     await store.close();

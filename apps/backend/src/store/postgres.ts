@@ -274,4 +274,13 @@ export class PostgresStore implements Store, PaymentIndex {
     const { rows } = await this.query(sql, [pouchIds]);
     return rows.map((r) => ({ bucket: iso(r.bucket), pouchId: r.pouch_id, spent: Number(r.spent), orders: Number(r.orders) }));
   }
+
+  async indexedOrderIds(pouchIds: string[], orderIds: string[]): Promise<Set<string>> {
+    if (!pouchIds.length || !orderIds.length) return new Set();
+    const { rows } = await this.query(
+      "SELECT DISTINCT lower(order_id) AS order_id FROM payments WHERE pouch_id = ANY($1::text[]) AND lower(order_id) = ANY($2::text[])",
+      [pouchIds, orderIds.map((id) => id.toLowerCase())],
+    );
+    return new Set(rows.map((r) => String(r.order_id)));
+  }
 }

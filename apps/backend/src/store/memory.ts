@@ -214,4 +214,15 @@ export class MemoryStore implements Store, PaymentIndex {
     }
     return [...points.values()].sort((a, b) => a.bucket.localeCompare(b.bucket) || a.pouchId.localeCompare(b.pouchId));
   }
+
+  async indexedOrderIds(pouchIds: string[], orderIds: string[]) {
+    const pouches = new Set(pouchIds);
+    const wanted = new Set(orderIds.map((id) => id.toLowerCase()));
+    const found = new Set<string>();
+    for (const p of this.payments.values()) {
+      const id = p.orderId.toLowerCase();
+      if (pouches.has(p.pouchId) && wanted.has(id)) found.add(id);
+    }
+    return found;
+  }
 }

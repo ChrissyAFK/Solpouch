@@ -105,6 +105,8 @@ export interface PaymentIndex {
   saveIndexerCursor(name: string, cursor: IndexerCursor): Promise<void>;
   /** Spend from indexed payments for these pouches, or undefined when none are indexed. */
   indexedSpend(pouchIds: string[], bucket: "day" | "hour"): Promise<SpendPoint[] | undefined>;
+  /** Which of these order IDs (lowercase hex) have an indexed payment for these pouches. */
+  indexedOrderIds(pouchIds: string[], orderIds: string[]): Promise<Set<string>>;
 }
 export function isPaymentIndex(store: Store): store is Store & PaymentIndex {
   return typeof (store as Partial<PaymentIndex>).indexedSpend === "function" && typeof (store as Partial<PaymentIndex>).recordVaultEvents === "function";
