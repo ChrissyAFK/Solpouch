@@ -21,6 +21,8 @@ export interface Merchant {
 export const WEB_PREFIX = "web:";
 /** An empty allowedMerchantIds list means the pouch may pay any store. */
 export const isAnyStore = (p: Pick<Pouch, "allowedMerchantIds">) => p.allowedMerchantIds.length === 0;
+/** The vault program stores at most this many merchant wallets per pouch (MAX_MERCHANTS in programs/solpouch_vault). */
+export const MAX_ALLOWED_MERCHANTS = 10;
 
 export interface Pouch {
   version?: number;

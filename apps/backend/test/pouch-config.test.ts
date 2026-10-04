@@ -76,3 +76,25 @@ describe("chain-compatible pouch identifiers", () => {
     expect(await store.listPouches()).toEqual([]);
   });
 });
+
+describe("allowed merchant cap", () => {
+  it("rejects more stores than the vault program can hold with a clear 422, on create and update", async () => {
+    const store = new MemoryStore(ownedSeed());
+    const vault = new MockVaultClient(store, () => undefined);
+    const create = vi.spyOn(vault, "createPouch");
+    const update = vi.spyOn(vault, "updateRules");
+    const app = createApp({ store, vault });
+    const headers = { "Content-Type": "application/json", ...await authHeaders(store) };
+    const ids = (n: number) => Array.from({ length: n }, (_, i) => `web:store${i}.example`);
+    const tooMany = await app.request("/pouches", { method: "POST", headers, body: JSON.stringify({ name: "Many", maxPerOrder: 1, dailyLimit: 1, allowedMerchantIds: ids(11) }) });
+    expect(tooMany.status).toBe(422);
+    expect(await tooMany.json()).toMatchObject({ code: "TooManyMerchants", error: expect.stringContaining("at most 10 stores") });
+    expect(create).not.toHaveBeenCalled();
+    const ok = await app.request("/pouches", { method: "POST", headers, body: JSON.stringify({ name: "Ten", maxPerOrder: 1, dailyLimit: 1, allowedMerchantIds: ids(10) }) });
+    expect(ok.status).toBe(201);
+    const patch = await app.request("/pouches/uber-eats/rules", { method: "PATCH", headers, body: JSON.stringify({ allowedMerchantIds: ids(11) }) });
+    expect(patch.status).toBe(422);
+    expect(update).not.toHaveBeenCalled();
+    expect((await store.getPouch("uber-eats"))!.allowedMerchantIds).toEqual(["thai-express"]);
+  });
+});
