@@ -575,7 +575,7 @@ function ChatPanel({ landing }: { landing: boolean }) {
                 <p>{message.content}</p>
               </div>
             ))}
-            <ChatOrderCards refreshKey={messages.length} />
+            <ChatOrderCards refreshKey={messages.length} live={session === "voice"} />
             {notice && (
               <p className={styles.pending} role="status">
                 {notice}

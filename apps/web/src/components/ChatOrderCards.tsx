@@ -9,12 +9,15 @@ import { useAuth } from "./AuthProvider";
 import styles from "./ChatWidget.module.css";
 
 /** Account-backed cards; never extract payment instructions from model text. */
-export function ChatOrderCards({ refreshKey }: { refreshKey: number }) {
+export function ChatOrderCards({ refreshKey, live = false }: { refreshKey: number; live?: boolean }) {
   const { sessionKey } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [updated, setUpdated] = useState<string | null>(null);
+  const [fresh, setFresh] = useState<string | null>(null);
+  const seen = useRef<Set<string> | null>(null);
+  const freshCard = useRef<HTMLElement | null>(null);
   const sequence = useRef(0);
   const mounted = useRef(true);
   const current = () => mounted.current && getToken() === sessionKey;
@@ -24,6 +27,10 @@ export function ChatOrderCards({ refreshKey }: { refreshKey: number }) {
       const result = await api.orders();
       if (!mounted.current || getToken() !== sessionKey || id !== sequence.current) return;
       setOrders(result.slice(0, 3));
+      // Highlight a cart that appeared since the last load (e.g. one the voice agent just built).
+      const newest = result[0];
+      if (seen.current && newest && newest.status === "draft" && !seen.current.has(newest.id)) setFresh(newest.id);
+      seen.current = new Set(result.map((o) => o.id));
       setUpdated(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
       setError(null);
     } catch (cause) {
@@ -32,6 +39,13 @@ export function ChatOrderCards({ refreshKey }: { refreshKey: number }) {
   }, [sessionKey]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; sequence.current++; }; }, []);
   useEffect(() => { if (sessionKey) void load(); }, [load, refreshKey, sessionKey]);
+  // While a voice call is live, poll so a cart shows up as soon as the agent creates it.
+  useEffect(() => {
+    if (!live || !sessionKey) return;
+    const timer = setInterval(() => void load(), 2500);
+    return () => clearInterval(timer);
+  }, [live, load, sessionKey]);
+  useEffect(() => { if (fresh) freshCard.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }, [fresh]);
   async function confirm(order: Order, prepareDemo = false) {
     if (!current() || busy || (isCheckoutReference(order) && !prepareDemo)) return;
     setBusy(order.id);
@@ -62,10 +76,11 @@ export function ChatOrderCards({ refreshKey }: { refreshKey: number }) {
         const currency = `${orderCurrency(order)}${reference ? " estimate" : ""}`;
         const total = toUsdc(order.total).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         return (
-          <article key={order.id} className={styles.orderCard}>
+          <article key={order.id} ref={order.id === fresh ? freshCard : undefined} className={`${styles.orderCard} ${order.id === fresh ? styles.freshCard : ""}`}>
+            {order.id === fresh && <span className={styles.freshBadge}>Just found</span>}
             <strong>{order.store?.name ?? order.merchantId}</strong>
             <span>{order.status === "paying" ? "Payment confirmation pending" : order.status}</span>
-            <ul>{order.lines.map((line, index) => <li key={index}>{line.qty} × {line.product?.name ?? line.requested}{line.substitution ? " · substitution" : ""}{line.note ? ` — ${line.note}` : ""}</li>)}</ul>
+            <ul>{order.lines.map((line, index) => <li key={index}>{line.qty} × {line.product?.name ?? line.requested}{line.product ? ` · $${toUsdc(line.lineTotal).toFixed(2)}` : ""}{line.substitution ? " · substitution" : ""}{line.note ? ` — ${line.note}` : ""}</li>)}</ul>
             <b>{total} {currency}</b>
             <DemoCheckoutSummary order={order} />
             {reference && order.status === "draft" && orderCurrency(order) === "CAD" && <button type="button" disabled={!!busy || order.total <= 0} onClick={() => void confirm(order, true)}>Prepare devnet demo checkout</button>}
