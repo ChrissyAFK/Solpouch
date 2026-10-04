@@ -16,6 +16,8 @@ import { orderRoutes } from "./routes/orders.js";
 import { pouchRoutes } from "./routes/pouches.js";
 import { statsRoutes } from "./routes/stats.js";
 import { topupRoutes } from "./routes/topups.js";
+import { ownedStore } from "./security/access.js";
+import { withdrawalRoutes } from "./routes/withdrawals.js";
 import { voiceRoutes } from "./routes/voice.js";
 import { chatRoutes } from "./routes/chat.js";
 import { profileRoutes } from "./routes/profile.js";
@@ -52,10 +54,19 @@ export function createApp(deps: Deps) {
     return m === "POST" || m === "PATCH" || m === "DELETE" ? writes(c, next) : next();
   });
   app.on("POST", "/topups/*", topups);
+  app.on("POST", "/withdrawals/*", topups);
   app.use("/voice/*", rateLimit({ store: deps.store, windowMs: MIN, max: 60, key: "voice" }));
 
   app.get("/health", (c) => c.json({ ok: true }));
   for (const base of ["/shopping-lists", "/pouches", "/orders", "/topups", "/stats", "/profile", "/funding"]) app.use(`${base}/*`, requireUser(deps.store));
+  // Withdrawals run against a store scoped to the signed-in user: other accounts' pouches look missing (404).
+  app.use("/withdrawals/*", requireUser(deps.store));
+  app.use("/withdrawals/*", async (c, next) => {
+    const email = (c as never as { get(k: "user"): { email: string } }).get("user").email;
+    c.set("email", email);
+    c.set("deps", { ...deps, store: ownedStore(deps.store, email) });
+    await next();
+  });
   // GET /chat/status is public (mode only); everything else under /chat needs a user.
   app.use("/chat/*", async (c, next) => (c.req.method === "GET" && c.req.path === "/chat/status" ? next() : requireUser(deps.store)(c as never, next)));
   app.route("/funding", fundingRoutes(deps));
@@ -66,6 +77,7 @@ export function createApp(deps: Deps) {
   app.route("/shopping-lists", shoppingListRoutes(deps));
   app.route("/orders", orderRoutes(deps));
   app.route("/topups", topupRoutes(deps));
+  app.route("/withdrawals", withdrawalRoutes(deps));
   app.route("/merchants", merchantRoutes());
   app.route("/stats", statsRoutes(deps));
   app.route("/voice", voiceRoutes(deps));

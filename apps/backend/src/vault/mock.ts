@@ -44,6 +44,24 @@ export class MockVaultClient implements VaultClient {
     });
   }
 
+  async withdraw(pouchId: string, amount: Micros, _toWallet: string, operationId?: string) {
+    return this.store.withPouchLock(pouchId, async () => {
+    const key = operationId ? `withdraw:${operationId}` : undefined;
+    const previous = key ? await this.store.getOperation(key) : undefined;
+    if (previous) {
+      if (previous.pouchId !== pouchId) throw new Error("Operation pouch does not match");
+      return { txSignature: previous.txSignature };
+    }
+    const p = await this.mustGet(pouchId);
+    if (amount > p.balance) throw new VaultRejected("InsufficientFunds");
+    p.balance -= amount;
+    const txSignature = sig();
+    if (key) await this.store.applyMockOperation(p,{id:key,kind:"withdraw",pouchId,txSignature,signedTransaction:"mock",lastValidBlockHeight:0,createdAt:new Date().toISOString()});
+    else await this.store.savePouch(p);
+    return { txSignature };
+    });
+  }
+
   async pay(pouch: Pouch, merchantPayTo: string, amount: Micros, orderId: string) {
     return this.store.withPouchLock(pouch.id, async () => {
     const key = `pay:${orderId}`;

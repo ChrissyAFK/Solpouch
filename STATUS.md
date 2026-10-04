@@ -125,3 +125,13 @@ Check the policy with `pnpm --filter @solpouch/web test:security`. For the route
 The public product page lives at `/`. The existing demo overview moved to `/dashboard`; order and pouch URLs are unchanged. Navigation, recovery links, and private-page metadata point to the new dashboard route. The landing page uses illustrative pouch values and explains that payments are simulated. It does not require the backend to render.
 
 - Combined auth: Google sign-in required for every data route (owner = email); a wallet is linked to the account for top-ups (POST /topups returns 403 without one).
+
+## 2026-10-03 evening: web fixes (uncommitted on fix/audit)
+
+- Production `next start` builds into its own folder via `SOLPOUCH_DIST_DIR` (`.next-prod-a` / `.next-prod-b`, alternating), so a dev build can no longer swap chunks under the live server.
+- Ask Solpouch stays mounted across every page (Shell renders one ChatWidget at a fixed tree position); the launcher and Escape hide the panel, × ends the chat and voice call. The order link no longer closes it (except on phones, where it hides the panel).
+- Order flow: `/order?request=` auto-builds a draft cart when exactly one pouch is usable (never pays); empty state links to /pouches; paid receipt links to /orders and the pouch.
+- Devnet Explorer links for pouch address, top-ups and order receipts; top-up panel says it uses devnet demo funds.
+- `POST /pouches/freeze-all` + dashboard "Freeze all pouches".
+- Error messages: coded 5xx/503 server messages reach the user; contact email split so Cloudflare email obfuscation doesn't break hydration.
+- Not done: delete/close pouch and withdraw (program `close_pouch` fix not redeployed, no vault/route/UI), wallet-signed top-ups, signed-in browser pass, live voice call check.

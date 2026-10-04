@@ -70,6 +70,20 @@ export function pouchRoutes(deps: Deps) {
     });
   });
 
+  // Same loop as the voice freeze_all tool, limited to the signed-in user's own pouches.
+  app.post("/freeze-all", async (c) => {
+    const email = c.get("user").email;
+    const failed: string[] = [];
+    for (const p of await deps.store.listPouches(email)) {
+      if (p.frozen) continue;
+      try { await deps.store.withPouchLock(p.id, () => deps.vault.freeze(p.id)); } catch (e) { console.error("freeze-all", p.id, e); failed.push(p.name); }
+    }
+    if (failed.length > 0) throw new HttpError(503, `Could not freeze: ${failed.join(", ")}`);
+    const out: StoredPouch[] = [];
+    for (const p of await deps.store.listPouches(email)) out.push(await reconcilePouch(deps, p.id).catch(() => p));
+    return c.json(out.map(publicPouch));
+  });
+
   app.post("/:id/freeze", async (c) => {
     return deps.store.withPouchLock(c.req.param("id"),async()=> {
     const email = c.get("user").email;

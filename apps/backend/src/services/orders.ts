@@ -10,6 +10,7 @@ import { buildFulfillment, checkoutPayTo } from "./fulfillment.js";
 import { recordPaidOrder } from "./metrics.js";
 import type { GoogleUser } from "../auth/google.js";
 import type { Store } from "../store/types.js";
+import { heldAmount } from "./withdrawals.js";
 import { VaultRejected, type VaultClient } from "../vault/types.js";
 
 import type { FundingRepository } from "../funding/repository.js";
@@ -228,6 +229,9 @@ export async function confirmOrder(deps: Deps, ownerEmail: string, id: string, e
     // Once paying, recover the original signed transaction even if rules changed later.
     if (order.status === "draft") {
       if (order.total <= 0 || validateOrderLines(order.lines) !== order.total) throw new HttpError(422,"Order total does not match its items");
+      if (order.total > pouch.balance - (await heldAmount(deps.store, pouch.id))) {
+        throw new HttpError(422, "Payment refused: InsufficientFunds", "InsufficientFunds");
+      }
       order = await deps.store.saveOrder({...order,status:"paying"});
     }
     let txSignature: string;

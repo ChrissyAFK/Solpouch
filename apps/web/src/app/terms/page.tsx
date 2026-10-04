@@ -1,3 +1,4 @@
+import { ContactEmail } from "@/components/ContactEmail";
 import { InfoPage } from "@/components/InfoPage";
 import { pageMetadata } from "@/lib/site";
 
@@ -39,7 +40,7 @@ export default function TermsPage() {
       <h2>Contact</h2>
       <p>
         Questions about these terms:{" "}
-        <a href="mailto:hello@solpouch.tech">hello@solpouch.tech</a>.
+        <ContactEmail />.
       </p>
     </InfoPage>
   );

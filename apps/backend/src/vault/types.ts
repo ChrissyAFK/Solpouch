@@ -19,6 +19,11 @@ export interface VaultClient {
   createPouch(pouch: Pouch): Promise<{ address: string }>;
   /** Owner-only on chain. The backend only calls this from the friction top-up flow. */
   topUp(pouchId: string, amount: Micros, operationId?: string): Promise<{ txSignature: string }>;
+  /**
+   * Owner key. Moves `amount` out of the pouch to `toWallet` (any wallet, paid via the owner's token account on chain).
+   * `operationId` makes retries idempotent.
+   */
+  withdraw(pouchId: string, amount: Micros, toWallet: string, operationId?: string): Promise<{ txSignature: string }>;
   /** Agent key call. Throws VaultRejected when the program would refuse. */
   pay(pouch: Pouch, merchantPayTo: string, amount: Micros, orderId: string): Promise<{ txSignature: string }>;
   freeze(pouchId: string): Promise<{ txSignature: string }>;

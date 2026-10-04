@@ -1,3 +1,4 @@
+import { ContactEmail } from "@/components/ContactEmail";
 import { InfoPage } from "@/components/InfoPage";
 import { pageMetadata } from "@/lib/site";
 
@@ -15,7 +16,7 @@ export default function ContactPage() {
     >
       <h2>Email</h2>
       <p>
-        <a href="mailto:hello@solpouch.tech">hello@solpouch.tech</a>
+        <ContactEmail />
       </p>
       <h2>GitHub</h2>
       <p>

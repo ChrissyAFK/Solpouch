@@ -9,6 +9,8 @@ import type {
   UpdateRulesBody,
   CreateOrderBody,
   StartTopUpBody,
+  Withdrawal,
+  StartWithdrawalBody,
   ApiError,
 } from "@solpouch/shared";
 import { clearSession, getToken } from "./session";
@@ -77,7 +79,10 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
       const body =
         data && typeof data === "object" ? (data as Partial<ApiError>) : {};
       const message =
-        res.status >= 500 && body.code !== "PaymentPending"
+        // Coded errors (e.g. "nothing was charged") and 503 notices are written for users.
+        res.status >= 500 &&
+        !body.code &&
+        (res.status !== 503 || typeof body.error !== "string")
           ? "Solpouch is having trouble right now. Try again in a moment."
           : typeof body.error === "string"
             ? body.error
@@ -199,10 +204,17 @@ export const api = {
   cancelTopUp: (id: string) => post<TopUp>(`/topups/${id}/cancel`),
   listPendingTopUps: (pouchId?: string) =>
     req<TopUp[]>(`/topups${pouchId ? `?pouchId=${encodeURIComponent(pouchId)}` : ""}`),
+  startWithdrawal: (b: StartWithdrawalBody) =>
+    post<Withdrawal>("/withdrawals", b),
+  listWithdrawals: (pouchId: string) =>
+    req<Withdrawal[]>(`/withdrawals?pouchId=${encodeURIComponent(pouchId)}`),
+  cancelWithdrawal: (id: string) =>
+    post<Withdrawal>(`/withdrawals/${encodeURIComponent(id)}/cancel`),
   spend: (pouchId: string, bucket: "day" | "hour" = "day") =>
     req<SpendPoint[]>(
       `/stats/spend?pouchId=${encodeURIComponent(pouchId)}&bucket=${bucket}`,
     ),
+  freezeAll: () => post<Pouch[]>("/pouches/freeze-all"),
 };
 
 export function errMsg(e: unknown): string {
@@ -211,7 +223,9 @@ export function errMsg(e: unknown): string {
       InstacartNotConfigured: "Instacart shopping links are not configured yet. No purchase was made.",
       InstacartUnavailable: "Instacart could not prepare the shopping list. No purchase was made. Try again shortly.",
       PaymentPending: e.message,
-      PouchFrozen: "This pouch is frozen. Unfreeze it before making a payment.",
+      PaymentNotSent: e.message,
+      LookupFailed: e.message,
+      PouchFrozen: "This pouch is frozen. Unfreeze it first.",
       MerchantNotAllowed:
         "This store is not allowed for this pouch. Choose another pouch or update its allowed stores.",
       OverPerOrderLimit:
@@ -219,6 +233,8 @@ export function errMsg(e: unknown): string {
       OverDailyLimit: "This payment would exceed the pouch's daily limit.",
       InsufficientFunds:
         "This pouch does not have enough funds for this payment.",
+      WithdrawalPending:
+        "This pouch already has a withdrawal on hold. Cancel it to start a new one.",
       CooldownActive:
         "The waiting period has not ended. Wait for the timer before completing the top-up.",
       OrderAlreadyUsed:

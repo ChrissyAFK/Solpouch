@@ -299,6 +299,10 @@ export default function LandingPage() {
                 <span className="sr-only"> (opens in a new tab)</span>
               </a>
               <a href="#questions">Questions</a>
+              <Link href="/about">About</Link>
+              <Link href="/contact">Contact</Link>
+              <Link href="/privacy">Privacy</Link>
+              <Link href="/terms">Terms</Link>
             </nav>
           </div>
           <div className={styles.footerBottom}>

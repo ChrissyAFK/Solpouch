@@ -1,4 +1,5 @@
-import type { Order, Pouch, SpendPoint, TopUp, ShoppingList } from "@solpouch/shared";
+import type { Order, Pouch, SpendPoint, TopUp, ShoppingList, Withdrawal } from "@solpouch/shared";
+
 
 export type UserPatch = { displayName?: string | null; avatar?: string | null; wallet?: string | null };
 
@@ -10,7 +11,7 @@ export class StoreConflictError extends Error {
 }
 export interface VaultOperation {
   id: string;
-  kind: "pay" | "topup";
+  kind: "pay" | "topup" | "withdraw";
   pouchId: string;
   txSignature: string;
   signedTransaction: string;
@@ -43,6 +44,12 @@ export interface Store {
   saveOrder(o: Order): Promise<Order>;
   getTopUp(id: string): Promise<TopUp | undefined>;
   saveTopUp(t: TopUp): Promise<TopUp>;
+  getWithdrawal(id: string): Promise<Withdrawal | undefined>;
+  saveWithdrawal(w: Withdrawal): Promise<Withdrawal>;
+  /** Newest first. */
+  listWithdrawals(pouchId: string): Promise<Withdrawal[]>;
+  /** Status "holding" or "processing" with readyAt <= now, across all pouches (system use: payout sweeper). */
+  listDueWithdrawals(now: Date): Promise<Withdrawal[]>;
   withPouchLock<T>(id: string, fn: () => Promise<T>): Promise<T>;
   applyMockOperation(pouch: StoredPouch, operation: VaultOperation): Promise<void>;
   getOperation(id: string): Promise<VaultOperation | undefined>;

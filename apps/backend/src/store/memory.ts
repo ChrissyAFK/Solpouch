@@ -1,4 +1,4 @@
-import { toMicros, type Order, type Pouch, type SpendPoint, type TopUp } from "@solpouch/shared";
+import { toMicros, type Order, type Pouch, type SpendPoint, type TopUp, type Withdrawal } from "@solpouch/shared";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { StoreConflictError, spendWindowStart, windowedSpend, type PaymentRecord, type PriceRecord, type UserPatch, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredShoppingList, type StoredPouch, type UserProfile } from "./types.js";
 
@@ -55,6 +55,7 @@ export class MemoryStore implements Store {
   private pouches = new Map<string, StoredPouch>();
   private orders = new Map<string, Order>();
   private topups = new Map<string, TopUp>();
+  private withdrawals = new Map<string, Withdrawal>();
   private operations = new Map<string, VaultOperation>();
   private users = new Map<string, UserProfile>();
   private challenges = new Map<string, AuthChallenge>();
@@ -140,6 +141,18 @@ export class MemoryStore implements Store {
   async saveOrder(o: Order) { return this.save(this.orders, o); }
   async getTopUp(id: string) { return structuredClone(this.topups.get(id)); }
   async saveTopUp(t: TopUp) { return this.save(this.topups, t); }
+  async getWithdrawal(id: string) { return structuredClone(this.withdrawals.get(id)); }
+  async saveWithdrawal(w: Withdrawal) { return this.save(this.withdrawals, w); }
+  async listWithdrawals(pouchId: string) {
+    return structuredClone([...this.withdrawals.values()]
+      .filter((w) => w.pouchId === pouchId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+  }
+  async listDueWithdrawals(now: Date) {
+    return structuredClone([...this.withdrawals.values()]
+      .filter((w) => (w.status === "holding" || w.status === "processing") && Date.parse(w.readyAt) <= now.getTime())
+      .sort((a, b) => a.readyAt.localeCompare(b.readyAt)));
+  }
   async withPouchLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
     const held = this.heldLocks.getStore();
     if (held?.has(id)) return fn();

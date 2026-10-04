@@ -14,6 +14,7 @@ import {
   TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
   createMintToInstruction,
+  createTransferCheckedInstruction,
   getAccount,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
@@ -31,6 +32,8 @@ import type { SolpouchVault } from "./idl/solpouch_vault.js";
 // apps/backend/src/vault -> repo root
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const DAY_SECONDS = 86_400;
+/** Micros are 6-decimal token units (USDC-style), so the mint has 6 decimals. */
+const MINT_DECIMALS = 6;
 const COMMITMENT = "confirmed" as const;
 
 function loadKeypair(path: string): Keypair {
@@ -188,7 +191,7 @@ export class ChainVaultClient implements VaultClient {
     }
   }
 
-  private async submit(id: string, kind: "pay" | "topup", pouchId: string, build: () => Promise<Transaction>, signers: Keypair[]) {
+  private async submit(id: string, kind: "pay" | "topup" | "withdraw", pouchId: string, build: () => Promise<Transaction>, signers: Keypair[]) {
     if (!this.store) throw new Error("A persistent operation store is required for chain payments");
     await this.assertDevnet();
     return recoverTransaction(this.store, id, {
@@ -255,6 +258,24 @@ export class ChainVaultClient implements VaultClient {
       // Faucet is opt-in and minted funds plus deposit succeed or fail in ONE transaction.
       if (process.env.ENABLE_DEVNET_FAUCET === "true") tx.add(createMintToInstruction(this.mint, ownerAta, this.owner.publicKey, BigInt(amount)));
       tx.add(await this.program.methods.topUp(new BN(amount)).accountsPartial({ owner: this.owner.publicKey, pouch, vault: this.vaultPda(pouch), ownerToken: ownerAta, tokenProgram: TOKEN_PROGRAM_ID }).instruction());
+      return tx;
+    }, [this.owner]);
+  }
+
+  /** One transaction: vault -> owner ATA (program withdraw), then owner ATA -> toWallet's ATA (SPL transfer). */
+  async withdraw(pouchId: string, amount: Micros, toWallet: string, operationId?: string): Promise<{ txSignature: string }> {
+    if (!operationId) throw new Error("A saved withdrawal ID is required");
+    const pouch = this.pouchPda(pouchId);
+    const dest = new PublicKey(toWallet);
+    const ownerAta = getAssociatedTokenAddressSync(this.mint, this.owner.publicKey);
+    const destAta = getAssociatedTokenAddressSync(this.mint, dest, true);
+    return this.submit(`withdraw:${operationId}`, "withdraw", pouchId, async () => {
+      const tx = new Transaction().add(createAssociatedTokenAccountIdempotentInstruction(this.owner.publicKey, ownerAta, this.owner.publicKey, this.mint));
+      tx.add(await this.program.methods.withdraw(new BN(amount)).accountsPartial({ owner: this.owner.publicKey, pouch, vault: this.vaultPda(pouch), ownerToken: ownerAta, tokenProgram: TOKEN_PROGRAM_ID }).instruction());
+      if (!dest.equals(this.owner.publicKey)) {
+        tx.add(createAssociatedTokenAccountIdempotentInstruction(this.owner.publicKey, destAta, dest, this.mint));
+        tx.add(createTransferCheckedInstruction(ownerAta, this.mint, destAta, this.owner.publicKey, BigInt(amount), MINT_DECIMALS));
+      }
       return tx;
     }, [this.owner]);
   }

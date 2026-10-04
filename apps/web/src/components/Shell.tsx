@@ -16,8 +16,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const pouchRoute =
     pathname === "/pouches" || pathname.startsWith("/pouches/");
   const orderRoute = pathname === "/order";
-  const ordersRoute =
-    pathname === "/orders" || pathname.startsWith("/orders/");
+  const ordersRoute = pathname === "/orders" || pathname.startsWith("/orders/");
   const pageLabel =
     pathname === "/lists" ? "Shopping lists" : pathname === "/funding" ? "Wallet funding" : pathname === "/dashboard"
       ? "Overview"
@@ -26,10 +25,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
         : ordersRoute
           ? "Orders"
           : orderRoute
-          ? "New order"
-          : pathname === "/profile"
-            ? "Profile"
-            : "Workspace";
+            ? "New order"
+            : pathname === "/profile"
+              ? "Profile"
+              : "Workspace";
 
   function closeMenu(restoreFocus = false) {
     setMenuOpen(false);
@@ -69,7 +68,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
     icon: IconName;
     active: boolean;
   }[] = [
-    { href: "/dashboard", label: "Overview", icon: "grid", active: pathname === "/dashboard" },
+    {
+      href: "/dashboard",
+      label: "Overview",
+      icon: "grid",
+      active: pathname === "/dashboard",
+    },
     {
       href: "/pouches",
       label: "Pouches",
@@ -86,122 +90,138 @@ export function Shell({ children }: { children: React.ReactNode }) {
       active: orderRoute,
     },
   ];
-  if (pathname === "/") return <>{children}</>;
+  // One widget at a fixed tree position, so switching pages keeps the chat and voice call alive.
+  if (pathname === "/")
+    return (
+      <>
+        <>{children}</>
+        <ChatWidget landing />
+      </>
+    );
   if (["/about", "/contact", "/terms", "/privacy"].includes(pathname))
     return (
       <>
-        <LandingNav />
-        {children}
-        <Footer />
+        <>
+          <LandingNav />
+          {children}
+          <Footer />
+        </>
+        <ChatWidget />
       </>
     );
   return (
-    <div className="app-shell">
-      <a href="#main-content" className="skip-link">
-        Skip to content
-      </a>
-      <aside className="sidebar">
-        <div className="sidebar-brand-row">
-          <Link
-            href="/"
-            className="brand"
-            aria-label="Solpouch home"
-            onClick={() => closeMenu(menuOpen)}
-          >
-            <span className="brand-bars" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </span>
-            solpouch
-          </Link>
-          <button
-            type="button"
-            ref={menuToggle}
-            className="mobile-menu-toggle"
-            aria-expanded={menuOpen}
-            aria-controls="workspace-navigation"
-            aria-label={menuOpen ? "Close menu" : "Open menu"}
-            onClick={() => setMenuOpen((value) => !value)}
-          >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              aria-hidden="true"
-            >
-              {menuOpen ? (
-                <path d="m6 6 12 12M6 18 18 6" />
-              ) : (
-                <path d="M4 6h16M4 12h16M4 18h16" />
-              )}
-            </svg>
-            Menu
-          </button>
-        </div>
-        <div className="workspace">
-          <span className="workspace-avatar">S</span>
-          <strong>Personal</strong>
-        </div>
-        <nav
-          id="workspace-navigation"
-          aria-label="Main navigation"
-          className={`main-nav ${menuOpen ? "mobile-menu-open" : ""}`}
-        >
-          {links.map((l) => (
+    <>
+      <div className="app-shell">
+        <a href="#main-content" className="skip-link">
+          Skip to content
+        </a>
+        <aside className="sidebar">
+          <div className="sidebar-brand-row">
             <Link
-              key={l.label}
-              href={l.href}
+              href="/"
+              className="brand"
+              aria-label="Solpouch home"
               onClick={() => closeMenu(menuOpen)}
-              className={`nav-link ${l.active ? "active" : ""}`}
-              aria-current={l.active ? "page" : undefined}
             >
-              <Icon name={l.icon} size={17} />
-              {l.label}
+              <span className="brand-bars" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
+              solpouch
             </Link>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <span className="status-dot" /> Personal
-        </div>
-      </aside>
-      <div
-        className="app-body"
-        style={{ display: "flex", flexDirection: "column" }}
-      >
-        <header className="topbar">
-          <div className="breadcrumb">
-            Personal <span>/</span>
-            <strong>{pageLabel}</strong>
+            <button
+              type="button"
+              ref={menuToggle}
+              className="mobile-menu-toggle"
+              aria-expanded={menuOpen}
+              aria-controls="workspace-navigation"
+              aria-label={menuOpen ? "Close menu" : "Open menu"}
+              onClick={() => setMenuOpen((value) => !value)}
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                {menuOpen ? (
+                  <path d="m6 6 12 12M6 18 18 6" />
+                ) : (
+                  <path d="M4 6h16M4 12h16M4 18h16" />
+                )}
+              </svg>
+              Menu
+            </button>
           </div>
-          <span className="demo-label">Payments on Solana</span>
-          {user?.wallet && (
-            <span className="num" title={user.wallet} style={{ fontSize: 12, color: "var(--muted)" }}>
-              {user.wallet.slice(0, 4)}…{user.wallet.slice(-4)}
-            </span>
-          )}
-          <UserMenu />
-        </header>
-        <main
-          id="main-content"
-          className="main-content"
-          style={{
-            width: "100%",
-            flex: "1 0 auto",
-            marginTop: 0,
-            marginBottom: 0,
-          }}
+          <div className="workspace">
+            <span className="workspace-avatar">S</span>
+            <strong>Personal</strong>
+          </div>
+          <nav
+            id="workspace-navigation"
+            aria-label="Main navigation"
+            className={`main-nav ${menuOpen ? "mobile-menu-open" : ""}`}
+          >
+            {links.map((l) => (
+              <Link
+                key={l.label}
+                href={l.href}
+                onClick={() => closeMenu(menuOpen)}
+                className={`nav-link ${l.active ? "active" : ""}`}
+                aria-current={l.active ? "page" : undefined}
+              >
+                <Icon name={l.icon} size={17} />
+                {l.label}
+              </Link>
+            ))}
+          </nav>
+          <div className="sidebar-bottom">
+            <span className="status-dot" /> Personal
+          </div>
+        </aside>
+        <div
+          className="app-body"
+          style={{ display: "flex", flexDirection: "column" }}
         >
-          <AccountAlerts />
-          {children}
-        </main>
-        <Footer />
-        <ChatWidget />
+          <header className="topbar">
+            <div className="breadcrumb">
+              Personal <span>/</span>
+              <strong>{pageLabel}</strong>
+            </div>
+            <span className="demo-label">Payments on Solana</span>
+            {user?.wallet && (
+              <span
+                className="num"
+                title={user.wallet}
+                style={{ fontSize: 12, color: "var(--muted)" }}
+              >
+                {user.wallet.slice(0, 4)}…{user.wallet.slice(-4)}
+              </span>
+            )}
+            <UserMenu />
+          </header>
+          <main
+            id="main-content"
+            className="main-content"
+            style={{
+              width: "100%",
+              flex: "1 0 auto",
+              marginTop: 0,
+              marginBottom: 0,
+            }}
+          >
+            <AccountAlerts />
+            {children}
+          </main>
+          <Footer />
+        </div>
       </div>
-    </div>
+      <ChatWidget />
+    </>
   );
 }

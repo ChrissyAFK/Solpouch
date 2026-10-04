@@ -12,7 +12,8 @@ import { toMicros } from "@solpouch/shared";
 import { createApp } from "../src/app.js";
 import { getMerchant } from "../src/merchants/index.js";
 import { MemoryStore } from "../src/store/memory.js";
-import { authHeaders, ownedSeed, voiceToken } from "./helpers.js";
+import { payDueWithdrawals } from "../src/services/withdrawals.js";
+import { authHeaders, ownedSeed, TEST_USER, voiceToken } from "./helpers.js";
 import { MockVaultClient } from "../src/vault/mock.js";
 import { VaultRejected } from "../src/vault/types.js";
 
@@ -26,10 +27,11 @@ const $ = toMicros;
 let clock = Date.now();
 let store: MemoryStore;
 let vault: MockVaultClient;
-beforeEach(() => {
+beforeEach(async () => {
   clock = Date.now();
   vi.spyOn(Date,"now").mockImplementation(()=>clock);
   store = new MemoryStore(ownedSeed());
+  await store.saveUser({ email: TEST_USER, wallet: "linked-test-wallet", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
   vault = new MockVaultClient(store, (id) => getMerchant(id)?.payTo, () => clock);
 });
 
@@ -162,6 +164,109 @@ describe("HTTP flow", () => {
     expect((await res.json()).reason).toBe("Top-up");
   });
 
+  describe("withdrawals", () => {
+    const start = (app: ReturnType<typeof mk>, amount: number) => post(app, "/withdrawals", { pouchId: "uber-eats", amount });
+    let prior: string | undefined;
+    beforeEach(() => { prior = process.env.WITHDRAW_HOLD_SECONDS; process.env.WITHDRAW_HOLD_SECONDS = "0"; });
+    afterEach(() => { if (prior === undefined) delete process.env.WITHDRAW_HOLD_SECONDS; else process.env.WITHDRAW_HOLD_SECONDS = prior; });
+
+    it("starts on hold, then refuses a second one", async () => {
+      const app = mk();
+      const res = await start(app, $(10));
+      expect(res.status).toBe(201);
+      expect((await res.json()).status).toBe("holding");
+      const second = await start(app, $(5));
+      expect(second.status).toBe(409);
+      expect((await second.json()).code).toBe("WithdrawalPending");
+    });
+
+    it("refuses over balance, frozen pouch and missing wallet", async () => {
+      const app = mk();
+      const over = await start(app, $(101));
+      expect(over.status).toBe(409);
+      expect((await over.json()).code).toBe("InsufficientFunds");
+      await vault.freeze("uber-eats");
+      const frozen = await start(app, $(1));
+      expect(frozen.status).toBe(409);
+      expect((await frozen.json()).code).toBe("PouchFrozen");
+      await store.saveUser({ email: TEST_USER, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      expect((await start(app, $(1))).status).toBe(403);
+    });
+
+    it("cancels a held withdrawal", async () => {
+      const app = mk();
+      const w = await (await start(app, $(10))).json();
+      const res = await post(app, `/withdrawals/${w.id}/cancel`);
+      expect((await res.json()).status).toBe("cancelled");
+      expect((await post(app, `/withdrawals/${w.id}/cancel`)).status).toBe(409);
+    });
+
+    it("sweeper pays a due withdrawal and lowers the balance", async () => {
+      const app = mk();
+      const w = await (await start(app, $(10))).json();
+      await payDueWithdrawals({ store, vault });
+      const done = (await store.getWithdrawal(w.id))!;
+      expect(done.status).toBe("completed");
+      expect(done.txSignature).toBeTruthy();
+      expect((await uber()).balance).toBe($(90));
+    });
+
+    it("held money cannot be spent by an order", async () => {
+      const app = mk();
+      process.env.WITHDRAW_HOLD_SECONDS = "3600";
+      expect((await start(app, $(90))).status).toBe(201);
+      const order = await (await post(app, "/orders", { request: "get me pad thai under $20" })).json();
+      expect(order.total).toBe($(15.5));
+      const res = await post(app, `/orders/${order.id}/confirm`, {version:order.version});
+      expect(res.status).toBe(422);
+      expect((await res.json()).code).toBe("InsufficientFunds");
+    });
+
+    const makeProcessing = async (app: ReturnType<typeof mk>) => {
+      const w = await (await start(app, $(10))).json();
+      await store.saveWithdrawal({ ...(await store.getWithdrawal(w.id))!, status: "processing" });
+      return w.id as string;
+    };
+
+    it("cancels a processing withdrawal that was never sent", async () => {
+      const app = mk();
+      const id = await makeProcessing(app);
+      const res = await post(app, `/withdrawals/${id}/cancel`);
+      expect(res.status).toBe(200);
+      expect((await res.json()).status).toBe("cancelled");
+    });
+
+    it("a never-sent processing withdrawal fails WalletChanged if the wallet changed", async () => {
+      const app = mk();
+      const id = await makeProcessing(app);
+      await store.saveUser({ email: TEST_USER, wallet: "other-wallet", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      await payDueWithdrawals({ store, vault });
+      const w = (await store.getWithdrawal(id))!;
+      expect(w.status).toBe("failed");
+      expect(w.failReason).toBe("WalletChanged");
+      expect((await uber()).balance).toBe($(100));
+    });
+
+    it("start subtracts paying orders from the available amount", async () => {
+      const app = mk();
+      const order = await (await post(app, "/orders", { request: "get me pad thai under $20" })).json();
+      await store.saveOrder({ ...(await store.getOrder(order.id))!, status: "paying" });
+      const over = await start(app, $(90));
+      expect(over.status).toBe(409);
+      expect((await over.json()).code).toBe("InsufficientFunds");
+      expect((await start(app, $(80))).status).toBe(201);
+    });
+
+    it("another user cannot list or cancel it", async () => {
+      const app = mk();
+      const w = await (await start(app, $(10))).json();
+      const other = await authHeaders(store, "other@example.com");
+      expect([403, 404]).toContain((await app.request("/withdrawals?pouchId=uber-eats", { headers: other })).status);
+      expect([403, 404]).toContain((await post(app, `/withdrawals/${w.id}/cancel`, undefined, other)).status);
+      expect((await store.getWithdrawal(w.id))!.status).toBe("holding");
+    });
+  });
+
   it("pending top-ups list, complete, cancel, ownership", async () => {
     const app = mk();
     const get = async (path: string, email?: string) =>
@@ -207,6 +312,18 @@ describe("HTTP flow", () => {
     const f = await post(app, "/voice/tools/freeze_all", { user_token: await voiceToken(store) });
     expect(f.status).toBe(200);
     expect((await uber()).frozen).toBe(true);
+  });
+
+  it("POST /pouches/freeze-all freezes every pouch and returns them", async () => {
+    const app = mk();
+    const res = await post(app, "/pouches/freeze-all");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.length).toBeGreaterThan(0);
+    expect(body.every((p: { frozen: boolean }) => p.frozen)).toBe(true);
+    expect((await uber()).frozen).toBe(true);
+    // Idempotent: already-frozen pouches are skipped.
+    expect((await post(app, "/pouches/freeze-all")).status).toBe(200);
   });
 
   it("voice secret is enforced when set", async () => {

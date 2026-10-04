@@ -40,6 +40,15 @@ export function ownedStore(base: Store, email: string): Store {
         if (old) { await requirePouch(old.pouchId); if (old.pouchId !== t.pouchId) throw new HttpError(409, 'Top-up pouch cannot change'); }
         return base.saveTopUp(t);
       };
+      case 'listWithdrawals': return async (id: string) => { await requirePouch(id); return base.listWithdrawals(id); };
+      case 'getWithdrawal': return async (id: string) => { const w = await base.getWithdrawal(id); return w && await pouch(w.pouchId) ? w : undefined; };
+      case 'saveWithdrawal': return async (w: Parameters<Store['saveWithdrawal']>[0]) => {
+        await requirePouch(w.pouchId); const old = await base.getWithdrawal(w.id);
+        if (old) { await requirePouch(old.pouchId); if (old.pouchId !== w.pouchId) throw new HttpError(409, 'Withdrawal pouch cannot change'); }
+        return base.saveWithdrawal(w);
+      };
+      // Cross-pouch system query: never available through a user-scoped store.
+      case 'listDueWithdrawals': return async () => { throw new HttpError(403, 'Not available for a user-scoped store'); };
       default: { const value = Reflect.get(target, property); return typeof value === 'function' ? value.bind(target) : value; }
     }
   } });
