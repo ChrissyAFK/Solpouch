@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { clearFindCache } from "../src/ai/findCart.js";
 import { MemoryStore } from "../src/store/memory.js";
 import { getMerchant } from "../src/merchants/index.js";
 import { MockVaultClient } from "../src/vault/mock.js";
@@ -21,6 +22,7 @@ vi.mock("../src/ai/findOnline.js", async (orig) => {
 let store: MemoryStore;
 let vault: MockVaultClient;
 beforeEach(() => {
+  clearFindCache();
   vi.stubEnv("GEMINI_API_KEY", "");
   vi.stubEnv("ANTHROPIC_API_KEY", "");
   store = new MemoryStore(ownedSeed());

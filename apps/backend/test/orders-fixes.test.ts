@@ -38,8 +38,8 @@ describe("task 2: placeholder lookups are not payable", () => {
   it("refuses a draft when online lookup is unavailable", async () => {
     const err = await createDraft({ store, vault }, TEST_USER, "zzqx gadget", "groceries").catch((e) => e);
     expect(err).toBeInstanceOf(HttpError);
-    expect(err.status).toBe(422);
-    expect(err.message).toContain("Online search is unavailable");
+    expect(err.status).toBe(503);
+    expect(err.message).toContain("can't search right now");
     expect(await store.listOrders()).toHaveLength(0);
   });
   it("voice create_order answers with say instead of crashing", async () => {
@@ -51,7 +51,7 @@ describe("task 2: placeholder lookups are not payable", () => {
     });
     expect(res.status).toBe(200);
     const j = await res.json();
-    expect(j.say).toContain("Online search is unavailable");
+    expect(j.say).toContain("can't search right now");
     expect(j.needsConfirmation).toBe(false);
   });
 });

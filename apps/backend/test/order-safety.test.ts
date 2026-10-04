@@ -5,10 +5,11 @@ import { MockVaultClient } from "../src/vault/mock.js";
 import { getMerchant } from "../src/merchants/index.js";
 import { confirmOrder, createDraft } from "../src/services/orders.js";
 import { findOnline } from "../src/ai/findOnline.js";
+import { clearFindCache } from "../src/ai/findCart.js";
 import { readback } from "../src/routes/voice.js";
 import { ownedSeed, TEST_USER } from "./helpers.js";
 
-vi.mock("../src/ai/findOnline.js", () => ({ findOnline: vi.fn() }));
+vi.mock("../src/ai/findOnline.js", async (orig) => ({ ...(await orig<typeof import("../src/ai/findOnline.js")>()), findOnline: vi.fn() }));
 delete process.env.GEMINI_API_KEY;
 delete process.env.ANTHROPIC_API_KEY;
 const fixtureFind = {
@@ -21,6 +22,7 @@ let store: MemoryStore;
 let vault: MockVaultClient;
 beforeEach(() => {
   vi.clearAllMocks();
+  clearFindCache();
   store = new MemoryStore(ownedSeed());
   vault = new MockVaultClient(store, (id) => getMerchant(id)?.payTo);
   vi.mocked(findOnline).mockResolvedValue(fixtureFind);
