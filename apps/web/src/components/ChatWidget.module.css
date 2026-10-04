@@ -15,21 +15,30 @@
 .launcher {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  min-height: 44px;
-  padding: 11px 15px;
-  border: 1px solid var(--accent-border);
-  border-radius: 6px;
-  background: var(--accent-soft);
-  color: var(--accent-ink);
-  font-size: 13px;
-  font-weight: 550;
-  box-shadow: 0 4px 20px var(--shadow);
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--ink);
+  color: var(--canvas);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(14 16 21 / 0.2), 0 12px 32px -12px rgb(14 16 21 / 0.45);
+  transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-hover) var(--ease-out);
 }
-.launcher:hover,
+.launcher:active {
+  transform: scale(0.97);
+}
 .launcherOpen {
-  background: var(--accent-soft-strong);
-  border-color: var(--accent-border);
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+@media (hover: hover) and (pointer: fine) {
+  .launcher:hover {
+    background: var(--brand);
+    color: var(--brand-ink);
+  }
 }
 .panel {
   display: flex;
@@ -39,9 +48,17 @@
   max-height: calc(100dvh - 110px);
   overflow: hidden;
   background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: 7px;
-  box-shadow: 0 12px 45px var(--shadow-lg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: 0 1px 2px var(--shadow), 0 24px 48px -16px var(--shadow-lg);
+  transform-origin: bottom right;
+  transition:
+    opacity var(--dur-panel) var(--ease-out),
+    transform var(--dur-panel) var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
   color: var(--ink);
 }
 .header {
@@ -49,20 +66,21 @@
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  padding: 15px 17px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--line);
-  background: var(--surface-raised);
+  background: var(--surface);
   flex-shrink: 0;
 }
 .header h2 {
-  font-size: 15px;
-  font-weight: 600;
-  margin: 0 0 5px;
+  font-size: var(--text-base);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 4px;
 }
 .mode {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 .headerActions {
   display: flex;
@@ -73,15 +91,18 @@
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   min-height: 32px;
   min-width: 32px;
-  border-radius: 3px;
-  padding: 5px;
+  border-radius: var(--r-sm);
+  padding: 4px;
+  transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out);
 }
-.headerActions button:hover {
-  color: var(--ink);
-  background: var(--btn-hover);
+@media (hover: hover) and (pointer: fine) {
+  .headerActions button:hover {
+    color: var(--ink);
+    background: var(--surface-raised);
+  }
 }
 .headerActions button:disabled {
   opacity: 0.4;
@@ -93,11 +114,11 @@
 }
 .disclosure {
   margin: 0;
-  padding: 10px 17px;
-  background: var(--accent-soft);
+  padding: 12px 20px;
+  background: var(--brand-soft);
   border-bottom: 1px solid var(--line);
   color: var(--accent-ink);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
   flex-shrink: 0;
 }
@@ -106,13 +127,14 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 19px 17px;
+  padding: 20px;
   scrollbar-width: thin;
   scrollbar-color: var(--scroll-thumb) transparent;
 }
 .empty h3 {
-  font-size: 16px;
-  font-weight: 500;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   margin: 0 0 9px;
 }
 .empty > p {
@@ -131,20 +153,29 @@
   border: 1px solid var(--control-border);
   background: var(--btn-bg);
   color: var(--ink);
-  border-radius: 4px;
-  padding: 9px 11px;
-  min-height: 36px;
-  font-size: 12px;
+  border-radius: var(--r-md);
+  padding: 8px 12px;
+  min-height: 40px;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    border-color var(--dur-hover) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+  font-size: 13px;
   text-align: left;
   line-height: 1.4;
 }
-.presets button:hover {
-  background: var(--accent-soft);
-  border-color: var(--accent-border);
+.presets button:active {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .presets button:hover {
+    background: var(--brand-soft);
+    border-color: var(--brand);
+  }
 }
 .message {
-  font-size: 13px;
-  line-height: 1.65;
+  font-size: var(--text-sm);
+  line-height: 1.6;
   margin-bottom: 18px;
   overflow-wrap: anywhere;
 }
@@ -153,7 +184,7 @@
 }
 .speaker {
   display: block;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--muted);
   margin-bottom: 5px;
@@ -163,29 +194,28 @@
   white-space: pre-wrap;
 }
 .user {
-  background: var(--accent-soft);
-  padding: 10px 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 5px;
-  margin-left: 21px;
+  background: var(--brand-soft);
+  padding: 12px 14px;
+  border-radius: var(--r-md) var(--r-md) 4px var(--r-md);
+  margin-left: 32px;
 }
 .user .speaker {
-  color: var(--accent-ink);
+  color: var(--brand);
 }
 .assistant {
   padding-right: 12px;
 }
 .pending {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   margin: 8px 0;
 }
 .error {
   border: 1px solid var(--danger-border);
   background: var(--danger-surface);
-  padding: 11px 12px;
-  border-radius: 4px;
-  font-size: 12px;
+  padding: 12px;
+  border-radius: var(--r-md);
+  font-size: 13px;
   color: var(--danger);
   line-height: 1.5;
 }
@@ -198,36 +228,39 @@
   background: var(--danger-surface);
   padding: 6px 9px;
   color: var(--danger);
-  border-radius: 3px;
-  font-size: 12px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
   min-height: 32px;
 }
 .orderAction {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  padding: 11px 17px;
+  padding: 12px 20px;
   border-top: 1px solid var(--line);
+  background: var(--canvas);
   flex-shrink: 0;
 }
 .orderAction a {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: var(--accent-ink);
-  font-size: 12px;
+  color: var(--brand);
+  font-size: 13px;
   font-weight: 600;
-  min-height: 25px;
+  min-height: 32px;
 }
-.orderAction a:hover {
-  color: var(--ink);
+@media (hover: hover) and (pointer: fine) {
+  .orderAction a:hover {
+    color: var(--ink);
+  }
 }
 .orderAction > span {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--muted);
 }
 .composer {
-  padding: 12px 13px 10px;
+  padding: 12px 16px;
   border-top: 1px solid var(--line);
   flex-shrink: 0;
 }
@@ -240,9 +273,9 @@
   border: 1px solid var(--control-border);
   background: var(--input-bg);
   color: var(--ink);
-  border-radius: 4px;
-  padding: 10px 11px;
-  font-size: 13px;
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 .composer textarea::placeholder {
@@ -253,24 +286,33 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 9px;
+  margin-top: 8px;
 }
 .composerBottom > span {
-  font-size: 10px;
+  font-size: 13px;
   color: var(--muted);
 }
 .composerBottom button {
-  background: #9945ff;
-  border: 1px solid #ab65eb;
-  color: #fff;
-  border-radius: 4px;
-  padding: 7px 13px;
-  min-height: 33px;
-  font-size: 12px;
-  font-weight: 550;
+  background: var(--brand);
+  border: 1px solid var(--brand);
+  color: var(--brand-ink);
+  border-radius: var(--r-md);
+  padding: 0 14px;
+  min-height: 36px;
+  font-size: 13px;
+  font-weight: 600;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
 }
-.composerBottom button:hover {
-  background: #8538df;
+.composerBottom button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .composerBottom button:hover:not(:disabled) {
+    background: var(--brand-deep);
+    border-color: var(--brand-deep);
+  }
 }
 .composerBottom > span {
   margin-right: auto;
@@ -278,15 +320,19 @@
 .composerBottom .voice {
   background: transparent;
   color: var(--ink);
-  border-color: var(--accent-border);
+  border-color: var(--line-strong);
 }
-.composerBottom .voice:hover {
-  background: var(--accent-soft);
+@media (hover: hover) and (pointer: fine) {
+  .composerBottom .voice:hover:not(:disabled) {
+    background: var(--brand-soft);
+    border-color: var(--brand);
+  }
 }
-.composerBottom .voice[aria-pressed="true"] {
-  background: #14f195;
-  border-color: #14f195;
-  color: #0d0a12;
+.composerBottom .voice[aria-pressed="true"],
+.composerBottom .voice[aria-pressed="true"]:hover {
+  background: var(--readout);
+  border-color: var(--readout);
+  color: var(--readout-ok);
 }
 .composerBottom button:disabled {
   background: var(--surface-raised);
@@ -295,7 +341,7 @@
   opacity: 1;
 }
 .boundary {
-  font-size: 10px;
+  font-size: 13px;
   color: var(--muted);
   margin: 9px 0 0;
   line-height: 1.4;
@@ -317,7 +363,7 @@
     min-width: 48px;
     justify-content: center;
     padding: 0;
-    border-radius: 24px;
+    border-radius: var(--r-md);
   }
   /* Icon only on phones so the button doesn't sit over page actions. */
   .launcher > span {
@@ -339,11 +385,11 @@
   }
   .composerBottom > span,
   .boundary {
-    font-size: 11px;
+    font-size: 13px;
   }
   .speaker,
   .orderAction > span {
-    font-size: 12px;
+    font-size: 13px;
   }
   .headerActions button {
     min-height: 36px;
@@ -355,21 +401,24 @@
     scroll-behavior: auto !important;
     transition: none !important;
   }
+  .panel {
+    transform: none !important;
+  }
 }
 
-.orderCards { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 12px; }
+.orderCards { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px; }
 .cardHeading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .orderCards small { color: var(--muted); }
-.orderCard { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.orderCard { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-md); }
 .orderCard ul { padding-left: 16px; max-height: 150px; overflow: auto; }
 .orderCard p { color: var(--muted); }
 .orderCard a { text-decoration: underline; }
-.freshCard { border-color: var(--accent-border); background: var(--accent-soft); }
-.freshBadge { align-self: flex-start; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--accent-ink); border: 1px solid var(--accent-border); }
-.orderCards button { padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 8px; cursor: pointer; }
+.freshCard { border-color: var(--brand); background: var(--brand-soft); }
+.freshBadge { align-self: flex-start; padding: 2px 8px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--brand); border: 1px solid var(--brand); }
+.orderCards button { padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); cursor: pointer; min-height: 32px; }
 .orderCards button:disabled { opacity: .5; cursor: wait; }
 .voiceBar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
-.voiceBar button { border: 1px solid currentColor; border-radius: 6px; padding: 6px 12px; color: inherit; background: transparent; cursor: pointer; white-space: nowrap; }
+.voiceBar button { border: 1px solid currentColor; border-radius: var(--r-sm); padding: 6px 12px; color: inherit; background: transparent; cursor: pointer; white-space: nowrap; }
 .voiceBar button:disabled { opacity: .5; cursor: not-allowed; }
-.voiceBar span, .notice { font-size: 12px; line-height: 1.5; }
+.voiceBar span, .notice { font-size: 13px; line-height: 1.5; }
 .notice { margin: 0; padding: 10px 16px; }

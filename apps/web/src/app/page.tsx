@@ -85,7 +85,7 @@ const FAQ = [
 
 export default function LandingPage() {
   return (
-    <div className={`${styles.page} force-dark`}>
+    <div className={`${styles.page} force-light`}>
       <a href="#main-content" className="skip-link">
         Skip to content
       </a>
@@ -134,14 +134,17 @@ export default function LandingPage() {
           <ul className={styles.pouchRow}>
             {POUCHES.map((p) => (
               <li key={p.name} className={styles.pouchItem}>
-                <PouchGlyph
-                  name={p.name}
-                  remaining={p.remaining}
-                  limit={p.limit}
-                  tone={p.tone}
-                  size="lg"
-                />
-                <h3>{p.name}</h3>
+                <div className={`${styles.cardFace} ${styles[`tone${p.tone}`]}`}>
+                  <span className={styles.chip} aria-hidden="true" />
+                  <h3>{p.name}</h3>
+                  <PouchGlyph
+                    name={p.name}
+                    remaining={p.remaining}
+                    limit={p.limit}
+                    tone={p.tone}
+                    size="md"
+                  />
+                </div>
                 <p className={styles.purpose}>{p.purpose}</p>
                 <dl className={styles.rules}>
                   <div>

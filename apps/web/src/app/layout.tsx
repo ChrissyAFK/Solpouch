@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Archivo, JetBrains_Mono } from "next/font/google";
+import { Geist_Mono, Hanken_Grotesk } from "next/font/google";
 import { headers } from "next/headers";
 import { connection } from "next/server";
 import { AuthProvider } from "@/components/AuthProvider";
@@ -9,16 +9,15 @@ import { Shell } from "@/components/Shell";
 import { pageMetadata, siteDescription, siteUrl } from "@/lib/site";
 import "./globals.css";
 
-const archivo = Archivo({
+const hanken = Hanken_Grotesk({
   subsets: ["latin"],
-  axes: ["wdth"],
   display: "swap",
-  variable: "--font-archivo",
+  variable: "--font-hanken",
 });
-const jetbrains = JetBrains_Mono({
+const geistMono = Geist_Mono({
   subsets: ["latin"],
   display: "swap",
-  variable: "--font-jetbrains",
+  variable: "--font-geist-mono",
 });
 
 export const metadata: Metadata = {
@@ -43,8 +42,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f4f1ea" },
-    { media: "(prefers-color-scheme: dark)", color: "#0d0d10" },
+    { media: "(prefers-color-scheme: light)", color: "#f3f4f1" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0d12" },
   ],
   colorScheme: "dark light",
 };
@@ -64,7 +63,7 @@ export default async function RootLayout({
     <html
       lang="en"
       data-scroll-behavior="smooth"
-      className={`${archivo.variable} ${jetbrains.variable}`}
+      className={`${hanken.variable} ${geistMono.variable}`}
       suppressHydrationWarning
     >
       <head>
