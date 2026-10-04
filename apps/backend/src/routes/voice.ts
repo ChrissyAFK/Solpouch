@@ -38,7 +38,8 @@ export function readback(order: Order): string {
   });
   if (order.fulfillment?.via === "demo" && order.fulfillment.demo) {
     const demo = order.fulfillment.demo;
-    return `${parts.join("; ")}. That's $${toUsdc(order.total).toFixed(2)} from your pouch for the CAD ${usd(demo.sourceTotal)} estimate. Do you approve this payment?`;
+    // The cart was already read back by create_order; only ask for the pouch amount, which differs from the CAD estimate.
+    return `Do you approve this payment of $${toUsdc(order.total).toFixed(2)} from your pouch?`;
   }
   if (isCheckoutReference(order)) {
     const est = order.lines.some((l) => l.product?.estimated);

@@ -42,12 +42,12 @@ describe("voice readback", () => {
     const est = readback(order([line("Biscuit", 1_990_000, true)]));
     expect(est).toContain("Estimated total CAD $1.99. Prices are estimates. Want me to pay for it from your pouch?");
   });
-  it("reads the quote without wallet or rate jargon", () => {
+  it("asks for approval without reading the cart again or wallet or rate jargon", () => {
     setEnv(true);
     const o = order([line("Biscuit", 1_450_000, false)]);
     o.fulfillment = { via: "demo", demo: { sourceTotal: 1_990_000, usdPerCad: 0.73, payTo: "Wallet123" } } as any;
     const say = readback(o);
-    expect(say).toBe("1 Biscuit, $1.45. That's $1.45 from your pouch for the CAD $1.99 estimate. Do you approve this payment?");
+    expect(say).toBe("Do you approve this payment of $1.45 from your pouch?");
     expect(say).not.toMatch(/Wallet123|USDC|per CAD/);
   });
 });
