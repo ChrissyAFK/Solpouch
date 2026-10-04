@@ -149,7 +149,7 @@ export function voiceRoutes(deps: Deps) {
         if (draft.status === "draft" && Date.now() - Date.parse(draft.fulfillment?.demo?.preparedAt ?? draft.createdAt) < VOICE_CONFIRM_MIN_AGE_MS) return c.json({say:"Please listen to the read-back first, then say yes again to place the order.",status:"draft",needsConfirmation:true});
         try {
           const order = await confirmOrder(deps, email, orderId, version ?? -1);
-          return c.json({ say: order.fulfillment?.via === "demo" ? `Payment recorded: ${toUsdc(order.total).toFixed(2)} USDC.` : order.txSignature?.startsWith("mock") ? `Payment recorded: ${usd(order.total)}.` : `Payment recorded: ${usd(order.total)}.`, status: order.status });
+          return c.json({ say: order.fulfillment?.via === "demo" ? `Payment complete: $${toUsdc(order.total).toFixed(2)}.` : order.txSignature?.startsWith("mock") ? `Payment recorded: ${usd(order.total)}.` : `Payment recorded: ${usd(order.total)}.`, status: order.status });
         } catch (e) {
           if (e instanceof HttpError && (e.code === "WebCheckoutRequired" || e.code === "RecordChanged")) {
             return c.json({ say: e.message, status: "draft", code: e.code });

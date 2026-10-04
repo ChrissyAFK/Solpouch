@@ -125,7 +125,8 @@ function ChatPanel({ landing }: { landing: boolean }) {
       if (role === "user" && message === lastTyped.current) { lastTyped.current = null; return; }
       setMessages((m) => [
         ...m,
-        { role: role === "user" ? "user" : "assistant", content: message },
+        // Drop bracketed TTS audio tags like "[Understood]" from agent text.
+        { role: role === "user" ? "user" : "assistant", content: role === "user" ? message : message.replace(/\[[^\]\n]{1,30}\]\s*,?\s*/g, "").trim() },
       ]);
       if (role === "agent") settle();
     },

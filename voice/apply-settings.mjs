@@ -40,6 +40,8 @@ if (process.argv.includes("--dry-run")) {
     conversation_config: {
       asr: { ...cc.asr, keywords },
       turn: { ...cc.turn, speculative_turn: false, turn_eagerness: "patient" },
+      // Expressive mode makes the LLM invent bracketed audio tags ("[Understood]") that get spoken and shown.
+      tts: { ...cc.tts, expressive_mode: false },
       agent: { prompt: { ...curPrompt, ...(curPrompt.tool_ids ? {} : tools ? { tools } : {}), prompt: promptText } },
     },
   };
@@ -47,5 +49,5 @@ if (process.argv.includes("--dry-run")) {
   const text = await res.text();
   if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${text.slice(0, 500)}`);
   const c = JSON.parse(text).conversation_config;
-  console.log(`applied: ${c?.asr?.keywords?.length ?? "?"} keywords, speculative_turn=${c?.turn?.speculative_turn}, turn_eagerness=${c?.turn?.turn_eagerness}, tools ${toolsBefore} -> ${c?.agent?.prompt?.tool_ids?.length ?? c?.agent?.prompt?.tools?.length ?? 0}, prompt ${c?.agent?.prompt?.prompt?.length} chars`);
+  console.log(`applied: ${c?.asr?.keywords?.length ?? "?"} keywords, speculative_turn=${c?.turn?.speculative_turn}, turn_eagerness=${c?.turn?.turn_eagerness}, expressive_mode=${c?.tts?.expressive_mode}, tools ${toolsBefore} -> ${c?.agent?.prompt?.tool_ids?.length ?? c?.agent?.prompt?.tools?.length ?? 0}, prompt ${c?.agent?.prompt?.prompt?.length} chars`);
 }
