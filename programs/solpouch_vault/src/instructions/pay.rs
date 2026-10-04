@@ -58,6 +58,7 @@ pub fn handler(ctx: Context<Pay>, amount: u64, order_id: [u8; 16]) -> Result<()>
     let p = &ctx.accounts.pouch;
     let (spent, day_start) = check_pay(
         &PayState {
+            agent: p.agent,
             frozen: p.frozen,
             allowed_merchants: &p.allowed_merchants,
             max_per_order: p.max_per_order,

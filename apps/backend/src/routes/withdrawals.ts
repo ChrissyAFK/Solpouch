@@ -31,9 +31,9 @@ export function withdrawalRoutes(_baseDeps: Deps) {
   app.post("/", async (c) => {
     const deps = requestDeps(c);
     const body = startBody.parse(await c.req.json());
-    const user = await deps.store.getUser(c.get("email"));
-    if (!user?.wallet) throw new HttpError(403, "Link a wallet to withdraw");
     if (!(await deps.store.getPouch(body.pouchId))) throw new HttpError(404, "Pouch not found");
+    const user = await deps.store.getUser(c.get("email"));
+    if (!user?.wallet) throw new HttpError(403, "Link a wallet to withdraw", "WalletRequired");
     const configured = process.env.WITHDRAW_HOLD_SECONDS ?? "604800";
     const hold = Number(configured);
     if (!configured.trim() || !Number.isSafeInteger(hold) || hold < 0 || hold > 2_592_000) {

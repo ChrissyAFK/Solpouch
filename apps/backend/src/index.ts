@@ -28,13 +28,29 @@ if (process.env.VAULT_MODE === "chain") {
   const { SyncedVaultClient } = await import("./vault/synced.js");
 
 
+  try {
+    const chain = vault as { checkAgentBalance?: () => Promise<number> };
+    await chain.checkAgentBalance?.();
+  } catch (e) { console.warn(`[startup] Could not read the agent SOL balance: ${e instanceof Error ? e.message : e}`); }
   vault = new SyncedVaultClient(vault, store);
   for (const p of await store.listPouches()) {
-    await store.withPouchLock(p.id,async()=> {
-      const fresh=(await store.getPouch(p.id))!;
-      const state = vault.getState ? await vault.getState(p.id) : await vault.getBalance(p.id);
-      await store.savePouch({ ...fresh, ...state });
-    });
+    try {
+      await store.withPouchLock(p.id,async()=> {
+        const fresh=(await store.getPouch(p.id))!;
+        const read = () => vault.getState ? vault.getState(p.id) : vault.getBalance(p.id);
+        let state;
+        try { state = await read(); } catch (err) {
+          if (!/differ from the chain/.test((err as Error).message)) throw err;
+          // Same owner-signed setRules call the rules PATCH route uses: push the stored rules (with current checkout key) on chain.
+          await vault.updateRules(fresh);
+          console.warn(`startup sync: re-synced on-chain allowlist for pouch ${p.id}`);
+          state = await read();
+        }
+        await store.savePouch({ ...fresh, ...state });
+      });
+    } catch (err) {
+      console.warn(`startup sync: skipping pouch ${p.id}: ${(err as Error).message}`);
+    }
   }
 
 }

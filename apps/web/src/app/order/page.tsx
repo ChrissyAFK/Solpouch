@@ -230,7 +230,7 @@ function OrderWorkspace() {
       if (autoRan.current === handoff) return;
       autoRan.current = handoff;
       setPouchId(usable[0].id);
-      void createDraft(handoff, usable[0].id);
+      void createDraft(handoff, usable[0].id, false);
     } else if (focusedFor.current !== handoff) {
       focusedFor.current = handoff;
       pouchSelect.current?.focus();
@@ -242,19 +242,25 @@ function OrderWorkspace() {
     e.preventDefault();
     await createDraft(request.trim(), pouchId || undefined);
   }
-  async function createDraft(text: string, pid: string | undefined) {
+  async function createDraft(text: string, pid: string | undefined, autoPay?: boolean) {
     if (busy || !currentSession()) return;
     const version = loadVersion.current;
     const current = () => currentSession() && version === loadVersion.current;
     setBusy(true);
     setError(null);
     try {
-      const created = await api.createOrder({
-        request: text,
-        pouchId: pid,
-      });
+      const created = await api.createOrder(
+        { request: text, pouchId: pid },
+        { autoPay },
+      );
       if (!current()) return;
       setOrder(created);
+      if (created.status !== "draft") {
+        try {
+          const freshPouches = await api.pouches();
+          if (current()) setPouches(freshPouches);
+        } catch { /* The order stays valid when balance refresh fails. */ }
+      }
       window.history.replaceState(
         null,
         "",

@@ -57,7 +57,7 @@ describe("read-only chat", () => {
   it("explains rules and real allowed merchant names", async () => {
     const rules = await (await ask("What are my groceries rules?")).json();
     expect(rules.reply).toContain("120.00 USDC per order");
-    expect(rules.reply).toContain("Every order currently needs approval");
+    expect(rules.reply).toContain("pays automatically only when");
     const stores = await (await ask("Where can I shop with groceries?")).json();
     expect(stores.reply).toContain("any store");
   });

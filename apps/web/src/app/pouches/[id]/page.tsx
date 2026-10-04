@@ -412,10 +412,11 @@ function WithdrawSection({
   // Reports the amount held by withdrawals so the header can show what is spendable.
   onHeld: (held: number) => void;
 }) {
-  const { user } = useAuth();
+  const { user, sessionKey, updateUser } = useAuth();
   const hasWallet = Boolean(user?.wallet);
   const [list, setList] = useState<Withdrawal[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [amount, setAmount] = useState("");
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
@@ -425,6 +426,7 @@ function WithdrawSection({
     const l = await api.listWithdrawals(pouch.id);
     setList(l);
     setLoaded(true);
+    setLoadFailed(false);
     onHeld(
       l
         .filter((w) => w.status === "holding" || w.status === "processing")
@@ -434,8 +436,12 @@ function WithdrawSection({
 
   // Withdrawals only change slowly, so poll every 30 s and tick the countdown each minute.
   useEffect(() => {
-    void refresh().catch(() => {});
-    const poll = setInterval(() => void refresh().catch(() => {}), 30_000);
+    const fail = () => {
+      setLoaded(true);
+      setLoadFailed(true);
+    };
+    void refresh().catch(fail);
+    const poll = setInterval(() => void refresh().catch(fail), 30_000);
     const tick = setInterval(() => setNow(Date.now()), 60_000);
     return () => {
       clearInterval(poll);
@@ -468,6 +474,8 @@ function WithdrawSection({
       await refresh();
       await onDone();
     } catch (err) {
+      if (err instanceof ApiRequestError && err.code === "WalletRequired" && sessionKey)
+        updateUser({ wallet: undefined }, sessionKey);
       setError(errMsg(err));
       void refresh().catch(() => {});
     } finally {
@@ -493,10 +501,18 @@ function WithdrawSection({
     <section className={card}>
       <h2 className="mb-5 text-lg font-semibold tracking-tight">Withdraw</h2>
       <ErrorBanner message={error} />
-      {!hasWallet ? (
-        <p className="text-sm text-[var(--muted)]">
-          A linked wallet is needed to withdraw money.
-        </p>
+      {loadFailed && !active ? (
+        <div className="space-y-3">
+          <p className="text-sm text-[var(--muted)]" role="alert">
+            Could not check withdrawals.
+          </p>
+          <button
+            className={btnSecondary}
+            onClick={() => void refresh().catch(() => setLoadFailed(true))}
+          >
+            Retry
+          </button>
+        </div>
       ) : !loaded ? (
         <p className="text-sm text-[var(--muted)]" role="status">
           Checking withdrawals…
@@ -549,6 +565,10 @@ function WithdrawSection({
             </button>
           )}
         </div>
+      ) : !hasWallet ? (
+        <p className="text-sm text-[var(--muted)]">
+          A linked wallet is needed to withdraw money.
+        </p>
       ) : pouch.frozen ? (
         <p className="text-sm text-[var(--muted)]">Unfreeze this pouch to withdraw.</p>
       ) : (

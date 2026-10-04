@@ -23,14 +23,30 @@ const PAGE = 1000;
 export type IndexerConnection = Pick<Connection, "getSignaturesForAddress" | "getTransaction" | "onLogs" | "removeOnLogsListener">;
 type Log = (message: string) => void;
 
+const LEGACY_TIMELESS = ["ToppedUp", "Withdrawn"];
+
 export interface DecodedEvent { name: string; data: Record<string, unknown>; index: number }
 
 /** Decode this program's Anchor events from one transaction's logs. Unknown or undecodable events are skipped. */
 export function createEventDecoder(programId: PublicKey, idl: Idl = idlJson as Idl, log: Log = console.warn) {
   const inner = new BorshCoder(idl);
   // A known discriminator whose layout changed must not stop the transaction's other events.
+  // ToppedUp/Withdrawn gained a trailing `time: i64`; events from the earlier program lack it (the block time is used instead).
+  const legacyIdl = {
+    ...idl,
+    types: (idl.types ?? []).map((t) => LEGACY_TIMELESS.includes(t.name) && t.type.kind === "struct" && Array.isArray(t.type.fields)
+      ? { ...t, type: { ...t.type, fields: t.type.fields.filter((f) => (f as { name: string }).name !== "time") } } : t),
+  } as Idl;
+  let legacy: BorshCoder | undefined;
   const tolerant = { events: { decode: (s: string) => {
-    try { return inner.events.decode(s); } catch { log("[indexer] skipped an event that does not match the IDL layout"); return null; }
+    try { return inner.events.decode(s); } catch {
+      try {
+        legacy ??= new BorshCoder(legacyIdl);
+        const old = legacy.events.decode(s);
+        if (old && LEGACY_TIMELESS.includes(old.name)) return old;
+      } catch { /* fall through to skip */ }
+      log("[indexer] skipped an event that does not match the IDL layout"); return null;
+    }
   } } } as unknown as Coder;
   const parser = new EventParser(programId, tolerant);
   return (logs: string[]): DecodedEvent[] => {

@@ -99,7 +99,7 @@ export async function createOrder(deps: Deps, ownerEmail: string, request: strin
   const pouch = await deps.store.getPouch(draft.pouchId);
   if (!pouch || pouch.ownerEmail !== ownerEmail || !autoConfirmEligible(pouch, draft)) return { order: draft, autoPaid: false };
   try {
-    const order = await confirmOrder(deps, ownerEmail, draft.id);
+    const order = await confirmOrder(deps, ownerEmail, draft.id, undefined, { auto: true });
     return { order, autoPaid: order.status === "paid" };
   } catch (e) {
     if (!(e instanceof HttpError)) throw e;
@@ -261,7 +261,7 @@ function catalogOrder(id: string, pouch: Pouch, merchant: Merchant, request: str
   };
 }
 
-export async function confirmOrder(deps: Deps, ownerEmail: string, id: string, expectedVersion?: number): Promise<Order> {
+export async function confirmOrder(deps: Deps, ownerEmail: string, id: string, expectedVersion?: number, opts: { auto?: boolean } = {}): Promise<Order> {
   const initial = await getOwnedOrder(deps, id, ownerEmail);
   return deps.store.withPouchLock(initial.pouchId, async () => {
     let order = await getOwnedOrder(deps, id, ownerEmail);
@@ -269,6 +269,8 @@ export async function confirmOrder(deps: Deps, ownerEmail: string, id: string, e
     if (order.status !== "draft" && order.status !== "paying") throw new HttpError(409, `Order is ${order.status}`);
     if (order.status === "draft" && expectedVersion !== undefined && order.version !== expectedVersion) throw new HttpError(409, "This cart changed. Review it again before approving.", "RecordChanged");
     const pouch = await getOwnedPouch(deps, order.pouchId, ownerEmail);
+    // Auto-pay: decide under the lock on the pouch and order as they are now; no longer eligible stays a draft.
+    if (opts.auto && order.status === "draft" && !autoConfirmEligible(pouch, order)) return order;
     const merchant = getMerchant(order.merchantId);
     if (order.status === "draft" && !isAnyStore(pouch) && !pouch.allowedMerchantIds.includes(order.merchantId)) throw new HttpError(422,"This pouch no longer allows this store. Review its store rules before paying.","MerchantNotAllowed");
     if (isCheckoutReference(order) || !merchants.some(m=>m.id===order.merchantId)) throw new HttpError(422, "This is a search estimate, not a payable quote. Check the current price and complete checkout with the retailer. Solpouch has not placed an order.", "WebCheckoutRequired");

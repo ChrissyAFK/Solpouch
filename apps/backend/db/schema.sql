@@ -115,11 +115,16 @@ SELECT add_continuous_aggregate_policy('spend_daily',
   if_not_exists     => TRUE);
 
 -- Compress old payments.
-ALTER TABLE payments SET (
-  timescaledb.compress,
-  timescaledb.compress_segmentby = 'pouch_id',
-  timescaledb.compress_orderby   = 'time DESC'
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM timescaledb_information.hypertables WHERE hypertable_name = 'payments' AND compression_enabled) THEN
+    ALTER TABLE payments SET (
+      timescaledb.compress,
+      timescaledb.compress_segmentby = 'pouch_id',
+      timescaledb.compress_orderby   = 'time DESC'
+    );
+  END IF;
+END $$;
 SELECT add_compression_policy('payments', INTERVAL '7 days', if_not_exists => TRUE);
 
 create table if not exists users (

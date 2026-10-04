@@ -12,7 +12,7 @@ import { confirmOrder, getOwnedOrder, listOwnedOrders } from "../src/services/or
 import { completeTopUp } from "../src/services/topups.js";
 import { PaymentPending, recoverTransaction, type RecoveryTransport } from "../src/vault/recovery.js";
 import type { VaultOperation } from "../src/store/types.js";
-import { ensureOnChain, ChainVaultClient, preflightRejectCode, statusRejectCode } from "../src/vault/chain.js";
+import { broadcastSigned, ensureOnChain, ChainVaultClient, preflightRejectCode, statusRejectCode } from "../src/vault/chain.js";
 import { VaultRejected } from "../src/vault/types.js";
 
 vi.mock("@solana/spl-token", async (importOriginal) => ({
@@ -208,6 +208,20 @@ describe("definitive chain refusals", () => {
     await expect(recoverTransaction(store, operation.id, rpc, async () => operation, operation)).rejects.toThrow("not confirmed");
     await expect(recoverTransaction(store, operation.id, rpc, vi.fn(), operation)).rejects.toThrow("not confirmed");
     expect(rpc.broadcast).toHaveBeenCalledTimes(2);
+  });
+
+  it("with the real client's broadcast, a retry's preflight refusal leaves the operation pending", async () => {
+    const connection = { sendRawTransaction: vi.fn().mockRejectedValueOnce(new Error("socket hang up")).mockRejectedValue(simulated("OverDailyLimit")) };
+    const rpc = { ...transport(), rejection: preflightRejectCode, broadcast: (bytes: Uint8Array) => broadcastSigned(connection, bytes) };
+    rpc.status = vi.fn().mockResolvedValue({ confirmed: false, failed: false, seen: false });
+    await expect(recoverTransaction(store, operation.id, rpc, async () => operation, operation)).rejects.toBeInstanceOf(PaymentPending);
+    const retry = await recoverTransaction(store, operation.id, rpc, vi.fn(), operation).catch((e: unknown) => e);
+    expect(retry).toBeInstanceOf(PaymentPending);
+    expect(retry).not.toBeInstanceOf(VaultRejected);
+    // A first broadcast refused by preflight is still final through the same path.
+    connection.sendRawTransaction.mockRejectedValue(simulated("OverDailyLimit"));
+    const fresh = await recoverTransaction(store, "pay:two", rpc, async () => ({ ...operation, id: "pay:two" }), { kind: "pay", pouchId: "uber-eats" }).catch((e: unknown) => e);
+    expect(fresh).toMatchObject({ code: "OverDailyLimit" });
   });
 
   it("stays pending when the signature may have landed or the error could hide a success", async () => {

@@ -55,7 +55,7 @@ export function createApp(deps: Deps) {
     return m === "POST" || m === "PATCH" || m === "DELETE" ? writes(c, next) : next();
   });
   app.on("POST", "/topups/*", topups);
-  app.on("POST", "/withdrawals/*", topups);
+  app.on("POST", "/withdrawals/*", rateLimit({ store: deps.store, windowMs: MIN, max: 5, key: "withdrawal" }));
   app.use("/voice/*", rateLimit({ store: deps.store, windowMs: MIN, max: 60, key: "voice" }));
 
   app.get("/health", (c) => c.json({ ok: true }));

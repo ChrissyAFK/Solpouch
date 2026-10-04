@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { AuthEnv } from "../auth/session.js";
 import { cancelOrder, confirmOrder, createOrder, getOwnedOrder, listOwnedOrders, type Deps } from "../services/orders.js";
 
-const createBody = z.object({ request: z.string().min(1).max(1000), pouchId: z.string().max(100).optional() });
+const createBody = z.object({ request: z.string().min(1).max(1000), pouchId: z.string().max(100).optional(), autoPay: z.boolean().optional() });
 
 export function orderRoutes(deps: Deps) {
   const app = new Hono<AuthEnv>();
@@ -14,8 +14,9 @@ export function orderRoutes(deps: Deps) {
   app.post("/", async (c) => {
     const b = createBody.parse(await c.req.json());
     // Usually a draft; an exact catalog cart within the pouch's confirmAbove amount is paid at once.
-    const { order } = await createOrder(deps, c.get("user").email, b.request, b.pouchId);
-    return c.json(order, 201);
+    const { order, autoPaid, autoPayError } = await createOrder(deps, c.get("user").email, b.request, b.pouchId, b.autoPay === false ? { autoPay: false } : {});
+    // Status stays 201 for existing clients; the extra fields say whether an auto-pay attempt finished.
+    return c.json({ ...order, autoPaid, ...(autoPayError ? { autoPayError: { code: autoPayError.code ?? "PaymentFailed", message: autoPayError.message } } : {}) }, 201);
   });
 
   app.get("/", async (c) => c.json(await listOwnedOrders(deps, c.get("user").email, c.req.query("pouchId"))));

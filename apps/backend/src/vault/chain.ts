@@ -134,17 +134,21 @@ export function mapAllowedKeys(keys: string[], payToOf: (id: string) => string |
 }
 
 /**
- * A preflight (simulation) failure that carries a program error means the program refused the
- * payment and nothing was broadcast. Map it to VaultRejected; any other error is rethrown unchanged
- * so recovery keeps treating it as an unresolved (retry-the-same-signature) failure.
+ * Broadcast already-signed bytes. Errors are rethrown RAW: recovery classifies a preflight refusal with
+ * `preflightRejectCode` and decides whether it is final (first broadcast of an unseen signature only).
+ * Wrapping it here as VaultRejected would bypass that guard.
  */
-export function programRejection(e: unknown): never {
-  try {
-    mapError(e);
-  } catch (mapped) {
-    if (mapped instanceof VaultRejected && mapped.code !== "OrderAlreadyUsed") throw mapped;
+export function broadcastSigned(connection: Pick<Connection, "sendRawTransaction">, bytes: Uint8Array): Promise<string> {
+  return connection.sendRawTransaction(bytes, { skipPreflight: false, maxRetries: 0 });
+}
+
+/** Read-only: warn loudly when the agent key cannot pay for receipts. Sends nothing. */
+export async function checkAgentBalanceOf(connection: Pick<Connection, "getBalance">, agent: PublicKey, minSol = 0.05): Promise<number> {
+  const lamports = await connection.getBalance(agent, COMMITMENT);
+  if (lamports < minSol * 1_000_000_000) {
+    console.warn(`[startup] AGENT KEY LOW ON SOL: ${(lamports / 1e9).toFixed(4)} SOL. Each payment receipt costs about 0.0015 SOL. Fund the agent address ${agent.toBase58()} with at least ${minSol} SOL or payments will fail.`);
   }
-  throw e;
+  return lamports;
 }
 
 export class ChainVaultClient implements VaultClient {
@@ -170,6 +174,8 @@ export class ChainVaultClient implements VaultClient {
   }
 
   get authorizedOwner(): string { return this.owner.publicKey.toBase58(); }
+
+  checkAgentBalance(minSol = 0.05): Promise<number> { return checkAgentBalanceOf(this.connection, this.agent.publicKey, minSol); }
 
   private pouchPda(id: string): PublicKey {
     return PublicKey.findProgramAddressSync(
@@ -208,7 +214,7 @@ export class ChainVaultClient implements VaultClient {
         return { confirmed: settled && !value.err, failed: settled && !!value.err, seen: !!value, found: !!value, rejectCode: settled ? statusRejectCode(value.err) : undefined };
       },
       blockHeight: () => this.connection.getBlockHeight(COMMITMENT),
-      broadcast: async (bytes) => { try { return await this.connection.sendRawTransaction(bytes, { skipPreflight: false, maxRetries: 0 }); } catch (e) { return programRejection(e); } },
+      broadcast: (bytes) => broadcastSigned(this.connection, bytes),
       confirm: async (operation) => {
         const tx = Transaction.from(Buffer.from(operation.signedTransaction, "base64"));
         const result = await this.connection.confirmTransaction({ signature: operation.txSignature, blockhash: tx.recentBlockhash!, lastValidBlockHeight: operation.lastValidBlockHeight }, COMMITMENT);

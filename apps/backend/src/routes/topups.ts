@@ -27,12 +27,19 @@ export function topupRoutes(deps: Deps) {
     const email=c.get("user").email;
     const ids = pouchId ? [(await getOwnedPouch(deps,pouchId,email)).id] : (await deps.store.listPouches(email)).map(p=>p.id);
     const all=(await Promise.all(ids.map(id=>deps.store.listTopUps(id)))).flat();
-    const pending=all.filter(t=>t.status==="cooling_down" || t.status==="processing").sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+    const pending=all.filter(t=>t.status==="cooling_down" || t.status==="processing" || (t.status==="failed" && Date.now()-Date.parse(t.readyAt)<=FAILED_TOPUP_VISIBLE_MS)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
     return c.json(await Promise.all(pending.map(async t=> {
       if(t.status!=="processing" || t.txSignature) return t;
       const operation=await deps.store.getOperation(`topup:${t.id}`);
       return operation && operation.kind==="topup" && operation.pouchId===t.pouchId ? {...t,txSignature:operation.txSignature} : t;
     })));
+  });
+
+  app.get("/:id", async (c) => {
+    const topup = await deps.store.getTopUp(c.req.param("id"));
+    if (!topup) throw new HttpError(404, "Top-up not found");
+    await getOwnedPouch(deps, topup.pouchId, c.get("user").email);
+    return c.json(topup);
   });
 
   app.post("/:id/cancel", async (c) => {

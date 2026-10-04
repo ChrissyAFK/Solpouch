@@ -48,6 +48,7 @@ pub fn check_rules(
 }
 
 pub struct PayState<'a> {
+    pub agent: Pubkey,
     pub frozen: bool,
     pub allowed_merchants: &'a [Pubkey],
     pub max_per_order: u64,
@@ -69,6 +70,9 @@ pub fn check_pay(
     }
     if s.frozen {
         return Err(VaultError::PouchFrozen);
+    }
+    if *merchant == s.agent {
+        return Err(VaultError::AgentIsMerchant);
     }
     if !s.allowed_merchants.contains(merchant) {
         return Err(VaultError::MerchantNotAllowed);
@@ -109,6 +113,7 @@ mod tests {
 
     fn state(allowed: &[Pubkey]) -> PayState<'_> {
         PayState {
+            agent: Pubkey::new_from_array([1; 32]),
             frozen: false,
             allowed_merchants: allowed,
             max_per_order: 100,
@@ -122,6 +127,13 @@ mod tests {
     fn happy_path() {
         let a = [m()];
         assert_eq!(check_pay(&state(&a), &m(), 50, 1_000, 1_100), Ok((50, 1_000)));
+    }
+
+    #[test]
+    fn pay_rejects_agent_as_merchant() {
+        let agent = Pubkey::new_from_array([1; 32]);
+        let a = [m(), agent];
+        assert_eq!(check_pay(&state(&a), &agent, 1, 10, 1_100), Err(VaultError::AgentIsMerchant));
     }
 
     #[test]

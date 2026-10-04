@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { toMicros, type Order, type Pouch } from "@solpouch/shared";
 import { createApp } from "../src/app.js";
 import { getCatalog, getMerchant } from "../src/merchants/index.js";
-import { AUTO_CONFIRM_MATCH, autoConfirmEligible } from "../src/services/orders.js";
+import { AUTO_CONFIRM_MATCH, autoConfirmEligible, confirmOrder, createDraft } from "../src/services/orders.js";
 import { MemoryStore } from "../src/store/memory.js";
 import { MockVaultClient } from "../src/vault/mock.js";
 import { VaultRejected } from "../src/vault/types.js";
-import { authHeaders, ownedSeed, voiceToken } from "./helpers.js";
+import { authHeaders, ownedSeed, TEST_USER, voiceToken } from "./helpers.js";
 
 delete process.env.GEMINI_API_KEY;
 delete process.env.ELEVENLABS_TOOL_SECRET;
@@ -123,6 +123,27 @@ describe("auto-confirm through the order and voice routes", () => {
     expect(res.status).toBe(201);
     expect((await res.json()).status).not.toBe("paid");
     expect((await store.getPouch("groceries"))!.balance).toBe($(300));
+  });
+
+  it("re-checks eligibility under the lock: confirmAbove set to 0 after the draft leaves a draft, unpaid", async () => {
+    const deps = { store, vault };
+    const draft = await createDraft(deps, TEST_USER, "large eggs", "groceries");
+    const p = (await store.getPouch("groceries"))!;
+    expect(autoConfirmEligible(p, draft)).toBe(true);
+    await store.savePouch({ ...p, confirmAbove: 0 });
+    const result = await confirmOrder(deps, TEST_USER, draft.id, undefined, { auto: true });
+    expect(result.status).toBe("draft");
+    expect((await store.getPouch("groceries"))!.balance).toBe($(300));
+  });
+
+  it("returns autoPaid and autoPayError on the order route", async () => {
+    const ok = await (await postOrder("large eggs")).json();
+    expect(ok.autoPaid).toBe(true);
+    expect(ok.autoPayError).toBeUndefined();
+    vi.spyOn(vault, "pay").mockRejectedValueOnce(new VaultRejected("OverDailyLimit"));
+    const refused = await (await postOrder("large eggs")).json();
+    expect(refused.autoPaid).toBe(false);
+    expect(refused.autoPayError).toMatchObject({ code: "OverDailyLimit" });
   });
 
   it("leaves the explicit confirm path unchanged for drafts", async () => {

@@ -75,6 +75,17 @@ describe("event decoding and row mapping", () => {
     expect(decode([])).toEqual([]);
   });
 
+  it("decodes ToppedUp/Withdrawn from the previous program (no trailing time) using the block time", async () => {
+    for (const name of ["ToppedUp", "Withdrawn"]) {
+      const disc = idlJson.events.find((e) => e.name === name)!.discriminator;
+      const data = Buffer.concat([Buffer.from(disc), pouchKey.toBuffer(), new BN(500).toArrayLike(Buffer, "le", 8)]).toString("base64");
+      const events = decode(programLogs(data));
+      expect(events).toHaveLength(1);
+      const rows = await toRows({ signature: "s", slot: 1, blockTime: 1_767_225_600 }, events, lookup, () => {});
+      expect(rows.events).toMatchObject([{ name, amount: 500, time: "2026-01-01T00:00:00.000Z" }]);
+    }
+  });
+
   it("records events added to a newer IDL generically", async () => {
     const newer = structuredClone(idlJson) as typeof idlJson;
     newer.events.push({ name: "PouchClosed", discriminator: [9, 9, 9, 9, 9, 9, 9, 9] });
