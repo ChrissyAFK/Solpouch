@@ -20,7 +20,8 @@ const store = process.env.DATABASE_URL ? await PostgresStore.connect(process.env
 console.log(`store: ${process.env.DATABASE_URL ? "postgres (Tiger Data)" : "memory"}`);
 if (process.env.VAULT_MODE === "chain") {
   const { assertCheckoutPayTo } = await import("./services/fulfillment.js");
-  assertCheckoutPayTo();
+  // Not fatal: the API still serves everything else, but any-store and web-store orders can't settle until this is set.
+  try { assertCheckoutPayTo(); } catch (err) { console.warn(`WARNING: ${(err as Error).message} Any-store and web-store orders will be rejected until it is set.`); }
 }
 let vault = createVaultClient(store);
 if (process.env.VAULT_MODE === "chain") {
