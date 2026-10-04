@@ -158,8 +158,6 @@ export function voiceRoutes(deps: Deps) {
         const {orderId,version} = orderIdBody.extend({version:z.number().int().positive()}).parse(body);
         try {
           // The user's "yes, pay for it" after the cart readback is the approval: quote and pay in one step.
-          const draft = await getOwnedOrder(deps, orderId, email);
-          if (draft.status === "draft" && Date.now() - Date.parse(draft.createdAt) < VOICE_CONFIRM_MIN_AGE_MS) return c.json({say:"Please listen to the read-back first, then say yes again to pay.",status:"draft",needsConfirmation:true});
           const order = await prepareDemoCheckout(deps,email,orderId,version);
           return c.json(await payAndSay(deps, email, order.id, order.version ?? -1));
         } catch (e) { if (e instanceof HttpError) return c.json(httpSay(e)); throw e; }
