@@ -302,17 +302,20 @@ function ChatPanel({ landing }: { landing: boolean }) {
     await askGemini(next);
   }
   // The voice token lets the agent's tools act for the signed-in user.
-  async function startAgent(textOnly: boolean) {
-    if (!isCurrent()) return;
-    const generation = sequence.current;
+  function requestVoiceCredentials() {
     const controller = new AbortController();
     voiceRequest.current?.abort();
-    if (voiceExpiry.current) clearTimeout(voiceExpiry.current);
     voiceRequest.current = controller;
     const setupTimeout = setTimeout(() => controller.abort(), 15000);
-    let credentials;
-    try { credentials = await api.voiceSession(controller.signal); }
-    finally { clearTimeout(setupTimeout); }
+    const pending = api.voiceSession(controller.signal).finally(() => clearTimeout(setupTimeout));
+    pending.catch(() => {}); // the awaiter handles it; a failed mic check may never await it
+    return pending;
+  }
+  async function startAgent(textOnly: boolean, prefetched?: ReturnType<typeof api.voiceSession>) {
+    if (!isCurrent()) return;
+    const generation = sequence.current;
+    if (voiceExpiry.current) clearTimeout(voiceExpiry.current);
+    const credentials = await (prefetched ?? requestVoiceCredentials());
     const { token, expiresAt, signedUrl, conversationToken } = credentials;
     if (!isCurrent() || generation !== sequence.current) return;
     const expiry = new Date(expiresAt).getTime();
@@ -441,17 +444,22 @@ function ChatPanel({ landing }: { landing: boolean }) {
         );
         return;
       }
-      if (permission !== "granted") setNotice("Allow microphone access in the browser prompt to start talking.");
-      try {
-        // Even a permission request resolved after closing must release its stream.
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach((t) => t.stop());
-      } catch {
-        if (!isSetupCurrent()) return;
-        setError(
-          "Solpouch needs your microphone to talk. Press Talk and choose Allow, or type your question instead.",
-        );
-        return;
+      // Fetch the session while the mic check runs instead of after it.
+      const credentials = requestVoiceCredentials();
+      if (permission !== "granted") {
+        setNotice("Allow microphone access in the browser prompt to start talking.");
+        try {
+          // Even a permission request resolved after closing must release its stream.
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          stream.getTracks().forEach((t) => t.stop());
+        } catch {
+          voiceRequest.current?.abort();
+          if (!isSetupCurrent()) return;
+          setError(
+            "Solpouch needs your microphone to talk. Press Talk and choose Allow, or type your question instead.",
+          );
+          return;
+        }
       }
       if (!isSetupCurrent()) return;
       setNotice(null);
@@ -459,7 +467,7 @@ function ChatPanel({ landing }: { landing: boolean }) {
       if (!isSetupCurrent()) return;
       setMode("agent");
       setSession("voice");
-      await startAgent(false);
+      await startAgent(false, credentials);
     } catch (cause) {
       if (!isSetupCurrent()) return;
       setSession(null);
