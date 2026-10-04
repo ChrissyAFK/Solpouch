@@ -6,6 +6,8 @@ export interface FundingRepository {
   get(id: string): Promise<FundingRequest | undefined>;
   list(owner: string): Promise<FundingRequest[]>;
   update(id: string, mutate: (record: FundingRequest) => FundingRequest): Promise<FundingRequest>;
+  /** Account deletion: removes every request the owner made. */
+  deleteOwner(owner: string): Promise<void>;
 }
 export class PostgresFundingRepository implements FundingRepository {
   constructor(private pool: Pool) {}
@@ -23,6 +25,7 @@ export class PostgresFundingRepository implements FundingRepository {
   }
   async get(id: string) { const r=await this.pool.query('SELECT data FROM funding_requests WHERE id=$1',[id]); return r.rows[0]?.data as FundingRequest | undefined; }
   async list(owner: string) { const r=await this.pool.query('SELECT data FROM funding_requests WHERE owner=$1 ORDER BY data->>\'createdAt\' DESC LIMIT 100',[owner]); return r.rows.map(row=>row.data as FundingRequest); }
+  async deleteOwner(owner: string) { await this.pool.query('DELETE FROM funding_requests WHERE owner=$1',[owner]); }
   async update(id: string, mutate: (record: FundingRequest) => FundingRequest) {
     const c=await this.pool.connect();
     try {
@@ -47,6 +50,7 @@ export class MemoryFundingRepository implements FundingRepository {
   }
   async get(id:string) { const r=this.records.get(id); return r ? structuredClone(r) : undefined; }
   async list(owner:string) { return structuredClone([...this.records.values()].filter(r=>r.owner===owner)); }
+  async deleteOwner(owner:string) { for(const [id,r] of this.records) if(r.owner===owner) this.records.delete(id); }
   async update(id:string,mutate:(r:FundingRequest)=>FundingRequest) {
     const r=this.records.get(id); if(!r) throw new Error('Funding request missing');
     const next=mutate(structuredClone(r));

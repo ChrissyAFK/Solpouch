@@ -232,6 +232,20 @@ export class PostgresStore implements Store, PaymentIndex {
   async deleteSession(id: string) { await this.query("DELETE FROM web_sessions WHERE id=$1",[id]); }
   async listSessions(email: string): Promise<AuthSession[]> { return (await this.query("SELECT * FROM web_sessions WHERE email=$1 AND expires_at > now()",[email])).rows.map(r=>({id:r.id,email:r.email,name:r.name,picture:r.picture,createdAt:iso(r.created_at),expiresAt:iso(r.expires_at)})); }
   async deleteSessions(email: string) { await this.query("DELETE FROM web_sessions WHERE email=$1",[email]); }
+  async deleteAccount(email: string) {
+    // payments/prices/vault_events mirror the public chain and hold no personal data: kept.
+    await this.lock(`user:${email}`, async () => {
+      await this.query("BEGIN");
+      try {
+        const mine = "SELECT id FROM pouches WHERE owner_email=$1";
+        await this.query(`DELETE FROM order_lines WHERE order_id IN (SELECT id FROM orders WHERE pouch_id IN (${mine}))`, [email]);
+        for (const t of ["orders", "topups", "withdrawals", "vault_operations"]) await this.query(`DELETE FROM ${t} WHERE pouch_id IN (${mine})`, [email]);
+        await this.query("DELETE FROM pouches WHERE owner_email=$1", [email]);
+        for (const t of ["shopping_lists WHERE owner_email", "web_sessions WHERE email", "auth_challenges WHERE email", "users WHERE email"]) await this.query(`DELETE FROM ${t}=$1`, [email]);
+        await this.query("COMMIT");
+      } catch (error) { await this.query("ROLLBACK").catch(() => {}); throw error; }
+    });
+  }
   async listTopUps(pouchId: string) { return (await this.query("SELECT * FROM topups WHERE pouch_id=$1 ORDER BY created_at DESC",[pouchId])).rows.map(toTopUp); }
   async getWithdrawal(id: string) { const { rows } = await this.query("SELECT * FROM withdrawals WHERE id=$1 ORDER BY created_at DESC LIMIT 1", [id]); return rows[0] ? toWithdrawal(rows[0]) : undefined; }
   async listWithdrawals(pouchId: string) { return (await this.query("SELECT * FROM withdrawals WHERE pouch_id=$1 ORDER BY created_at DESC", [pouchId])).rows.map(toWithdrawal); }

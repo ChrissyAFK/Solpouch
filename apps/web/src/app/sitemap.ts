@@ -10,5 +10,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     new URL("/contact", siteUrl).href,
     new URL("/privacy", siteUrl).href,
     new URL("/terms", siteUrl).href,
+    new URL("/delete-account", siteUrl).href,
   ].map((url) => ({ url }));
 }

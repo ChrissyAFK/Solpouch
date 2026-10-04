@@ -178,6 +178,21 @@ describe.skipIf(!url)("isolated real PostgreSQL (relational schema; fixture RPC)
     expect(await a.getSession(session.id)).toBeUndefined();
   });
 
+  it("deletes an account's rows in one transaction and leaves other owners alone", async () => {
+    const mine = { ...fixturePouch("del-mine"), ownerEmail: "gone@example.com" };
+    const other = { ...fixturePouch("del-other"), ownerEmail: "kept@example.com" };
+    await a.savePouch(mine); await a.savePouch(other);
+    const order = (id: string, pouchId: string) => ({ id, pouchId, merchantId: "thai-express", request: "x", lines: [], total: 1, status: "paid" as const, createdAt: new Date().toISOString() });
+    await a.saveOrder(order("00000000000000000000000000000d01", mine.id)); await a.saveOrder(order("00000000000000000000000000000d02", other.id));
+    await a.setWallet("gone@example.com", "wallet-gone");
+    await a.deleteAccount("gone@example.com");
+    expect(await b.listPouches("gone@example.com")).toEqual([]);
+    expect(await b.listOrders(mine.id)).toEqual([]);
+    expect(await b.getUser("gone@example.com")).toBeUndefined();
+    expect((await b.listPouches("kept@example.com")).length).toBe(1);
+    expect((await b.listOrders(other.id)).length).toBe(1);
+  });
+
   it("stores unique linked wallets and consumes a wallet challenge only once across pools", async () => {
     const now = new Date().toISOString();
     const one = {email:"wallet-one@example.com", wallet:"fixture-wallet", createdAt:now, updatedAt:now};

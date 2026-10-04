@@ -139,7 +139,27 @@
   gap: 10px;
   flex-wrap: wrap;
 }
+.danger p {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.danger ul {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.blockers {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 400px) {
+  .danger button {
+    width: 100%;
+  }
   .footer > button,
   .actions > button {
     flex: 1 1 100%;

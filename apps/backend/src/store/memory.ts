@@ -195,6 +195,17 @@ export class MemoryStore implements Store, PaymentIndex {
   async deleteSession(tokenHash: string) { this.sessions.delete(tokenHash); }
   async listSessions(email: string) { return structuredClone([...this.sessions.values()].filter(s => s.email === email && Date.parse(s.expiresAt) > Date.now())); }
   async deleteSessions(email: string) { for (const [id,s] of this.sessions) if (s.email === email) this.sessions.delete(id); }
+  async deleteAccount(email: string) {
+    // payments/prices/vault events mirror the public chain and hold no personal data: kept.
+    const ids = new Set([...this.pouches.values()].filter(p => p.ownerEmail === email).map(p => p.id));
+    for (const m of [this.orders, this.topups, this.withdrawals] as Map<string, { pouchId: string }>[]) for (const [id, r] of m) if (ids.has(r.pouchId)) m.delete(id);
+    for (const [id, o] of this.operations) if (ids.has(o.pouchId)) this.operations.delete(id);
+    for (const id of ids) this.pouches.delete(id);
+    for (const [id, l] of this.shoppingLists) if (l.ownerEmail === email) this.shoppingLists.delete(id);
+    for (const [id, c] of this.challenges) if (c.email === email) this.challenges.delete(id);
+    await this.deleteSessions(email);
+    this.users.delete(email);
+  }
   async listTopUps(pouchId: string) { return structuredClone([...this.topups.values()].filter(t=>t.pouchId===pouchId).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))); }
   async getUser(email: string) { return structuredClone(this.users.get(email)); }
   async saveUser(user: UserProfile) {

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ContactEmail } from "@/components/ContactEmail";
 import { InfoPage } from "@/components/InfoPage";
 import { pageMetadata } from "@/lib/site";
@@ -42,6 +43,11 @@ export default function PrivacyPage() {
         Demo payments are simulated. Wallet
         addresses and transactions are visible there and cannot be removed by
         us.
+      </p>
+      <h2>Deleting your account</h2>
+      <p>
+        You can delete your account and its data from Profile at any time. See{" "}
+        <Link href="/delete-account">how to delete your account</Link>.
       </p>
       <h2>Contact</h2>
       <p>

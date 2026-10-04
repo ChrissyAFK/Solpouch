@@ -64,6 +64,8 @@ export interface Store {
   deleteSession(tokenHash: string): Promise<void>;
   listSessions(email: string): Promise<AuthSession[]>;
   deleteSessions(email: string): Promise<void>;
+  /** Erases the account: sessions, challenges, shopping lists, the user row (and wallet link), and its pouches with their orders, top-ups, withdrawals and operation journal. Leaves the public-chain mirrors (payments, prices, vault_events). */
+  deleteAccount(email: string): Promise<void>;
   listTopUps(pouchId: string): Promise<TopUp[]>;
   getUser(email: string): Promise<UserProfile | undefined>;
   /** Partial profile edit (undefined leaves a field alone, null clears it). Routes never pass a wallet. */

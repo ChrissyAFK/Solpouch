@@ -48,6 +48,22 @@ export function authRoutes(deps: Deps, origins: string[] = []) {
   });
   app.use("/wallet/*", auth, async (c, next) => deps.store.withPouchLock(`user:${c.get("user").email}`, next));
   app.use("/wallet", auth, async (c, next) => deps.store.withPouchLock(`user:${c.get("user").email}`, next));
+  // Delete my account. Refuses while money or work is in flight; chain pouch accounts stay on chain (empty), no chain calls here.
+  app.use("/account", auth, async (c, next) => deps.store.withPouchLock(`user:${c.get("user").email}`, next));
+  app.delete("/account", rateLimit({ store: deps.store, windowMs: 60000, max: 3, key: "auth-delete-account" }), auth, async c => {
+    const email = c.get("user").email;
+    const blockers: string[] = [];
+    for (const p of await deps.store.listPouches(email)) {
+      if (p.balance > 0) blockers.push(`${p.name} still holds money. Withdraw or spend the remaining balance first`);
+      if ((await deps.store.listWithdrawals(p.id)).some(w => w.status === "holding" || w.status === "processing")) blockers.push(`${p.name} has a withdrawal in progress`);
+      if ((await deps.store.listTopUps(p.id)).some(t => t.status === "cooling_down" || t.status === "processing")) blockers.push(`${p.name} has a top-up in progress`);
+      if ((await deps.store.listOrders(p.id)).some(o => o.status === "paying")) blockers.push(`${p.name} has a payment in progress`);
+    }
+    if (blockers.length) return c.json({ error: "Your account can't be deleted yet. Empty your pouches and let anything in progress finish first.", code: "AccountNotEmpty", blockers }, 409);
+    await deps.fundingRepository?.deleteOwner(email);
+    await deps.store.deleteAccount(email);
+    return c.json({ ok: true });
+  });
   const voiceConfigured = () => Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_AGENT_ID && (process.env.VOICE_WEBHOOK_SECRET || process.env.ELEVENLABS_TOOL_SECRET) && process.env.ELEVENLABS_SECURE_TOOLS_CONFIGURED === "true");
   app.get("/voice-status", auth, (c) => c.json({ enabled: voiceConfigured() }));
   app.post("/voice-session", auth, async (c) => {

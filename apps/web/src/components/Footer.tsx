@@ -52,6 +52,7 @@ export function Footer() {
             <h2>Legal</h2>
             <Link href="/privacy">Privacy</Link>
             <Link href="/terms">Terms</Link>
+            <Link href="/delete-account">Delete account</Link>
           </nav>
         </div>
         <div className={styles.bottom}>

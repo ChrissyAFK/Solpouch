@@ -1,11 +1,12 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, errMsg, type Profile } from "@/lib/api";
+import { api, ApiRequestError, errMsg, type Profile } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ErrorBanner, Notice } from "@/components/ui";
 import { useRequestScope } from "@/lib/useRequestScope";
-import { getToken } from "@/lib/session";
+import { clearSession, getToken } from "@/lib/session";
 import { SessionManager } from "@/components/SessionManager";
 import { WalletLink } from "@/components/WalletLink";
 import { AlertPreferences } from "@/components/AccountAlerts";
@@ -56,6 +57,11 @@ export default function ProfilePage() {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [blockers, setBlockers] = useState<string[]>([]);
+  const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
 
   function adopt(p: Profile) {
@@ -134,6 +140,24 @@ export default function ProfilePage() {
       setError(errMsg(err));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function deleteAccount() {
+    if (confirmText !== "DELETE" || deleting || !sessionKey || getToken() !== sessionKey) return;
+    setDeleting(true);
+    setDeleteError(null);
+    setBlockers([]);
+    try {
+      await api.deleteAccount();
+      // The server session is gone with the account, so just drop it locally.
+      clearSession();
+      router.replace("/");
+    } catch (err) {
+      setDeleteError(errMsg(err));
+      setBlockers(err instanceof ApiRequestError ? err.blockers ?? [] : []);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -276,6 +300,53 @@ export default function ProfilePage() {
           Sign out
         </button>
       </div>
+
+      <section className={`sp-card ${styles.danger}`} aria-labelledby="delete-title">
+        <h2 id="delete-title" className={styles.heading}>
+          Delete account
+        </h2>
+        <p>Deleting your account permanently removes:</p>
+        <ul>
+          <li>your profile and every signed-in session</li>
+          <li>your pouches and their order, top-up and withdrawal history</li>
+          <li>your shopping lists and your wallet link</li>
+        </ul>
+        <p>
+          Transactions already made on the Solana chain are public and cannot
+          be erased. Your pouches must be empty first: withdraw or spend any
+          balance and let anything in progress finish. This cannot be undone.
+        </p>
+        <label className="sp-label" htmlFor="delete-confirm">
+          Type DELETE to confirm
+        </label>
+        <input
+          id="delete-confirm"
+          className="sp-input"
+          type="text"
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+          value={confirmText}
+          onChange={(e) => setConfirmText(e.target.value)}
+          aria-describedby={deleteError ? "delete-error" : undefined}
+        />
+        <div id="delete-error" aria-live="polite">
+          <ErrorBanner message={deleteError} />
+          {blockers.length > 0 && (
+            <ul className={styles.blockers}>
+              {blockers.map((b) => <li key={b}>{b}</li>)}
+            </ul>
+          )}
+        </div>
+        <button
+          type="button"
+          className="sp-button sp-button-danger"
+          disabled={confirmText !== "DELETE" || deleting}
+          onClick={deleteAccount}
+        >
+          {deleting ? "Deleting…" : "Delete my account"}
+        </button>
+      </section>
     </div>
   );
 }

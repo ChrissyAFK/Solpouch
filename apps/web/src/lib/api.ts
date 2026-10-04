@@ -42,10 +42,13 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
 export class ApiRequestError extends Error {
   code?: string;
   status: number;
-  constructor(status: number, body: ApiError) {
+  /** Plain-language reasons a request was refused (e.g. account deletion). */
+  blockers?: string[];
+  constructor(status: number, body: ApiError & { blockers?: string[] }) {
     super(body.error);
     this.status = status;
     this.code = body.code;
+    this.blockers = body.blockers;
   }
 }
 
@@ -90,6 +93,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
       throw new ApiRequestError(res.status, {
         error: message,
         code: body.code,
+        blockers: Array.isArray((body as { blockers?: unknown }).blockers) ? (body as { blockers: unknown[] }).blockers.filter((b): b is string => typeof b === "string") : undefined,
       });
     }
     if (res.status === 204) return undefined as T;
@@ -160,6 +164,7 @@ export const api = {
     method: "POST", headers: { Authorization: `Bearer ${token}` },
   }),
   revokeSession: (id: string) => req<{ ok: boolean }>(`/auth/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  deleteAccount: () => req<{ ok: boolean }>("/auth/account", { method: "DELETE" }),
   getProfile: () => req<Profile>("/profile"),
   updateProfile: (b: UpdateProfileBody) =>
     req<Profile>("/profile", { method: "PATCH", body: JSON.stringify(b) }),
