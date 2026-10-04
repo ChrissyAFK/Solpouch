@@ -84,13 +84,13 @@ describe("bug 3: store but no items", () => {
   it("asks what they want", async () => {
     m.parse.mockImplementation(() => ({ store: "McDonald's", items: [] }));
     const err = await fail(draft("a McDonald's order"));
-    expect(err).toMatchObject({ status: 400, code: "NeedItems", message: "What would you like from McDonald's?" });
+    expect(err).toMatchObject({ status: 400, code: "NeedClarification", message: "What would you like from McDonald's?" });
     expect(fallbackParse("a McDonald's order")).toMatchObject({ store: "McDonald's", items: [] });
     expect(fallbackParse("get me something from Tim Hortons")).toMatchObject({ store: "Tim Hortons", items: [] });
   });
-  it("no store and no items keeps the old 400", async () => {
+  it("no store and no items asks what to order", async () => {
     m.parse.mockImplementation(() => ({ items: [] }));
-    expect(await fail(draft("hmm"))).toMatchObject({ status: 400, message: "Could not find any items in that request" });
+    expect(await fail(draft("hmm"))).toMatchObject({ status: 400, code: "NeedClarification", message: "What would you like me to order?" });
   });
 });
 
@@ -103,10 +103,10 @@ describe("bug 4: unavailable vs not found", () => {
     m.create.mockResolvedValue({ content: [{ type: "text", text: "no products found" }] });
     expect(await findOnline([item("chainsaw")])).toBeNull();
   });
-  it("createDraft: provider failure is 422 SearchUnavailable", async () => {
+  it("createDraft: provider failure is 503 SearchUnavailable", async () => {
     m.parse.mockImplementation(() => ({ items: [item("zzqx gadget")] }));
     m.find.mockRejectedValue(new SearchUnavailableError("down"));
-    expect(await fail(draft("zzqx gadget", "groceries"))).toMatchObject({ status: 422, code: "SearchUnavailable" });
+    expect(await fail(draft("zzqx gadget", "groceries"))).toMatchObject({ status: 503, code: "SearchUnavailable" });
   });
   it("createDraft: nothing found is 422 NotFound with a helpful message", async () => {
     m.parse.mockImplementation(() => ({ store: "Tim Hortons", items: [item("zzqx gadget"), item("flarp")] }));
@@ -137,11 +137,11 @@ describe("bug 5: price limit reaches the search", () => {
 });
 
 describe("bug 6: web search timeout", () => {
-  it("uses 45s and no retries for Claude web search", async () => {
+  it("uses 15s and no retries for the first Claude web search", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "fake");
     m.create.mockResolvedValue({ content: [{ type: "text", text: "{}" }] });
     await findOnline([item("gadget")]);
-    expect(m.create.mock.calls[0][1]).toEqual({ timeout: 45_000, maxRetries: 0 });
+    expect(m.create.mock.calls[0][1]).toEqual({ timeout: 15_000, maxRetries: 0 });
   });
 });
 
@@ -164,7 +164,7 @@ describe("live bugs A-D", () => {
   it("A: store with no items and no cap still asks for items", async () => {
     m.parse.mockImplementation(() => ({ store: "McDonald's", items: [] }));
     const err = await fail(draft("a McDonald's order"));
-    expect(err.code).toBe("NeedItems");
+    expect(err.code).toBe("NeedClarification");
     expect(m.find).not.toHaveBeenCalled();
   });
   it("A: validateFind builds lines from the find when items is empty; prompt says no items named", async () => {
