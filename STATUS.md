@@ -25,7 +25,11 @@ Measured with `apps/backend/eval/run.ts` (40 live requests, 4 at a time, 2026-10
 | Haiku 4.5 (default, kept) | 36/40, then 6/6 on the restaurant group after a prompt fix | 7.7 s | 11.8 s | 2 of 44 |
 | `claude-sonnet-5-5` | 36/40 | 7.1 s | 12.0 s | 1 of 39 |
 
-Known limits: almost every large retailer answers a direct page fetch with 403 (Save-On-Foods, Rona, Best Buy, Shoppers, Walmart tested), so nearly all prices stay labelled estimates; prices for the same item moved between runs (Edo Japan bowl 15.93 and 11.95). Lowe's no longer trades in Canada and returns not found. Results vary run to run by one or two cases. Backend tests: 470 passed. Not yet done: a signed-in browser run of the whole flow, merge, deploy, applying the voice settings.
+Known limits: almost every large retailer answers a direct page fetch with 403 (Save-On-Foods, Rona, Best Buy, Shoppers, Walmart tested), so nearly all prices stay labelled estimates; prices for the same item moved between runs (Edo Japan bowl 15.93 and 11.95). Lowe's no longer trades in Canada and returns not found. Results vary run to run by one or two cases. Backend tests: 476 passed.
+
+Final review (2026-10-04): no path pays an estimated or look-alike line without a yes. Fixed after it (`3055854`, `781dff8`): a page price is confirmed only when the page's product name holds every word of the item (or half the words and a price within 5%), and a page with no currency counts as CAD only on a `.ca` domain or a `ca` / `en-ca` / `fr-ca` first path segment; users whose pouches allow only catalog merchants get a catalog draft again; voice says "Estimated total" only when a line is an estimate; the result cache key includes quantity; more reserved address ranges are refused; `voice/apply-settings.mjs` reads the agent and merges before it writes. A run on `3055854` gave 34/40, median 6.7 s, slowest 11.6 s, 1 of 41 prices confirmed (three NOT FOUND at Walmart, No Frills and Home Hardware that passed in the earlier run, Cactus Club over its $30 limit, and one "unavailable" caused by a removed retry, since restored). No full run was completed on `781dff8`.
+
+Not yet done: a signed-in browser run of the whole flow, merge, deploy, applying the voice settings.
 
 ## Backend hardening branch (2026-10-03)
 
