@@ -2,18 +2,14 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ConversationProvider, useConversation } from "@elevenlabs/react";
-import { BACKEND_URL, api, errMsg } from "@/lib/api";
+import { BACKEND_URL, api, authFetch, errMsg } from "@/lib/api";
 import { getToken, clearSession } from "@/lib/session";
 import { GoogleButton, useAuth } from "./AuthProvider";
 import { ChatOrderCards } from "./ChatOrderCards";
 import styles from "./ChatWidget.module.css";
 
 type Message = { role: "user" | "assistant"; content: string };
-type Mode = "agent" | "checking" | "gemini" | "demo" | "unavailable";
-// Public agent id, not a secret. The agent's tools reach the backend with a server-side secret.
-const AGENT_ID =
-  process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID ??
-  "agent_5201m41wvxthe08tk6nm81391sss";
+type Mode = "agent" | "checking" | "claude" | "gemini" | "demo" | "unavailable";
 function ChatIcon() {
   return (
     <svg
@@ -46,7 +42,13 @@ function ChatPanel() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
-  const [mode, setMode] = useState<Mode>(AGENT_ID ? "agent" : "checking");
+  const [mode, setMode] = useState<Mode>("checking");
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  useEffect(() => {
+    let live = true;
+    if (user) void api.voiceStatus().then(data => { if (live) setVoiceEnabled(data.enabled); }).catch(() => {});
+    return () => { live = false; };
+  }, [user, sessionKey]);
   // "text" or "voice" session with the ElevenLabs agent, null when not connected.
   const [session, setSession] = useState<"text" | "voice" | null>(null);
   const queued = useRef<string | null>(null);
@@ -157,14 +159,14 @@ function ChatPanel() {
       controller.abort();
       setMode("unavailable");
     }, 10000);
-    void fetch(`${BACKEND_URL}/chat/status`, {
+    void authFetch(`${BACKEND_URL}/chat/status`, {
       signal: controller.signal,
       cache: "no-store",
     })
       .then(async (response) => {
         if (!response.ok) throw new Error();
         const data = await response.json();
-        if (data.mode !== "demo" && data.mode !== "gemini") throw new Error();
+        if (data.mode !== "demo" && data.mode !== "gemini" && data.mode !== "claude") throw new Error();
         if (!controller.signal.aborted) setMode(data.mode);
       })
       .catch(() => {
@@ -245,7 +247,7 @@ function ChatPanel() {
     setRetryMessages(null);
     setPending(true);
     busy.current = true;
-    if (mode === "agent") {
+    if ((mode === "agent" || voiceEnabled) && !retry) {
       lastTyped.current = text;
       if (session) {
         agent.sendUserMessage(text);
@@ -275,9 +277,9 @@ function ChatPanel() {
     voiceRequest.current?.abort();
     if (voiceExpiry.current) clearTimeout(voiceExpiry.current);
     voiceRequest.current = controller;
-    const { token, expiresAt } = await api.voiceToken(controller.signal);
+    const { token, expiresAt, signedUrl } = await api.voiceSession(controller.signal);
     if (!isCurrent() || generation !== sequence.current) return;
-    const expiry = expiresAt ? Date.parse(expiresAt) : Date.now() + 15 * 60_000;
+    const expiry = new Date(expiresAt).getTime();
     if (!Number.isFinite(expiry) || expiry <= Date.now()) throw new Error("Voice session expired. Reconnect to continue.");
     voiceExpiry.current = setTimeout(() => {
       if (!isCurrent() || generation !== sequence.current) return;
@@ -286,9 +288,9 @@ function ChatPanel() {
     }, Math.min(expiry - Date.now(), 15 * 60_000));
     agentSequence.current = generation;
     await agent.startSession({
-      agentId: AGENT_ID,
+      signedUrl,
       connectionType: "websocket",
-      dynamicVariables: { user_token: token },
+      dynamicVariables: { secret__solpouch_voice_token: `Bearer ${token}` },
       ...(textOnly ? { textOnly: true } : {}),
     });
     if (!isCurrent() || generation !== sequence.current) await agent.endSession();
@@ -333,7 +335,7 @@ function ChatPanel() {
         );
       if (
         typeof data?.reply !== "string" ||
-        (data.mode !== "demo" && data.mode !== "gemini")
+        (data.mode !== "demo" && data.mode !== "gemini" && data.mode !== "claude")
       )
         throw new Error(
           "The assistant returned an invalid reply. Please retry.",
@@ -365,7 +367,7 @@ function ChatPanel() {
     }
   }
   async function toggleVoice() {
-    if (!isCurrent()) return;
+    if (!isCurrent() || !voiceEnabled) return;
     if (session === "voice") {
       stopVoice();
       return;
@@ -458,7 +460,7 @@ function ChatPanel() {
                   ? "Checking connection…"
                   : mode === "demo"
                     ? "Assistant"
-                    : mode === "gemini"
+                    : mode === "claude" ? "Powered by Claude" : mode === "gemini"
                       ? "Powered by Gemini"
                       : "Connection unavailable"}
               </span>
@@ -603,7 +605,7 @@ function ChatPanel() {
             />
             <div className={styles.composerBottom}>
               <span id="solpouch-chat-help">Shift + Enter for a new line</span>
-              {AGENT_ID && (
+              {voiceEnabled && (
                 <button
                   type="button"
                   className={styles.voice}

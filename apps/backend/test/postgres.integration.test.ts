@@ -154,6 +154,18 @@ describe.skipIf(!url)("isolated real PostgreSQL (relational schema; fixture RPC)
     expect(await a.getSession(session.id)).toBeUndefined();
   });
 
+  it("stores unique linked wallets and consumes a wallet challenge only once across pools", async () => {
+    const now = new Date().toISOString();
+    const one = {email:"wallet-one@example.com", wallet:"fixture-wallet", createdAt:now, updatedAt:now};
+    const two = {...one,email:"wallet-two@example.com"};
+    const results = await Promise.allSettled([a.saveUser(one),b.saveUser(two)]);
+    expect(results.filter(r=>r.status==="fulfilled")).toHaveLength(1);
+    expect((await b.findUserByWallet("fixture-wallet"))?.email).toMatch(/^wallet-(one|two)@/);
+    await a.saveChallenge({id:"challenge-fixture",wallet:"fixture-wallet",email:one.email,message:"fixture",expiresAt:new Date(Date.now()+60000).toISOString()});
+    const challenges = await Promise.all([a.consumeChallenge("challenge-fixture"),b.consumeChallenge("challenge-fixture")]);
+    expect(challenges.filter(Boolean)).toHaveLength(1);
+  });
+
   it("enforces a shared atomic rate limit across pools", async () => {
     const results = await Promise.all(Array.from({ length: 24 }, (_, i) => (i % 2 ? a : b).consumeRateLimit("shared-bucket", 60_000, 7)));
     expect(results.filter(r => r.allowed)).toHaveLength(7);

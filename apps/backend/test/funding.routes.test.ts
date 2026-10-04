@@ -1,0 +1,16 @@
+import {describe,it,expect,afterEach,vi} from 'vitest';
+import {createApp} from '../src/app.js';
+import {MemoryStore} from '../src/store/memory.js';
+import {MockVaultClient} from '../src/vault/mock.js';
+import {MemoryFundingRepository} from '../src/funding/repository.js';
+import {authHeaders} from './helpers.js';
+import type {FundingRequest} from '../src/funding/types.js';
+const fixture:FundingRequest={id:'12345678-1234-4234-8234-123456789012',owner:'owner@example.test',wallet:'11111111111111111111111111111111',idempotencyKey:'12345678-1234-4234-8234-123456789013',country:'US',currency:'USD',direction:'BUY',amount:'20',environment:'staging',status:'processing',createdAt:'2026-01-01',updatedAt:'2026-01-01'};
+function setup(repo=new MemoryFundingRepository()){const store=new MemoryStore([]);return{store,repo,app:createApp({store,vault:new MockVaultClient(store,()=>undefined),fundingRepository:repo})};}
+afterEach(()=>vi.unstubAllEnvs());
+describe('funding HTTP trust boundary',()=>{
+ it('requires a live session for funding config/list/start/status',async()=>{const {app}=setup();for(const path of ['/funding','/funding/config','/funding/'+fixture.id+'/reconcile'])expect((await app.request(path,{method:path.endsWith('reconcile')?'POST':'GET'})).status).toBe(401);expect((await app.request('/funding',{method:'POST',body:'{}'})).status).toBe(401);});
+ it('isolates history and hides owner and idempotency key',async()=>{const {app,store,repo}=setup();await repo.create(fixture);const own=await app.request('/funding',{headers:await authHeaders(store,fixture.owner)});expect(own.status).toBe(200);const rows=await own.json();expect(rows[0].id).toBe(fixture.id);expect(rows[0].owner).toBeUndefined();expect(rows[0].idempotencyKey).toBeUndefined();expect(await (await app.request('/funding',{headers:await authHeaders(store,'other@example.test')})).json()).toEqual([]);expect((await app.request('/funding/'+fixture.id+'/reconcile',{method:'POST',headers:await authHeaders(store,'other@example.test')})).status).toBe(404);});
+ it('fails closed without persistent repository and cannot accept browser settlement fields',async()=>{const store=new MemoryStore([]),app=createApp({store,vault:new MockVaultClient(store,()=>undefined)}),headers=await authHeaders(store);expect((await app.request('/funding',{headers})).status).toBe(503);const result=await app.request('/funding',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({country:'US',direction:'BUY',amount:'20',idempotencyKey:fixture.idempotencyKey,status:'confirmed',wallet:fixture.wallet})});expect(result.status).toBe(400);expect((await (await app.request('/funding/config',{headers})).json()).productionEnabled).toBe(false);});
+ it('webhook endpoint does not require user session but rejects unsigned callback',async()=>{const {app}=setup();vi.stubEnv('TRANSAK_API_KEY','fixture');vi.stubEnv('TRANSAK_ACCESS_TOKEN','fixture-secret');vi.stubEnv('TRANSAK_REFERRER_DOMAIN','localhost');const result=await app.request('/funding-webhooks/transak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:'unsigned-user-success'})});expect(result.status).toBe(400);});
+});

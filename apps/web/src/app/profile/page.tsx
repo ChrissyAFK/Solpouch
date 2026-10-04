@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errMsg, type Profile } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
+import Link from "next/link";
+import { WalletLink } from "@/components/WalletLink";
 import { ErrorBanner, Notice } from "@/components/ui";
 import { useRequestScope } from "@/lib/useRequestScope";
 import { getToken } from "@/lib/session";
@@ -238,6 +240,18 @@ export default function ProfilePage() {
                 day: "numeric",
               })}
         </p>
+      </section>
+
+      <section className="sp-card" aria-labelledby="wallet-title">
+        <h2 id="wallet-title" className={styles.heading}>
+          Wallet
+        </h2>
+        <p className={styles.hint}>
+          Your wallet is used to add money to your pouches. Linking it only
+          proves it&apos;s yours; it doesn&apos;t move money.
+        </p>
+        <WalletLink />
+        <Link href="/funding" className="underline">Add or withdraw wallet funds</Link>
       </section>
 
       <ErrorBanner message={error} />

@@ -2,6 +2,8 @@
 
 **Budget pouches your AI shops from, and can't refill.**
 
+Backend hardening is documented in [BACKEND-HARDENING.md](BACKEND-HARDENING.md): wallet sign-in and explicit ownership are required; chain mode is a single-owner devnet demo. Voice supports signed, wallet-scoped sessions once provider tool headers are configured; the live sign-in integration is pending the collaborator’s source.
+
 Split your money into pouches (Uber Eats, groceries, fun money, job-site supplies), each held by our own Solana program with its own limits. Tell Solpouch what you need, by voice or text. It finds the items, shows you exactly what it found, and buys only after you confirm. When a pouch is empty, it's empty: the AI can't top it up, and neither can you without deliberately going to the app and adding money.
 
 Built at StormHacks 2026 · [solpouch.tech](https://solpouch.tech)
@@ -128,4 +130,4 @@ flowchart TD
 
 ## Security notes
 
-The pouch rules are enforced by our on-chain program, so the backend never holds a key that can refill, withdraw or move money. It holds only the AI's key, which can call `pay` within each pouch's limits. The program is unaudited hackathon code running on devnet with a test USDC token. A production version would need an audit, a hardware-backed signer for the AI key and a regulated on-ramp for bank top-ups. Revocation stops future purchases; it can't undo completed ones.
+The pouch rules are enforced by our on-chain program. The current devnet demo backend holds both the owner key and the restricted AI payment key; production wallet-signed owner transactions are not implemented. The program is unaudited hackathon code running on devnet with a test USDC token. A production version would need an audit, a hardware-backed signer for the AI key and a regulated on-ramp for bank top-ups. Revocation stops future purchases; it can't undo completed ones.

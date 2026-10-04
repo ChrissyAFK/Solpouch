@@ -11,7 +11,10 @@ import type { GoogleUser } from "../auth/google.js";
 import type { Store } from "../store/types.js";
 import { VaultRejected, type VaultClient } from "../vault/types.js";
 
+import type { FundingRepository } from "../funding/repository.js";
+
 export interface Deps {
+  fundingRepository?: FundingRepository;
   store: Store;
   vault: VaultClient;
   /** Override Google ID token verification (tests). */

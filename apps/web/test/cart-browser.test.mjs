@@ -13,6 +13,7 @@ async function setup(t, orders, before = async () => {}) {
  await page.route('**/auth/me',r=>r.fulfill({json:{user}}));
  await page.route('**/pouches',r=>r.fulfill({json:[]}));
  await page.route('**/orders',r=>r.fulfill({json:orders}));
+ await page.route('**/auth/voice-status',r=>r.fulfill({json:{enabled:false}}));
  await page.route('**/chat/status',r=>r.fulfill({json:{mode:'demo'}}));
  await before(page);
  await page.goto(`${origin}/dashboard`);
@@ -38,7 +39,8 @@ test('web references show retailer links and never offer payment',async t=>{
 test('expired agent session closes without replaying an action',async t=>{
  let sockets=0; let closed=0;
  const page=await setup(t,[],async page=>{
- await page.route('**/auth/voice-token',r=>r.fulfill({json:{token:'short-lived-fixture',expiresAt:new Date(Date.now()+900).toISOString()}}));
+ await page.route('**/auth/voice-status',r=>r.fulfill({json:{enabled:true}}));
+ await page.route('**/auth/voice-session',r=>r.fulfill({json:{token:'short-lived-fixture',signedUrl:'wss://api.elevenlabs.io/v1/convai/conversation?agent_id=fixture',expiresAt:new Date(Date.now()+900).toISOString()}}));
  await page.routeWebSocket(/api\.elevenlabs\.io/,ws=>{
   sockets++;ws.onClose(()=>closed++);
   ws.onMessage(raw=>{const message=JSON.parse(raw);if(message.type==='conversation_initiation_client_data')ws.send(JSON.stringify({type:'conversation_initiation_metadata',conversation_initiation_metadata_event:{conversation_id:'expiry-fixture',agent_output_audio_format:'pcm_16000',user_input_audio_format:'pcm_16000'}}));});

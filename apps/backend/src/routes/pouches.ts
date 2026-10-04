@@ -1,3 +1,4 @@
+import { reconcilePouch } from "../services/reconcile.js";
 import { randomBytes } from "node:crypto";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -30,7 +31,7 @@ const updateBody = z.object({
 export function pouchRoutes(deps: Deps) {
   const app = new Hono<AuthEnv>();
 
-  app.get("/", async (c) => c.json((await deps.store.listPouches(c.get("user").email)).map(publicPouch)));
+  app.get("/", async (c) => { const rows = await deps.store.listPouches(c.get("user").email); return c.json(await Promise.all(rows.map(async p => publicPouch(await reconcilePouch(deps, p.id))))); });
 
   app.post("/", async (c) => {
     const email = c.get("user").email;
@@ -56,7 +57,7 @@ export function pouchRoutes(deps: Deps) {
     });
   });
 
-  app.get("/:id", async (c) => c.json(publicPouch(await getOwnedPouch(deps, c.req.param("id"), c.get("user").email))));
+  app.get("/:id", async (c) => { const p = await getOwnedPouch(deps, c.req.param("id"), c.get("user").email); return c.json(publicPouch(await reconcilePouch(deps,p.id))); });
 
   app.patch("/:id/rules", async (c) => {
     return deps.store.withPouchLock(c.req.param("id"),async()=> {
@@ -64,7 +65,8 @@ export function pouchRoutes(deps: Deps) {
     const b = updateBody.parse(await c.req.json());
     Object.assign(p, Object.fromEntries(Object.entries(b).filter(([, v]) => v !== undefined)));
     await deps.vault.updateRules(p);
-    return c.json(publicPouch(await deps.store.savePouch(p)));
+    const fresh = await getOwnedPouch(deps, p.id, c.get("user").email);
+    return c.json(publicPouch(await deps.store.savePouch({ ...fresh, ...Object.fromEntries(Object.entries(b).filter(([,v])=>v!==undefined)) })));
     });
   });
 

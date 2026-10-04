@@ -237,7 +237,8 @@ function OrderWorkspace() {
   const selected = pouches.find((p) => p.id === (order?.pouchId ?? pouchId));
   const isDraft = order?.status === "draft";
   const referenceOnly = !!order && isCheckoutReference(order);
-  const step = !order ? 1 : isDraft ? 2 : 3;
+  const isPaying = order?.status === "paying";
+  const step = !order ? 1 : isDraft || isPaying ? 2 : 3;
   const merchant = merchants.find((m) => m.id === order?.merchantId);
   const paidDate = new Date(order?.paidAt ?? order?.createdAt ?? Date.now()).toLocaleDateString(undefined, {
     year: "numeric",
@@ -499,7 +500,6 @@ function OrderWorkspace() {
                 {order.status === "paying" && <Notice>
                   <strong>Checking payment</strong><p>The result is not confirmed yet. Do not create another order or pay again. Check this same payment to recover its result.</p>
                   {order.txSignature && <p className="break-all text-xs">Transaction: {order.txSignature}</p>}
-                  <button className={btnSecondary} disabled={busy} onClick={() => void act("confirm")}>{busy ? "Checking…" : "Check payment status"}</button>
                 </Notice>}
                 {order.status === "paid" && <div className="my-4 flex flex-wrap gap-3">
                   <button className={btnSecondary} onClick={() => downloadFile(`solpouch-receipt-${order.id.replace(/[^a-z0-9_-]/gi, "")}.txt`, receiptText(order, order.store?.name ?? merchant?.name ?? order.merchantId), "text/plain;charset=utf-8")}>Download receipt</button>
@@ -595,7 +595,11 @@ function OrderWorkspace() {
                 </>
                 )}
                 <div className="mt-6 flex flex-wrap gap-3">
-                  {isDraft ? (
+                  {isPaying ? (
+                    <button className={btnPrimary} disabled={busy} onClick={() => void act("confirm")}>
+                      {busy ? "Checking payment…" : "Check payment status"}
+                    </button>
+                  ) : isDraft ? (
                     <>
                       <button
                         className={btnPrimary}

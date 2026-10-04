@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useAuth } from "@/components/AuthProvider";
+import { WalletLink } from "@/components/WalletLink";
 import { StatePanel } from "@/components/StatePanel";
 import { PouchSkeleton } from "@/components/Skeletons";
 import { useParams } from "next/navigation";
@@ -48,6 +50,8 @@ function TopUpSection({
   pouch: Pouch;
   onDone: () => Promise<void>;
 }) {
+  const { user } = useAuth();
+  const hasWallet = Boolean(user?.wallet);
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [topup, setTopup] = useState<TopUp | null>(null);
@@ -137,7 +141,7 @@ function TopUpSection({
 
   async function start(e: React.FormEvent) {
     e.preventDefault();
-    if (busy || resumeLoading || resumeError) return;
+    if (busy || resumeLoading || resumeError || !hasWallet) return;
     const micros = toMicros(Number(amount));
     if (!Number.isSafeInteger(micros) || micros <= 0) {
       setError("Enter a valid amount.");
@@ -219,7 +223,7 @@ function TopUpSection({
         {processing && <Notice><strong>Checking top-up</strong><p>The transfer result is not confirmed. Do not start another top-up for the same funds.</p><button className={btnSecondary} disabled={busy} onClick={() => void complete(false)}>Check top-up status</button></Notice>}
         <ErrorBanner message={error} />
         {added && <Notice>{added}</Notice>}
-        {!topup ? (
+        {!topup && !hasWallet ? (<div className="space-y-3"><p>Link a wallet to add money</p><WalletLink /></div>) : !topup ? (
           <form onSubmit={start} className="space-y-4">
             <div>
               <span className={label}>Amount · USDC</span>

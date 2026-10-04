@@ -15,6 +15,27 @@ import { clearSession, getToken } from "./session";
 export const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8787";
 
+export const SESSION_EXPIRED_EVENT = "solpouch:session-expired";
+
+/** fetch with the Google Bearer token; a 401 clears the session. */
+export async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const token = getToken();
+  const res = await fetch(input, {
+    ...init,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
+    },
+  });
+  const requestToken = new Headers(init?.headers).get("Authorization") ?? (token ? `Bearer ${token}` : null);
+  if (res.status === 401 && requestToken === (getToken() ? `Bearer ${getToken()}` : null)) {
+    clearSession();
+    if (typeof window !== "undefined")
+      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+  }
+  return res;
+}
+
 export class ApiRequestError extends Error {
   code?: string;
   status: number;
@@ -31,7 +52,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
   try {
-    res = await fetch(BACKEND_URL + path, {
+    res = await authFetch(BACKEND_URL + path, {
       ...init,
       headers: {
         "Content-Type": "application/json",
@@ -55,7 +76,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
       const body =
         data && typeof data === "object" ? (data as Partial<ApiError>) : {};
       const message =
-        res.status >= 500
+        res.status >= 500 && body.code !== "PaymentPending"
           ? "Solpouch is having trouble right now. Try again in a moment."
           : typeof body.error === "string"
             ? body.error
@@ -107,7 +128,20 @@ export type UpdateProfileBody = {
 };
 
 export type AuthSession = { id: string; createdAt: string; expiresAt: string; current: boolean };
+export type WalletUser = {
+  email: string;
+  name?: string;
+  picture?: string;
+  wallet?: string;
+};
+
+export type FundingRequest = { id: string; direction: "BUY" | "SELL"; country: "US" | "CA"; currency: "USD" | "CAD"; amount: string; wallet: string; environment: "staging"; status: "created" | "session_ready" | "session_uncertain" | "processing" | "provider_completed" | "sandbox_completed" | "confirmed" | "failed" | "cancelled" | "refunded"; createdAt: string; updatedAt: string; providerOrderId?: string; txSignature?: string; cryptoAmount?: string; message?: string };
+export type FundingConfig = { environment: "staging"; productionEnabled: false; configured: boolean; countries: { country: "US" | "CA"; currency: "USD" | "CAD"; buyEnabled: boolean; sellEnabled: boolean }[]; notice: string };
 export const api = {
+  fundingConfig: () => req<FundingConfig>("/funding/config"),
+  fundingRequests: () => req<FundingRequest[]>("/funding"),
+  startFunding: (body: { country: "US" | "CA"; direction: "BUY" | "SELL"; amount: string; idempotencyKey: string }) => post<{ request: FundingRequest; widgetUrl?: string }>("/funding", body),
+  reconcileFunding: (id: string) => post<FundingRequest>(`/funding/${encodeURIComponent(id)}/reconcile`),
   sessions: () => req<{ sessions: AuthSession[] }>("/auth/sessions"),
   logout: (token: string, all = false) => req<{ ok: boolean }>(all ? "/auth/logout-all" : "/auth/logout", {
     method: "POST", headers: { Authorization: `Bearer ${token}` },
@@ -128,6 +162,15 @@ export const api = {
   unfreeze: (id: string) => post<Pouch>(`/pouches/${id}/unfreeze`),
   voiceToken: (signal?: AbortSignal) =>
     req<{ token: string; expiresAt?: string }>("/auth/voice-token", { method: "POST", signal }),
+  voiceSession: (signal?: AbortSignal) =>
+    req<{ signedUrl: string; token: string; expiresAt: number | string }>("/auth/voice-session", { method: "POST", signal }),
+  voiceStatus: () => req<{ enabled: boolean }>("/auth/voice-status"),
+  walletChallenge: (wallet: string) =>
+    post<{ id: string; message: string }>("/auth/wallet/challenge", { wallet }),
+  walletVerify: (id: string, signature: string) =>
+    post<{ user: WalletUser }>("/auth/wallet/verify", { id, signature }),
+  unlinkWallet: () =>
+    req<{ user: WalletUser }>("/auth/wallet", { method: "DELETE" }),
   merchants: () => req<Merchant[]>("/merchants"),
   createInstacartLink: (id: string) => post<Order>(`/orders/${encodeURIComponent(id)}/instacart`),
   createOrder: (b: CreateOrderBody) => post<Order>("/orders", b),
@@ -139,6 +182,7 @@ export const api = {
   confirm: (id: string) => post<Order>(`/orders/${id}/confirm`),
   cancel: (id: string) => post<Order>(`/orders/${id}/cancel`),
   startTopUp: (b: StartTopUpBody) => post<TopUp>("/topups", b),
+  topUp: (id: string) => req<TopUp>(`/topups/${encodeURIComponent(id)}`),
   completeTopUp: (id: string) => post<TopUp>(`/topups/${id}/complete`),
   cancelTopUp: (id: string) => post<TopUp>(`/topups/${id}/cancel`),
   listPendingTopUps: (pouchId?: string) =>
@@ -154,6 +198,7 @@ export function errMsg(e: unknown): string {
     const messages: Record<string, string> = {
       InstacartNotConfigured: "Instacart shopping links are not configured yet. No purchase was made.",
       InstacartUnavailable: "Instacart could not prepare the shopping list. No purchase was made. Try again shortly.",
+      PaymentPending: e.message,
       PouchFrozen: "This pouch is frozen. Unfreeze it before making a payment.",
       MerchantNotAllowed:
         "This store is not allowed for this pouch. Choose another pouch or update its allowed stores.",

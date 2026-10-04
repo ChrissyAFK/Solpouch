@@ -2,7 +2,7 @@ import { consumeAiBudget } from "../security/rateLimit.js";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
-import { chatMode, demoReply, geminiReply } from "../ai/chat.js";
+import { chatMode, demoReply, geminiReply, claudeReply } from "../ai/chat.js";
 import type { AuthEnv } from "../auth/session.js";
 import { listOwnedOrders, type Deps } from "../services/orders.js";
 import { publicPouch } from "../store/types.js";
@@ -29,7 +29,7 @@ export function chatRoutes(deps: Deps) {
     const context = { pouches, orders: [...orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10) };
     if (mode === "demo") return c.json({ reply: demoReply(messages, context), mode });
     try {
-      return c.json({ reply: await geminiReply(messages, context), mode });
+      return c.json({ reply: await (mode === "claude" ? claudeReply : geminiReply)(messages, context), mode });
     } catch {
       // Provider exceptions can contain keys or request contents; never return or log them.
       return c.json({ error: "The AI assistant is temporarily unavailable. Please try again shortly." }, 503);

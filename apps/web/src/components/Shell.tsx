@@ -7,8 +7,9 @@ import { Icon, type IconName } from "./Icons";
 import { Footer } from "./Footer";
 import { LandingNav } from "./LandingNav";
 import { ChatWidget } from "./ChatWidget";
-import { UserMenu } from "./AuthProvider";
+import { UserMenu, useAuth } from "./AuthProvider";
 export function Shell({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuToggle = useRef<HTMLButtonElement>(null);
@@ -18,7 +19,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const ordersRoute =
     pathname === "/orders" || pathname.startsWith("/orders/");
   const pageLabel =
-    pathname === "/dashboard"
+    pathname === "/funding" ? "Wallet funding" : pathname === "/dashboard"
       ? "Overview"
       : pouchRoute
         ? "Pouches"
@@ -75,6 +76,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       icon: "pouch",
       active: pouchRoute,
     },
+    { href: "/funding", label: "Add / withdraw", icon: "pouch", active: pathname === "/funding" },
     { href: "/orders", label: "Orders", icon: "receipt", active: ordersRoute },
     {
       href: "/order",
@@ -176,6 +178,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <strong>{pageLabel}</strong>
           </div>
           <span className="demo-label">Payments on Solana</span>
+          {user?.wallet && (
+            <span className="num" title={user.wallet} style={{ fontSize: 12, color: "var(--muted)" }}>
+              {user.wallet.slice(0, 4)}…{user.wallet.slice(-4)}
+            </span>
+          )}
           <UserMenu />
         </header>
         <main

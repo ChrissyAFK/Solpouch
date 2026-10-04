@@ -72,7 +72,26 @@ function mapError(e: unknown): never {
   for (const name of PROGRAM_ERRORS) {
     if (text.includes(`Error Code: ${name}`)) throw new VaultRejected(name as VaultRejectCode);
   }
+  const custom = /custom program error: 0x([0-9a-f]+)/i.exec(text);
+  if (custom) {
+    const entry = (idlJson as { errors?: { code: number; name: string }[] }).errors?.find((x) => x.code === parseInt(custom[1], 16));
+    if (entry && PROGRAM_ERRORS.has(entry.name)) throw new VaultRejected(entry.name as VaultRejectCode);
+  }
   if (/already in use/i.test(text)) throw new VaultRejected("OrderAlreadyUsed");
+  throw e;
+}
+
+/**
+ * A preflight (simulation) failure that carries a program error means the program refused the
+ * payment and nothing was broadcast. Map it to VaultRejected; any other error is rethrown unchanged
+ * so recovery keeps treating it as an unresolved (retry-the-same-signature) failure.
+ */
+export function programRejection(e: unknown): never {
+  try {
+    mapError(e);
+  } catch (mapped) {
+    if (mapped instanceof VaultRejected && mapped.code !== "OrderAlreadyUsed") throw mapped;
+  }
   throw e;
 }
 
@@ -135,7 +154,7 @@ export class ChainVaultClient implements VaultClient {
         return { confirmed: !!value && !value.err && (value.confirmationStatus === "confirmed" || value.confirmationStatus === "finalized"), failed: !!value?.err };
       },
       blockHeight: () => this.connection.getBlockHeight(COMMITMENT),
-      broadcast: (bytes) => this.connection.sendRawTransaction(bytes, { skipPreflight: false, maxRetries: 0 }),
+      broadcast: async (bytes) => { try { return await this.connection.sendRawTransaction(bytes, { skipPreflight: false, maxRetries: 0 }); } catch (e) { return programRejection(e); } },
       confirm: async (operation) => {
         const tx = Transaction.from(Buffer.from(operation.signedTransaction, "base64"));
         const result = await this.connection.confirmTransaction({ signature: operation.txSignature, blockhash: tx.recentBlockhash!, lastValidBlockHeight: operation.lastValidBlockHeight }, COMMITMENT);

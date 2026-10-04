@@ -16,6 +16,7 @@ async function setup(t, handle) {
   t.after(() => page.close());
   await page.addInitScript(({ key, a }) => localStorage.setItem(key, JSON.stringify(a)), { key, a });
   await page.route('**/auth/**', route => new URL(route.request().url()).pathname === '/auth/logout' ? route.fulfill({ json: { ok: true } }) : handle(route));
+  await page.route('**/auth/voice-status', route => route.fulfill({ json: { enabled: true } }));
   await page.route('**/pouches', route => route.fulfill({ json: [] }));
   await page.route('**/orders', route => route.fulfill({ json: [] }));
   return page;
@@ -69,7 +70,7 @@ test('pending voice token is cancelled and old chat disappears on account change
   assert.deepEqual(headers, ['Bearer fixture-a', 'Bearer fixture-b']);
 });
 test('connected agent closes and history clears when account changes', async t => {
-  const page = await setup(t, route => route.fulfill({ json: new URL(route.request().url()).pathname === '/auth/me' ? { user: a.user } : { token: 'voice-a' } }));
+  const page = await setup(t, route => route.fulfill({ json: new URL(route.request().url()).pathname === '/auth/me' ? { user: a.user } : { token: 'voice-a', signedUrl: 'wss://api.elevenlabs.io/v1/convai/conversation?agent_id=fixture', expiresAt: new Date(Date.now()+60000).toISOString() } }));
   const connected = deferred(); const closed = deferred(); const received = [];
   await page.routeWebSocket(/api\.elevenlabs\.io/, ws => {
     ws.onClose(() => closed.resolve());
@@ -94,7 +95,7 @@ test('connected agent closes and history clears when account changes', async t =
   await Promise.race([closed.promise, new Promise((_, reject) => setTimeout(() => reject(new Error('Old connection stayed open')), 5000))]);
   await page.getByRole('button', { name: 'Ask Solpouch', exact: true }).click();
   assert.equal(await page.getByText('Private Alice answer', { exact: true }).count(), 0);
-  assert.equal(received.find(m => m.type === 'conversation_initiation_client_data').dynamic_variables.user_token, 'voice-a');
+  assert.equal(received.find(m => m.type === 'conversation_initiation_client_data').dynamic_variables.secret__solpouch_voice_token, 'Bearer voice-a');
 });
 test('late successful auth restore leaves signed-out storage empty', async t => {
   const held = deferred(); const arrived = deferred();
@@ -121,7 +122,7 @@ test('a previous account API 401 cannot sign out the new account', async t => {
   assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), key), b);
 });
 test('connection completing after account change never sends the queued message', async t => {
-  const page = await setup(t, route => route.fulfill({ json: new URL(route.request().url()).pathname === '/auth/me' ? { user: a.user } : { token: 'voice-a' } }));
+  const page = await setup(t, route => route.fulfill({ json: new URL(route.request().url()).pathname === '/auth/me' ? { user: a.user } : { token: 'voice-a', signedUrl: 'wss://api.elevenlabs.io/v1/convai/conversation?agent_id=fixture', expiresAt: new Date(Date.now()+60000).toISOString() } }));
   const started = deferred(); const closed = deferred(); const received = []; let socket;
   await page.routeWebSocket(/api\.elevenlabs\.io/, ws => {
     socket = ws;
@@ -191,7 +192,7 @@ test('repeated Talk while permission is pending starts once; closing releases th
 });
 test('sign-out closes an active conversation before delayed server revocation completes', async t => {
   const held = deferred(); const revoking = deferred(); const closed = deferred(); const connected = deferred();
-  const page = await setup(t, route => route.fulfill({ json: new URL(route.request().url()).pathname === '/auth/me' ? { user: a.user } : { token: 'voice-a' } }));
+  const page = await setup(t, route => route.fulfill({ json: new URL(route.request().url()).pathname === '/auth/me' ? { user: a.user } : { token: 'voice-a', signedUrl: 'wss://api.elevenlabs.io/v1/convai/conversation?agent_id=fixture', expiresAt: new Date(Date.now()+60000).toISOString() } }));
   await page.route('**/auth/logout', async route => { revoking.resolve(); await held.promise; await route.fulfill({ json: { ok: true } }).catch(() => {}); });
   await page.routeWebSocket(/api\.elevenlabs\.io/, ws => {
     ws.onClose(() => closed.resolve());

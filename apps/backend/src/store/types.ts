@@ -18,7 +18,11 @@ export interface VaultOperation {
 export interface AuthSession { id: string; email: string; name: string; picture: string; createdAt: string; expiresAt: string }
 
 /** All reads and saves return detached values. Use the version returned by a save. */
+export interface AuthChallenge { id: string; wallet: string; email: string; message: string; expiresAt: string }
 export interface Store {
+  findUserByWallet(wallet: string): Promise<UserProfile | undefined>;
+  saveChallenge(challenge: AuthChallenge): Promise<void>;
+  consumeChallenge(id: string): Promise<AuthChallenge | undefined>;
   listPouches(ownerEmail?: string): Promise<StoredPouch[]>;
   getPouch(id: string): Promise<StoredPouch | undefined>;
   savePouch(p: StoredPouch): Promise<StoredPouch>;
@@ -58,4 +62,4 @@ export function publicPouch(p: StoredPouch): Pouch {
   return rest;
 }
 
-export type UserProfile = { email: string; displayName?: string; avatar?: string; createdAt: string; updatedAt: string };
+export type UserProfile = { email: string; displayName?: string; avatar?: string; wallet?: string; createdAt: string; updatedAt: string };

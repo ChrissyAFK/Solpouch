@@ -111,16 +111,16 @@ describe("Postgres boundary checks (mocked connections; no live database)", () =
   });
   it("reuses a locked connection for nested store calls and releases on errors", async () => {
     const calls: string[] = [];
-    const client = Object.assign(new EventEmitter(), { query: vi.fn(async (sql: string) => { calls.push(sql); return { rows: [] }; }), release: vi.fn() });
+    const client = Object.assign(new EventEmitter(), { query: vi.fn(async (sql: string) => { calls.push(sql); return { rows: sql.includes("pg_try_advisory_lock") ? [{ok:true}] : [] }; }), release: vi.fn() });
     const pool = { connect: vi.fn(async () => client), query: vi.fn() };
     const store = postgresFixture(pool);
     await expect(store.withPouchLock("p", async () => { await store.listPouches(); await store.withPouchLock("p", async () => {}); throw new Error("work failed"); })).rejects.toThrow("work failed");
     expect(pool.connect).toHaveBeenCalledTimes(1); expect(pool.query).not.toHaveBeenCalled();
-    expect(calls[0]).toContain("pg_advisory_lock"); expect(calls.at(-1)).toContain("pg_advisory_unlock");
+    expect(calls[0]).toContain("pg_try_advisory_lock"); expect(calls.at(-1)).toContain("pg_advisory_unlock");
     expect(client.release).toHaveBeenCalledWith(false);
   });
   it("destroys a pooled connection if unlocking fails", async () => {
-    const client = Object.assign(new EventEmitter(), { query: vi.fn().mockResolvedValueOnce({ rows: [] }).mockRejectedValueOnce(new Error("connection lost")), release: vi.fn() });
+    const client = Object.assign(new EventEmitter(), { query: vi.fn().mockResolvedValueOnce({ rows: [{ok:true}] }).mockRejectedValueOnce(new Error("connection lost")), release: vi.fn() });
     const pool = { connect: vi.fn(async () => client) };
     const store = postgresFixture(pool);
     await expect(store.withPouchLock("p", async () => 1)).rejects.toThrow("connection lost");
@@ -135,7 +135,7 @@ describe("Postgres boundary checks (mocked connections; no live database)", () =
     warn.mockRestore();
   });
   it("marks a disconnected lock context failed and blocks all later nested queries", async () => {
-    const query = vi.fn(async () => ({ rows: [] }));
+    const query = vi.fn(async () => ({ rows: [{ok:true}] }));
     const client = Object.assign(new EventEmitter(), { query, release: vi.fn() });
     const store = postgresFixture({ connect: async () => client });
     await expect(store.withPouchLock("p", async () => {
@@ -148,7 +148,7 @@ describe("Postgres boundary checks (mocked connections; no live database)", () =
     expect(client.release).toHaveBeenCalledWith(true);
   });
   it("rejects stale PostgreSQL versions before issuing a write", async () => {
-    const query = vi.fn(async (sql: string) => ({ rows: sql.startsWith("SELECT *") ? [{ version: 3 }] : [] }));
+    const query = vi.fn(async (sql: string) => ({ rows: sql.startsWith("SELECT *") ? [{ version: 3 }] : sql.includes("pg_try_advisory_lock") ? [{ok:true}] : [] }));
     const client = Object.assign(new EventEmitter(), { query, release: vi.fn() });
     const pool = { connect: vi.fn(async () => client) };
     const store = postgresFixture(pool);
@@ -157,7 +157,7 @@ describe("Postgres boundary checks (mocked connections; no live database)", () =
     expect(client.release).toHaveBeenCalledWith(false);
   });
   it("uses a compare-and-swap predicate and surfaces a failed PostgreSQL update", async () => {
-    const query = vi.fn(async (sql: string, _values?: unknown[]) => ({ rows: sql.startsWith("SELECT *") ? [{ version: 3 }] : [] }));
+    const query = vi.fn(async (sql: string, _values?: unknown[]) => ({ rows: sql.startsWith("SELECT *") ? [{ version: 3 }] : sql.includes("pg_try_advisory_lock") ? [{ok:true}] : [] }));
     const client = Object.assign(new EventEmitter(), { query, release: vi.fn() });
     const pool = { connect: vi.fn(async () => client) };
     const store = postgresFixture(pool);

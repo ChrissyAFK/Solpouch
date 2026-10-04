@@ -1,3 +1,6 @@
+import { createPrivateKey, sign } from "node:crypto";
+import { Keypair } from "@solana/web3.js";
+const ORIGIN = "http://localhost:3000";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { getMerchant } from "../src/merchants/index.js";
@@ -151,4 +154,52 @@ describe("voice tools need a voice token", () => {
     expect(r.status).toBe(404);
     expect((await store.getOrder(order.id))!.status).toBe("draft");
   });
+});
+
+describe("wallet linking and top-ups", () => {
+  const C = "c@example.com";
+  const D = "d@example.com";
+  const signWith = (kp: Keypair, message: string) => {
+    const key = createPrivateKey({ key: Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), Buffer.from(kp.secretKey.slice(0, 32))]), format: "der", type: "pkcs8" });
+    return sign(null, Buffer.from(message), key).toString("base64");
+  };
+  const post = async (path: string, who: string, body: unknown) =>
+    app.request(path, { method: "POST", headers: { ...json, origin: ORIGIN, ...(await authHeaders(store, who)) }, body: JSON.stringify(body) });
+  const challenge = async (who: string, kp: Keypair) => {
+    const res = await post("/auth/wallet/challenge", who, { wallet: kp.publicKey.toBase58() });
+    expect(res.status).toBe(200);
+    return (await res.json()) as { id: string; message: string };
+  };
+
+  it("links a wallet after the user signs the challenge", async () => {
+    const kp = Keypair.generate();
+    const ch = await challenge(C, kp);
+    const res = await post("/auth/wallet/verify", C, { id: ch.id, signature: signWith(kp, ch.message) });
+    expect(res.status).toBe(200);
+    expect((await store.getUser(C))!.wallet).toBe(kp.publicKey.toBase58());
+    expect((await res.json()).user.wallet).toBe(kp.publicKey.toBase58());
+  });
+
+  it("rejects a wallet already linked to another email with 409", async () => {
+    const kp = Keypair.generate();
+    const first = await challenge(C, kp);
+    expect((await post("/auth/wallet/verify", C, { id: first.id, signature: signWith(kp, first.message) })).status).toBe(200);
+    const second = await challenge(D, kp);
+    expect((await post("/auth/wallet/verify", D, { id: second.id, signature: signWith(kp, second.message) })).status).toBe(409);
+    expect((await store.getUser(D))?.wallet).toBeUndefined();
+  });
+
+  it("rejects a challenge issued to another email with 401", async () => {
+    const kp = Keypair.generate();
+    const ch = await challenge(C, kp);
+    expect((await post("/auth/wallet/verify", D, { id: ch.id, signature: signWith(kp, ch.message) })).status).toBe(401);
+    expect((await store.getUser(D))?.wallet).toBeUndefined();
+  });
+
+  it("rejects a bad signature with 401", async () => {
+    const kp = Keypair.generate();
+    const ch = await challenge(C, kp);
+    expect((await post("/auth/wallet/verify", C, { id: ch.id, signature: signWith(Keypair.generate(), ch.message) })).status).toBe(401);
+  });
+
 });

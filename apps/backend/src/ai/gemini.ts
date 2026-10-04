@@ -1,6 +1,7 @@
 import { OrderInputError, validQuantity, validateOrderLines } from "../services/orderValidation.js";
 import { GoogleGenAI, Type } from "@google/genai";
 import type { OrderLine, Product } from "@solpouch/shared";
+import { aiProvider, claudeJson } from "./provider.js";
 
 export interface ParsedItem {
   requested: string;
@@ -40,7 +41,94 @@ function ai(): GoogleGenAI | undefined {
 
 // ---- Public API ----
 
+const PARSE_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    pouchHint: { type: ["string", "null"] },
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { requested: { type: "string" }, qty: { type: "number" } },
+        required: ["requested", "qty"],
+      },
+    },
+  },
+  required: ["items"],
+};
+
+const MATCH_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    lines: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          requested: { type: "string" },
+          requestedQty: { type: "number" },
+          productId: { type: ["string", "null"] },
+          qty: { type: "number" },
+          matchScore: { type: "number" },
+          substitution: { type: "boolean" },
+          note: { type: ["string", "null"] },
+        },
+        required: ["requested", "requestedQty", "qty", "matchScore", "substitution"],
+      },
+    },
+  },
+  required: ["lines"],
+};
+
+type MatchRow = {
+  requested: string;
+  requestedQty: number;
+  productId: string | null;
+  qty: number;
+  matchScore: number;
+  substitution: boolean;
+  note: string | null;
+};
+
+function finishParse(parsed: any): ParsedRequest | null {
+  const items: ParsedItem[] = (parsed?.items ?? [])
+    .filter((i: ParsedItem) => i?.requested)
+    .map((i: ParsedItem) => ({ requested: String(i.requested), qty: validQuantity(Number(i.qty ?? 1)) }));
+  return items.length ? { pouchHint: parsed.pouchHint || undefined, items } : null;
+}
+
+function finishMatch(rows: MatchRow[], catalog: Product[]): OrderLine[] | null {
+  if (!rows?.length) return null;
+  const lines = rows.map((r) => {
+    const product = catalog.find((p) => p.id === r.productId && p.inStock) ?? null;
+    const qty = product ? validQuantity(Number(r.qty ?? r.requestedQty ?? 1)) : 0;
+    return {
+      requested: r.requested,
+      requestedQty: validQuantity(Number(r.requestedQty ?? 1)),
+      product,
+      qty,
+      lineTotal: product ? product.unitPrice * qty : 0,
+      matchScore: product ? Math.min(1, Math.max(0, r.matchScore)) : 0,
+      substitution: product ? !!r.substitution : false,
+      note: r.note || (product ? undefined : "No matching product"),
+    };
+  });
+  validateOrderLines(lines);
+  return lines;
+}
+
 export async function parseRequest(text: string): Promise<ParsedRequest> {
+  if (aiProvider() === "claude") {
+    try {
+      const parsed = await claudeJson<any>({ system: PARSE_PROMPT, prompt: text, schema: PARSE_JSON_SCHEMA, name: "shopping_list", maxTokens: 1024 });
+      const done = finishParse(parsed);
+      if (done) return done;
+    } catch (e) {
+      if (e instanceof OrderInputError) throw e;
+      console.warn("[claude] parseRequest failed, using fallback:", (e as Error).message);
+    }
+    return fallbackParse(text);
+  }
   const g = ai();
   if (g) {
     try {
@@ -68,10 +156,8 @@ export async function parseRequest(text: string): Promise<ParsedRequest> {
         },
       });
       const parsed = JSON.parse(res.text ?? "{}");
-      const items: ParsedItem[] = (parsed.items ?? [])
-        .filter((i: ParsedItem) => i?.requested)
-        .map((i: ParsedItem) => ({ requested: String(i.requested), qty: validQuantity(Number(i.qty ?? 1)) }));
-      if (items.length) return { pouchHint: parsed.pouchHint || undefined, items };
+      const done = finishParse(parsed);
+      if (done) return done;
     } catch (e) {
       if (e instanceof OrderInputError) throw e;
       console.warn("[gemini] parseRequest failed, using fallback:", (e as Error).message);
@@ -81,6 +167,24 @@ export async function parseRequest(text: string): Promise<ParsedRequest> {
 }
 
 export async function matchItems(items: ParsedItem[], catalog: Product[]): Promise<OrderLine[]> {
+  if (aiProvider() === "claude" && catalog.length) {
+    try {
+      const slim = catalog.map((p) => ({ id: p.id, name: p.name, brand: p.brand, size: p.size, inStock: p.inStock }));
+      const out = await claudeJson<{ lines?: MatchRow[] }>({
+        system: MATCH_PROMPT + '\nReturn the rows in the "lines" array.',
+        prompt: JSON.stringify({ items, catalog: slim }),
+        schema: MATCH_JSON_SCHEMA,
+        name: "matched_lines",
+        maxTokens: 4096,
+      });
+      const done = finishMatch(out?.lines ?? [], catalog);
+      if (done) return done;
+    } catch (e) {
+      if (e instanceof OrderInputError) throw e;
+      console.warn("[claude] matchItems failed, using fallback:", (e as Error).message);
+    }
+    return fallbackMatch(items, catalog);
+  }
   const g = ai();
   if (g && catalog.length) {
     try {
@@ -109,33 +213,8 @@ export async function matchItems(items: ParsedItem[], catalog: Product[]): Promi
           },
         },
       });
-      const rows = JSON.parse(res.text ?? "[]") as Array<{
-        requested: string;
-        requestedQty: number;
-        productId: string | null;
-        qty: number;
-        matchScore: number;
-        substitution: boolean;
-        note: string | null;
-      }>;
-      if (rows.length) {
-        const lines = rows.map((r) => {
-          const product = catalog.find((p) => p.id === r.productId && p.inStock) ?? null;
-          const qty = product ? validQuantity(Number(r.qty ?? r.requestedQty ?? 1)) : 0;
-          return {
-            requested: r.requested,
-            requestedQty: validQuantity(Number(r.requestedQty ?? 1)),
-            product,
-            qty,
-            lineTotal: product ? product.unitPrice * qty : 0,
-            matchScore: product ? Math.min(1, Math.max(0, r.matchScore)) : 0,
-            substitution: product ? !!r.substitution : false,
-            note: r.note || (product ? undefined : "No matching product"),
-          };
-        });
-        validateOrderLines(lines);
-        return lines;
-      }
+      const done = finishMatch(JSON.parse(res.text ?? "[]") as MatchRow[], catalog);
+      if (done) return done;
     } catch (e) {
       if (e instanceof OrderInputError) throw e;
       console.warn("[gemini] matchItems failed, using fallback:", (e as Error).message);

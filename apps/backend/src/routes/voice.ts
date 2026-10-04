@@ -45,7 +45,7 @@ export function voiceRoutes(deps: Deps) {
   const app = new Hono();
 
   app.post("/tools/:tool", async (c) => {
-    const secret = process.env.ELEVENLABS_TOOL_SECRET;
+    const secret = process.env.VOICE_WEBHOOK_SECRET || process.env.ELEVENLABS_TOOL_SECRET;
     if (secret) {
       const ip = clientIp(c);
       if (!safeEqual(c.req.header("X-Solpouch-Secret") ?? "", secret)) {

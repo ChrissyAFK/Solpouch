@@ -159,3 +159,16 @@ ALTER TABLE topups ADD COLUMN IF NOT EXISTS completed_at timestamptz;
 CREATE TABLE IF NOT EXISTS web_sessions (id text PRIMARY KEY,email text NOT NULL,name text NOT NULL,picture text NOT NULL,created_at timestamptz NOT NULL,expires_at timestamptz NOT NULL);
 CREATE INDEX IF NOT EXISTS web_sessions_email_idx ON web_sessions(email);
 CREATE INDEX IF NOT EXISTS web_sessions_expiry_idx ON web_sessions(expires_at);
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet text;
+CREATE UNIQUE INDEX IF NOT EXISTS users_wallet_key ON users(wallet) WHERE wallet IS NOT NULL;
+ALTER TABLE topups ADD COLUMN IF NOT EXISTS from_wallet text;
+CREATE TABLE IF NOT EXISTS auth_challenges (
+  id text PRIMARY KEY,
+  wallet text NOT NULL,
+  message text NOT NULL,
+  expires_at timestamptz NOT NULL
+);
+-- Challenges are bound to the signed-in Google account. Old rows without an email are unusable and expire.
+ALTER TABLE auth_challenges ADD COLUMN IF NOT EXISTS email text;
+CREATE INDEX IF NOT EXISTS auth_challenges_expiry_idx ON auth_challenges(expires_at);

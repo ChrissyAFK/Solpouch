@@ -362,3 +362,8 @@
 .orderCard a { text-decoration: underline; }
 .orderCards button { padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 8px; cursor: pointer; }
 .orderCards button:disabled { opacity: .5; cursor: wait; }
+.voiceBar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border, #26332e); }
+.voiceBar button { border: 1px solid currentColor; border-radius: 6px; padding: 6px 12px; color: inherit; background: transparent; cursor: pointer; white-space: nowrap; }
+.voiceBar button:disabled { opacity: .5; cursor: not-allowed; }
+.voiceBar span, .notice { font-size: 12px; line-height: 1.5; }
+.notice { margin: 0; padding: 10px 16px; }
