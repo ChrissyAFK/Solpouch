@@ -3,6 +3,7 @@ import { Archivo, JetBrains_Mono } from "next/font/google";
 import { headers } from "next/headers";
 import { connection } from "next/server";
 import { AuthProvider } from "@/components/AuthProvider";
+import { PrefsSync } from "@/components/PrefsSync";
 import { Shell } from "@/components/Shell";
 import { pageMetadata, siteDescription, siteUrl } from "@/lib/site";
 import "./globals.css";
@@ -40,9 +41,15 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#101014",
-  colorScheme: "dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f4f1ea" },
+    { media: "(prefers-color-scheme: dark)", color: "#0d0d10" },
+  ],
+  colorScheme: "dark light",
 };
+
+// Runs before first paint so a saved theme, motion or text-size choice never flashes.
+const EARLY_PREFS = `(function(){try{var p=JSON.parse(localStorage.getItem("solpouch.prefs"));if(!p)return;var d=document.documentElement;if(p.theme==="light"||p.theme==="dark")d.setAttribute("data-theme",p.theme);if(p.motion==="reduced")d.setAttribute("data-motion","reduced");if(p.textSize==="large")d.setAttribute("data-text","large");}catch(e){}})();`;
 
 export default async function RootLayout({
   children,
@@ -57,8 +64,13 @@ export default async function RootLayout({
       lang="en"
       data-scroll-behavior="smooth"
       className={`${archivo.variable} ${jetbrains.variable}`}
+      suppressHydrationWarning
     >
+      <head>
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: EARLY_PREFS }} />
+      </head>
       <body>
+        <PrefsSync />
         <AuthProvider nonce={nonce}>
           <Shell>{children}</Shell>
         </AuthProvider>

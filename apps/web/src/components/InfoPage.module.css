@@ -24,7 +24,7 @@
 .body {
   font-size: 17px;
   line-height: 1.65;
-  color: #d9d6e0;
+  color: var(--ink-soft);
 }
 .body h2 {
   font-size: var(--text-xl);
@@ -52,12 +52,12 @@
   color: var(--solana-purple);
 }
 .body a {
-  color: #ddd0ee;
+  color: var(--accent-ink);
   text-decoration: underline;
   text-underline-offset: 0.2em;
 }
 .body a:hover {
-  color: #fff;
+  color: var(--ink);
 }
 @media (max-width: 540px) {
   .title {

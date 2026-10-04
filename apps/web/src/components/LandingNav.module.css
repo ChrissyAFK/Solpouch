@@ -27,11 +27,11 @@
 }
 .nav a {
   font-size: 13px;
-  color: #b6b3bf;
+  color: var(--muted);
   padding: 12px 0;
 }
 .nav a:hover {
-  color: #fff;
+  color: var(--ink);
 }
 .nav .launch {
   display: inline-flex;
@@ -39,12 +39,12 @@
   justify-content: center;
   gap: 25px;
   padding: 12px 17px;
-  border: 1px solid #49464e;
-  color: #f2f1f5;
+  border: 1px solid var(--control-border);
+  color: var(--ink);
 }
 .nav .launch:hover {
-  background: #232228;
-  border-color: #aaa3b4;
+  background: var(--btn-hover);
+  border-color: var(--muted);
 }
 .toggle {
   display: none;
@@ -74,7 +74,7 @@
     align-items: center;
     justify-content: center;
     background: none;
-    border: 1px solid #49464e;
+    border: 1px solid var(--control-border);
     color: var(--ink);
     padding: 8px 11px;
     font-size: 12px;

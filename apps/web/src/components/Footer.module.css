@@ -1,7 +1,7 @@
 .footer {
   margin-top: auto;
   border-top: 1px solid var(--line);
-  background: #111114;
+  background: var(--sidebar-bg);
 }
 .inner {
   width: 100%;
@@ -19,7 +19,7 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: #e5e2ed;
+  color: var(--ink);
   font-size: 21px;
   font-weight: 800;
   font-stretch: 115%;
@@ -28,7 +28,7 @@
 .about p {
   max-width: 300px;
   margin: 12px 0 0;
-  color: #96909f;
+  color: var(--muted);
   font-size: 14px;
   line-height: 1.7;
 }
@@ -40,7 +40,7 @@
 }
 .group h2 {
   margin: 0 0 8px;
-  color: #ccc5d5;
+  color: var(--ink);
   font-size: 14px;
   line-height: 1.5;
   font-weight: 600;
@@ -50,26 +50,26 @@
   align-items: center;
   gap: 7px;
   min-height: 29px;
-  color: #9890a4;
+  color: var(--muted);
   font-size: 14px;
   line-height: 1.5;
 }
 .group a:hover {
-  color: #ddd0ee;
+  color: var(--accent-ink);
   text-decoration: underline;
   text-underline-offset: 0.2em;
 }
 .group a > span[aria-hidden] {
-  color: #787080;
+  color: var(--faint);
 }
 .bottom {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  border-top: 1px solid #29252e;
+  border-top: 1px solid var(--line);
   padding-top: 18px;
-  color: #8e8798;
+  color: var(--muted);
   font-size: 14px;
   line-height: 1.6;
 }

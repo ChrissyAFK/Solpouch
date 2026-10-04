@@ -9,6 +9,7 @@ import { getToken } from "@/lib/session";
 import { SessionManager } from "@/components/SessionManager";
 import { WalletLink } from "@/components/WalletLink";
 import { AlertPreferences } from "@/components/AccountAlerts";
+import { PreferencesCard } from "./PreferencesCard";
 import styles from "./profile.module.css";
 
 const MAX_RAW = 5 * 1024 * 1024;
@@ -241,6 +242,8 @@ export default function ProfilePage() {
               })}
         </p>
       </section>
+
+      <PreferencesCard />
 
       <section className="sp-card" aria-labelledby="wallet-title">
         <h2 id="wallet-title" className={styles.heading}>

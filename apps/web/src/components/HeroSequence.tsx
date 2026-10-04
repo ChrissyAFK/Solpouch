@@ -115,7 +115,9 @@ export function HeroSequence() {
   const s = SCENARIOS[index];
 
   useEffect(() => {
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reduce =
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      document.documentElement.dataset.motion === "reduced";
     setMounted(true);
     if (reduce) {
       setT(DONE);

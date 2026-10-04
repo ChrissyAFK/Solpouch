@@ -18,18 +18,18 @@
   gap: 9px;
   min-height: 44px;
   padding: 11px 15px;
-  border: 1px solid #68428f;
+  border: 1px solid var(--accent-border);
   border-radius: 6px;
-  background: #282032;
-  color: #ece5f6;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
   font-size: 13px;
   font-weight: 550;
-  box-shadow: 0 4px 20px #0005;
+  box-shadow: 0 4px 20px var(--shadow);
 }
 .launcher:hover,
 .launcherOpen {
-  background: #38264b;
-  border-color: #995bcc;
+  background: var(--accent-soft-strong);
+  border-color: var(--accent-border);
 }
 .panel {
   display: flex;
@@ -38,11 +38,11 @@
   height: 530px;
   max-height: calc(100dvh - 110px);
   overflow: hidden;
-  background: #141417;
-  border: 1px solid #403648;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
   border-radius: 7px;
-  box-shadow: 0 12px 45px #0007;
-  color: #eeeaf4;
+  box-shadow: 0 12px 45px var(--shadow-lg);
+  color: var(--ink);
 }
 .header {
   display: flex;
@@ -50,8 +50,8 @@
   align-items: center;
   gap: 12px;
   padding: 15px 17px;
-  border-bottom: 1px solid #302b36;
-  background: #19171e;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-raised);
   flex-shrink: 0;
 }
 .header h2 {
@@ -61,7 +61,7 @@
 }
 .mode {
   display: block;
-  color: #aaa0b6;
+  color: var(--muted);
   font-size: 12px;
 }
 .headerActions {
@@ -72,7 +72,7 @@
 .headerActions button {
   border: 0;
   background: transparent;
-  color: #aaa0b6;
+  color: var(--muted);
   font-size: 12px;
   min-height: 32px;
   min-width: 32px;
@@ -80,8 +80,8 @@
   padding: 5px;
 }
 .headerActions button:hover {
-  color: #f2eafa;
-  background: #2b2433;
+  color: var(--ink);
+  background: var(--btn-hover);
 }
 .headerActions button:disabled {
   opacity: 0.4;
@@ -94,9 +94,9 @@
 .disclosure {
   margin: 0;
   padding: 10px 17px;
-  background: #211b29;
-  border-bottom: 1px solid #382a46;
-  color: #c8b5dc;
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--line);
+  color: var(--accent-ink);
   font-size: 12px;
   line-height: 1.5;
   flex-shrink: 0;
@@ -108,7 +108,7 @@
   overscroll-behavior: contain;
   padding: 19px 17px;
   scrollbar-width: thin;
-  scrollbar-color: #4b3c59 transparent;
+  scrollbar-color: var(--scroll-thumb) transparent;
 }
 .empty h3 {
   font-size: 16px;
@@ -117,7 +117,7 @@
 }
 .empty > p {
   font-size: 13px;
-  color: #a49aad;
+  color: var(--muted);
   line-height: 1.65;
   margin: 0 0 19px;
 }
@@ -128,9 +128,9 @@
   align-items: flex-start;
 }
 .presets button {
-  border: 1px solid #3b3344;
-  background: #1b1821;
-  color: #d0bfdc;
+  border: 1px solid var(--control-border);
+  background: var(--btn-bg);
+  color: var(--ink);
   border-radius: 4px;
   padding: 9px 11px;
   min-height: 36px;
@@ -139,8 +139,8 @@
   line-height: 1.4;
 }
 .presets button:hover {
-  background: #2b2037;
-  border-color: #755090;
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
 }
 .message {
   font-size: 13px;
@@ -155,7 +155,7 @@
   display: block;
   font-size: 11px;
   font-weight: 600;
-  color: #9e90ad;
+  color: var(--muted);
   margin-bottom: 5px;
 }
 .message p {
@@ -163,30 +163,30 @@
   white-space: pre-wrap;
 }
 .user {
-  background: #26202f;
+  background: var(--accent-soft);
   padding: 10px 12px;
-  border: 1px solid #392e45;
+  border: 1px solid var(--line-strong);
   border-radius: 5px;
   margin-left: 21px;
 }
 .user .speaker {
-  color: #ba9bda;
+  color: var(--accent-ink);
 }
 .assistant {
   padding-right: 12px;
 }
 .pending {
   font-size: 12px;
-  color: #ac9eba;
+  color: var(--muted);
   margin: 8px 0;
 }
 .error {
-  border: 1px solid #613447;
-  background: #281921;
+  border: 1px solid var(--danger-border);
+  background: var(--danger-surface);
   padding: 11px 12px;
   border-radius: 4px;
   font-size: 12px;
-  color: #f0b1c1;
+  color: var(--danger);
   line-height: 1.5;
 }
 .error p {
@@ -194,10 +194,10 @@
   overflow-wrap: anywhere;
 }
 .error button {
-  border: 1px solid #855365;
-  background: #38212b;
+  border: 1px solid var(--danger-border);
+  background: var(--danger-surface);
   padding: 6px 9px;
-  color: #f1cada;
+  color: var(--danger);
   border-radius: 3px;
   font-size: 12px;
   min-height: 32px;
@@ -207,28 +207,28 @@
   flex-direction: column;
   gap: 5px;
   padding: 11px 17px;
-  border-top: 1px solid #302a37;
+  border-top: 1px solid var(--line);
   flex-shrink: 0;
 }
 .orderAction a {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: #cfa5f4;
+  color: var(--accent-ink);
   font-size: 12px;
   font-weight: 600;
   min-height: 25px;
 }
 .orderAction a:hover {
-  color: #eee0fa;
+  color: var(--ink);
 }
 .orderAction > span {
   font-size: 11px;
-  color: #a99ab6;
+  color: var(--muted);
 }
 .composer {
   padding: 12px 13px 10px;
-  border-top: 1px solid #332b3b;
+  border-top: 1px solid var(--line);
   flex-shrink: 0;
 }
 .composer textarea {
@@ -237,16 +237,16 @@
   max-height: 100px;
   min-height: 64px;
   width: 100%;
-  border: 1px solid #49404f;
-  background: #101014;
-  color: #eee7f5;
+  border: 1px solid var(--control-border);
+  background: var(--input-bg);
+  color: var(--ink);
   border-radius: 4px;
   padding: 10px 11px;
   font-size: 13px;
   line-height: 1.5;
 }
 .composer textarea::placeholder {
-  color: #8e819e;
+  color: var(--placeholder);
 }
 .composerBottom {
   display: flex;
@@ -257,7 +257,7 @@
 }
 .composerBottom > span {
   font-size: 10px;
-  color: #9a8aa8;
+  color: var(--muted);
 }
 .composerBottom button {
   background: #9945ff;
@@ -277,11 +277,11 @@
 }
 .composerBottom .voice {
   background: transparent;
-  color: #e4d7f2;
-  border-color: #4b385c;
+  color: var(--ink);
+  border-color: var(--accent-border);
 }
 .composerBottom .voice:hover {
-  background: #2a2035;
+  background: var(--accent-soft);
 }
 .composerBottom .voice[aria-pressed="true"] {
   background: #14f195;
@@ -289,14 +289,14 @@
   color: #0d0a12;
 }
 .composerBottom button:disabled {
-  background: #392c47;
-  border-color: #4b385c;
-  color: #a091af;
+  background: var(--surface-raised);
+  border-color: var(--line-strong);
+  color: var(--muted);
   opacity: 1;
 }
 .boundary {
   font-size: 10px;
-  color: #9b8baa;
+  color: var(--muted);
   margin: 9px 0 0;
   line-height: 1.4;
 }
@@ -366,7 +366,7 @@
 .orderCard a { text-decoration: underline; }
 .orderCards button { padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 8px; cursor: pointer; }
 .orderCards button:disabled { opacity: .5; cursor: wait; }
-.voiceBar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border, #26332e); }
+.voiceBar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
 .voiceBar button { border: 1px solid currentColor; border-radius: 6px; padding: 6px 12px; color: inherit; background: transparent; cursor: pointer; white-space: nowrap; }
 .voiceBar button:disabled { opacity: .5; cursor: not-allowed; }
 .voiceBar span, .notice { font-size: 12px; line-height: 1.5; }

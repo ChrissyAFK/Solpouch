@@ -247,7 +247,7 @@ function TopUpSection({
               <li
                 key={s}
                 aria-current={n === step ? "step" : undefined}
-                className={`flex flex-col gap-1 border-t-2 pt-2 text-xs leading-4 sm:text-xs ${on ? "border-[var(--ok)] text-white" : "border-[var(--line-strong)] text-[var(--muted)]"}`}
+                className={`flex flex-col gap-1 border-t-2 pt-2 text-xs leading-4 sm:text-xs ${on ? "border-[var(--ok)] text-[var(--ink)]" : "border-[var(--line-strong)] text-[var(--muted)]"}`}
               >
                 <span className="font-semibold">{n}</span>
                 <span>{s}</span>

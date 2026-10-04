@@ -47,7 +47,7 @@
   font-size: 12px;
 }
 .card .error {
-  color: #ff8a8a;
+  color: var(--danger);
 }
 .user {
   display: inline-flex;
