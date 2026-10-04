@@ -42,8 +42,8 @@ export function readback(order: Order): string {
     return `Do you approve this payment of $${toUsdc(order.total).toFixed(2)} from your pouch?`;
   }
   if (isCheckoutReference(order)) {
-    if (demoCheckoutEnabled()) return `From ${merchant}: ${parts.join("; ")}. Total CAD ${usd(order.total)}. Want me to pay for it from your pouch?`;
-    return `From ${merchant}: ${parts.join("; ")}. Total CAD ${usd(order.total)}. Complete checkout with the retailer using the link on the order page. Solpouch has not placed an order.`;
+    if (demoCheckoutEnabled()) return `From ${merchant}: ${parts.join("; ")}. Total ${usd(order.total)}. Want me to pay for it from your pouch?`;
+    return `From ${merchant}: ${parts.join("; ")}. Total ${usd(order.total)}. Complete checkout with the retailer using the link on the order page. Solpouch has not placed an order.`;
   }
   return `From ${merchant}: ${parts.join("; ")}. ${total(order)}. Should I place it?`;
 }
