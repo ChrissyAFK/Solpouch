@@ -28,7 +28,7 @@ export function scriptedDemoMatch(request: string): "under15" | "over30" | null 
  * mode every spoken order becomes one of the two scripted requests. */
 export function demoVoiceRequest(request: string): string {
   if (process.env.DEMO_RETAILER_PAYMENTS !== "1") return request;
-  const over = /\b(?:over|above|more|thirty|30)\b/i.test(request);
+  const over = OVER_30.test(request);
   console.log(`[demo-script] voice ${over ? "over30" : "under15"}: ${JSON.stringify(request.slice(0, 200))}`);
   return over ? "McDonald's order for over $30" : "McDonald's order for under $15";
 }
@@ -40,10 +40,11 @@ export async function scriptedDemoDraft(deps: Deps, ownerEmail: string, request:
 
   const pouches = await deps.store.listPouches(ownerEmail);
   const foodDomain = (p: Pouch) => p.allowedMerchantIds.find((id) => id.startsWith(WEB_PREFIX) && /ubereats|mcdonalds/.test(id));
-  const pouch = pouchId
-    ? pouches.find((p) => p.id === pouchId)
-    : pouches.find((p) => !p.frozen && (foodDomain(p) || /uber|mcdonald/i.test(p.name))) ?? pouches.find((p) => !p.frozen && isAnyStore(p));
-  if (!pouch) throw new HttpError(pouchId ? 404 : 400, pouchId ? "Pouch not found" : "No pouch is allowed to pay Uber Eats");
+  const explicit = pouchId ? pouches.find((p) => p.id === pouchId) : undefined;
+  const pouch = explicit && !explicit.frozen && (foodDomain(explicit) || isAnyStore(explicit))
+    ? explicit
+    : pouches.find((p) => !p.frozen && foodDomain(p)) ?? pouches.find((p) => !p.frozen && isAnyStore(p));
+  if (!pouch) throw new HttpError(400, "No pouch is allowed to pay Uber Eats");
 
   const merchantId = foodDomain(pouch) ?? `${WEB_PREFIX}ubereats.com`;
   const store = { name: "McDonald's on Uber Eats", domain: merchantId.slice(WEB_PREFIX.length), url: "https://www.ubereats.com" };

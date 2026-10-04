@@ -44,7 +44,11 @@ export function parseRequestConstraints(text: string): RequestConstraints {
       const hadDollar = whole.includes("$");
       const unit = m[2];
       let bareOk = false;
-      if (!unit && !hadDollar && !needsUnit) bareOk = BARE_END.test(t.slice(end));
+      if (!unit && !hadDollar && !needsUnit) {
+        const rest = t.slice(end);
+        // "2 or 3 apples" is a quantity range, not a price.
+        bareOk = BARE_END.test(rest) && !/^\s+(?:or|and)\s+\d/i.test(rest);
+      }
       const v = toUnits(m[1], unit, hadDollar, bareOk);
       if (v !== undefined) {
         caps.push(v);

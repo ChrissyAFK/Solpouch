@@ -46,4 +46,22 @@ describe("stage demo script", () => {
     delete process.env.DEMO_RETAILER_PAYMENTS;
     expect(demoVoiceRequest("50 novels")).toBe("50 novels");
   });
+
+  it("voice: only over/above/more than/at least 30 counts as over30", () => {
+    for (const r of ["McDonald's, no more than fifteen dollars", "get me a big mac for under thirty bucks", "McDonald's under $15 and a Coke, nothing more"]) {
+      expect(scriptedDemoMatch(demoVoiceRequest(r))).toBe("under15");
+    }
+    for (const r of ["McDonald's for more than thirty dollars", "over $30 of McDonald's"]) {
+      expect(scriptedDemoMatch(demoVoiceRequest(r))).toBe("over30");
+    }
+  });
+
+  it("ignores pouch names and lands on the any-store pouch", async () => {
+    const base = ownedSeed()[0]!;
+    const named = { ...base, id: "named-uber", name: "Uber", allowedMerchantIds: ["web:amazon.com"], frozen: false };
+    const any = { ...base, id: "any-store-pouch", name: "Anything", allowedMerchantIds: [] as string[], frozen: false };
+    store = new MemoryStore([named, any]);
+    const order = await createDraft(deps(), TEST_USER, "McDonald's under 15", "named-uber");
+    expect(order.pouchId).toBe("any-store-pouch");
+  });
 });

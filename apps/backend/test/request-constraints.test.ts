@@ -24,7 +24,7 @@ describe("parseRequestConstraints", () => {
   it.each(["cheapest eggs", "as cheap as possible", "only on sale items"])("flags unparseable limit: %s", (text) => {
     expect(parseRequestConstraints(text)).toEqual({ hasConstraint: true });
   });
-  it.each(["2 dozen eggs", "eggs for 4 people", "large eggs", "up to 4 people eat eggs", "12 eggs and 2 milk", ""])("not a constraint: %s", (text) => {
+  it.each(["2 dozen eggs", "eggs for 4 people", "large eggs", "up to 4 people eat eggs", "12 eggs and 2 milk", "get me up to 2 or 3 apples", "buy milk and eggs within 2 or 3 days", ""])("not a constraint: %s", (text) => {
     expect(parseRequestConstraints(text)).toEqual({ hasConstraint: false });
   });
 });

@@ -1,5 +1,11 @@
 import { securityHeaders } from "./security.mjs";
 
+// The API origin is baked into the client bundle. Without it a production build
+// silently calls http://localhost:8787, which only works on the machine running the backend.
+if (process.env.NODE_ENV === "production" && !process.env.NEXT_PUBLIC_BACKEND_URL) {
+  throw new Error("NEXT_PUBLIC_BACKEND_URL must be set for production builds (see .env.production)");
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Production builds use their own folder so a dev build can't swap chunks under the live server.

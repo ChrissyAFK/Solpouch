@@ -54,6 +54,22 @@ describe("findOnline URL validation", () => {
     expect(validateFind(raw("https://shop.ca/x"), items)).toBeNull();
     expect(validateFind(raw("1.2.3.4"), items)).toBeNull();
   });
+
+  it("validateFind parses decimal-comma prices and rejects multi-number prices", () => {
+    const items = [{ requested: "milk", qty: 1 }];
+    const find = (unitPrice: unknown) => validateFind({ domain: "shop.ca", items: [{ requested: "milk", unitPrice }] }, items);
+    expect(find("6,49")!.items[0].unitPrice).toBe(6.49);
+    expect(find("6,49 $")!.items[0].unitPrice).toBe(6.49);
+    expect(find("1,299.00")!.items[0].unitPrice).toBe(1299);
+    expect(find("2 for $9.00")).toBeNull();
+  });
+
+  it("validateFind uses positional fallback only when list lengths match", () => {
+    const items = [{ requested: "milk", qty: 1 }];
+    const raw = { domain: "shop.ca", items: [{ requested: "bread", unitPrice: 3 }, { requested: "eggs", unitPrice: 4 }] };
+    expect(validateFind(raw, items)).toBeNull();
+    expect(validateFind({ domain: "shop.ca", items: [{ requested: "2% milk", unitPrice: 3 }] }, items)!.items[0].unitPrice).toBe(3);
+  });
 });
 
 describe("gemini safety", () => {

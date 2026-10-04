@@ -71,6 +71,17 @@ function parseJson(text: string): any {
   return null;
 }
 
+/** Parse a value that must be a single price ("6,49" -> 6.49, "1,299.00" -> 1299). Anything else is NaN. */
+export function parseSinglePrice(v: unknown): number {
+  if (typeof v === "number") return v;
+  if (typeof v !== "string") return NaN;
+  const s = v.replace(/[$€£¢]|\b(?:usdc?|cad|dollars?)\b/gi, "").trim();
+  if (/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(s)) return Number(s.replace(/,/g, ""));
+  if (/^\d+,\d{2}$/.test(s)) return Number(s.replace(",", "."));
+  if (/^\d+(?:\.\d+)?$/.test(s)) return Number(s);
+  return NaN;
+}
+
 export function validateFind(raw: any, items: ParsedItem[], allowedDomains?: string[]): WebFind | null {
   if (!raw || typeof raw !== "object") return null;
   const rawDomain = String(raw.domain ?? raw.storeDomain ?? "").trim();
@@ -86,8 +97,9 @@ export function validateFind(raw: any, items: ParsedItem[], allowedDomains?: str
   const out: WebFindItem[] = [];
   for (const [i, it] of items.entries()) {
     const m =
-      rawItems.find((r) => String(r?.requested ?? "").toLowerCase() === it.requested.toLowerCase()) ?? rawItems[i];
-    const price = Number(String(m?.unitPrice ?? m?.price ?? "").replace(/[^0-9.]/g, ""));
+      rawItems.find((r) => String(r?.requested ?? "").toLowerCase() === it.requested.toLowerCase()) ??
+      (rawItems.length === items.length ? rawItems[i] : undefined);
+    const price = parseSinglePrice(m?.unitPrice ?? m?.price);
     if (!m || !Number.isFinite(price) || price <= 0) continue;
     out.push({
       requested: it.requested,
