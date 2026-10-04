@@ -13,7 +13,7 @@ describe("understand", () => {
   it("returns items, store and service with no question", async () => {
     m.create.mockResolvedValue(reply({ store: "Popeyes", service: "Uber Eats", items: [{ requested: "3 piece tenders combo", qty: 1 }], clarify: null }));
     expect(await understand("3 piece tenders combo from Popeyes on Uber Eats")).toEqual({ store: "Popeyes", service: "Uber Eats", items: [{ requested: "3 piece tenders combo", qty: 1 }] });
-    expect(m.create.mock.calls[0][1]).toMatchObject({ timeout: 8000 });
+    expect(m.create.mock.calls[0][1]).toMatchObject({ timeout: 5000 });
   });
   it("passes a clarifying question through", async () => {
     m.create.mockResolvedValue(reply({ items: [{ requested: "screws", qty: 1 }], clarify: { question: "What size and type of screws?", reason: "missing_detail" } }));
@@ -43,5 +43,6 @@ describe("understand", () => {
   it("the prompt forbids questions about everyday items", () => {
     expect(UNDERSTAND_PROMPT).toMatch(/everyday/i);
     expect(UNDERSTAND_PROMPT).toMatch(/Did you say/);
+    expect(UNDERSTAND_PROMPT).toMatch(/NEVER ask about everyday items/);
   });
 });
