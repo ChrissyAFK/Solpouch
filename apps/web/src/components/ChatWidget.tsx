@@ -2,7 +2,9 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ConversationProvider, useConversation } from "@elevenlabs/react";
-import { BACKEND_URL } from "@/lib/api";
+import { BACKEND_URL, api, errMsg } from "@/lib/api";
+import { getToken, clearSession } from "@/lib/session";
+import { GoogleButton, useAuth } from "./AuthProvider";
 import styles from "./ChatWidget.module.css";
 
 type Message = { role: "user" | "assistant"; content: string };
@@ -38,6 +40,7 @@ export function ChatWidget() {
 }
 
 function ChatPanel() {
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
@@ -174,7 +177,7 @@ function ChatPanel() {
   }
   async function send(content?: string, retry?: Message[]) {
     const text = (content ?? draft).trim();
-    if (busy.current || (!retry && !text)) return;
+    if (!user || busy.current || (!retry && !text)) return;
     const next = retry ?? [
       ...messages,
       { role: "user" as const, content: text.slice(0, 2000) },
@@ -195,15 +198,27 @@ function ChatPanel() {
         queued.current = text;
         queuedNext.current = next;
         setSession("text");
-        agent.startSession({
-          agentId: AGENT_ID,
-          connectionType: "websocket",
-          textOnly: true,
+        void startAgent(true).catch((cause) => {
+          queued.current = null;
+          queuedNext.current = null;
+          setSession(null);
+          settle();
+          setError(errMsg(cause));
         });
       }
       return;
     }
     await askGemini(next);
+  }
+  // The voice token lets the agent's tools act for the signed-in user.
+  async function startAgent(textOnly: boolean) {
+    const { token } = await api.voiceToken();
+    agent.startSession({
+      agentId: AGENT_ID,
+      connectionType: "websocket",
+      dynamicVariables: { user_token: token },
+      ...(textOnly ? { textOnly: true } : {}),
+    });
   }
   async function askGemini(next: Message[]) {
     setPending(true);
@@ -219,7 +234,10 @@ function ChatPanel() {
     try {
       const response = await fetch(`${BACKEND_URL}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+        },
         body: JSON.stringify({
           messages: next
             .slice(-19)
@@ -228,9 +246,12 @@ function ChatPanel() {
         signal: controller.signal,
       });
       const data = await response.json().catch(() => null);
+      if (response.status === 401) clearSession();
       if (!response.ok)
         throw new Error(
-          typeof data?.error === "string"
+          response.status === 401
+            ? "Sign in to keep chatting."
+            : typeof data?.error === "string"
             ? data.error
             : "The assistant couldn't reply. Please retry.",
         );
@@ -273,6 +294,7 @@ function ChatPanel() {
       return;
     }
     setError(null);
+    if (!user) return;
     if (!navigator.mediaDevices?.getUserMedia) {
       setError("Voice needs a secure (https) page and a browser with microphone support.");
       return;
@@ -303,7 +325,12 @@ function ChatPanel() {
     if (session) agent.endSession();
     setMode("agent");
     setSession("voice");
-    agent.startSession({ agentId: AGENT_ID, connectionType: "websocket" });
+    try {
+      await startAgent(false);
+    } catch (cause) {
+      setSession(null);
+      setError(errMsg(cause));
+    }
   }
   const lastUser = [...messages]
     .reverse()
@@ -366,6 +393,16 @@ function ChatPanel() {
               </button>
             </div>
           </header>
+          {!user ? (
+            <div className={styles.history}>
+              <div className={styles.empty}>
+                <h3>Sign in to chat</h3>
+                <p>Sign in with Google so the assistant can see your pouches.</p>
+                <GoogleButton />
+              </div>
+            </div>
+          ) : (
+          <>
           <div
             className={styles.history}
             ref={history}
@@ -496,6 +533,8 @@ function ChatPanel() {
                 : "Chat cannot move funds or place orders."}
             </p>
           </form>
+          </>
+          )}
         </section>
       )}
       <button

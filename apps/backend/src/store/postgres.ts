@@ -3,13 +3,13 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import type { Order, OrderLine, Pouch, TopUp } from "@solpouch/shared";
 import { seedPouches } from "./memory.js";
-import type { Store } from "./types.js";
+import type { Store, StoredPouch, UserProfile } from "./types.js";
 
 const today = () => localDay(new Date());
 const iso = (v: Date | string) => (v instanceof Date ? v.toISOString() : new Date(v).toISOString());
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-function toPouch(r: any): Pouch {
+function toPouch(r: any): StoredPouch {
   const fresh = r.spent_day instanceof Date && localDay(r.spent_day) === today();
   return {
     id: r.id,
@@ -22,6 +22,7 @@ function toPouch(r: any): Pouch {
     confirmAbove: Number(r.confirm_above),
     allowedMerchantIds: r.allowed_merchant_ids,
     frozen: r.frozen,
+    ...(r.owner_email ? { ownerEmail: r.owner_email as string } : {}),
   };
 }
 // pg parses `date` into a local-midnight Date; format it in local time.
@@ -70,6 +71,8 @@ export class PostgresStore implements Store {
     const store = new PostgresStore(pool);
     const { rows } = await pool.query("SELECT count(*)::int AS n FROM pouches");
     if (rows[0].n === 0) for (const p of seed) await store.savePouch(p);
+    const legacy = process.env.LEGACY_OWNER_EMAIL?.trim().toLowerCase();
+    if (legacy) await pool.query("UPDATE pouches SET owner_email = $1 WHERE owner_email IS NULL", [legacy]);
     return store;
   }
 
@@ -77,23 +80,25 @@ export class PostgresStore implements Store {
     await this.pool.end();
   }
 
-  async listPouches() {
-    const { rows } = await this.pool.query("SELECT * FROM pouches ORDER BY created_at, id");
+  async listPouches(ownerEmail?: string) {
+    const { rows } = ownerEmail
+      ? await this.pool.query("SELECT * FROM pouches WHERE owner_email = $1 ORDER BY created_at, id", [ownerEmail])
+      : await this.pool.query("SELECT * FROM pouches ORDER BY created_at, id");
     return rows.map(toPouch);
   }
   async getPouch(id: string) {
     const { rows } = await this.pool.query("SELECT * FROM pouches WHERE id = $1", [id]);
     return rows[0] ? toPouch(rows[0]) : undefined;
   }
-  async savePouch(p: Pouch) {
+  async savePouch(p: StoredPouch) {
     await this.pool.query(
       `INSERT INTO pouches (id, address, name, balance, max_per_order, daily_limit, spent_today, spent_day,
-         confirm_above, allowed_merchant_ids, frozen)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11)
+         confirm_above, allowed_merchant_ids, frozen, owner_email)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::date,$9,$10,$11,$12)
        ON CONFLICT (id) DO UPDATE SET address=$2, name=$3, balance=$4, max_per_order=$5, daily_limit=$6,
          spent_today=$7, spent_day=$8::date, confirm_above=$9, allowed_merchant_ids=$10, frozen=$11`,
       [p.id, p.address, p.name, p.balance, p.maxPerOrder, p.dailyLimit, p.spentToday, localDay(new Date()),
-       p.confirmAbove, p.allowedMerchantIds, p.frozen],
+       p.confirmAbove, p.allowedMerchantIds, p.frozen, p.ownerEmail ?? null],
     );
     return p;
   }
@@ -120,9 +125,31 @@ export class PostgresStore implements Store {
     return o;
   }
 
+  async getUser(email: string) {
+    const { rows } = await this.pool.query("SELECT * FROM users WHERE email = $1", [email]);
+    const r = rows[0];
+    if (!r) return undefined;
+    const u: UserProfile = { email: r.email, createdAt: iso(r.created_at), updatedAt: iso(r.updated_at) };
+    if (r.display_name) u.displayName = r.display_name;
+    if (r.avatar) u.avatar = r.avatar;
+    return u;
+  }
+  async saveUser(u: UserProfile) {
+    await this.pool.query(
+      `INSERT INTO users (email, display_name, avatar, created_at, updated_at) VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (email) DO UPDATE SET display_name=$2, avatar=$3, updated_at=$5`,
+      [u.email, u.displayName ?? null, u.avatar ?? null, u.createdAt, u.updatedAt],
+    );
+    return u;
+  }
+
   async getTopUp(id: string) {
     const { rows } = await this.pool.query("SELECT * FROM topups WHERE id = $1 ORDER BY created_at DESC LIMIT 1", [id]);
     return rows[0] ? toTopUp(rows[0]) : undefined;
+  }
+  async listTopUps(pouchId: string) {
+    const { rows } = await this.pool.query("SELECT * FROM topups WHERE pouch_id = $1 ORDER BY created_at DESC", [pouchId]);
+    return rows.map(toTopUp);
   }
   async saveTopUp(t: TopUp) {
     await this.pool.query(

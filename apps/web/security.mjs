@@ -17,20 +17,21 @@ export function contentSecurityPolicy({
   }
   const directives = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${development ? " 'unsafe-eval'" : ""}`,
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://accounts.google.com/gsi/client${development ? " 'unsafe-eval'" : ""}`,
     "script-src-attr 'none'",
     // React, chart sizing and progress bars use inline styles.
-    "style-src 'self' 'unsafe-inline'",
-    // ElevenLabs agent (chat widget): session setup over HTTPS, conversation over WSS.
-    `connect-src 'self' ${backend.origin} https://api.elevenlabs.io wss://api.elevenlabs.io${development ? " ws: wss:" : ""}`,
-    "img-src 'self' data: blob:",
+    "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
+    // Google Identity Services sign-in. ElevenLabs agent (chat widget): session setup over HTTPS, conversation over WSS.
+    `connect-src 'self' ${backend.origin} https://api.elevenlabs.io wss://api.elevenlabs.io https://accounts.google.com/gsi/${development ? " ws: wss:" : ""}`,
+    // Google profile pictures.
+    "img-src 'self' data: blob: https://*.googleusercontent.com",
     "font-src 'self'",
     "manifest-src 'self'",
     "worker-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-    "frame-src 'none'",
+    "frame-src https://accounts.google.com/gsi/",
     "frame-ancestors 'none'",
   ];
   if (secure) directives.push("upgrade-insecure-requests");
@@ -45,7 +46,7 @@ export const securityHeaders = [
     key: "Permissions-Policy",
     value: "camera=(), microphone=(self), geolocation=(), payment=(), usb=()",
   },
-  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
   { key: "X-DNS-Prefetch-Control", value: "off" },
   { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
 ];

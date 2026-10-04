@@ -1,5 +1,5 @@
 import { toMicros, type Order, type Pouch, type TopUp } from "@solpouch/shared";
-import type { Store } from "./types.js";
+import type { Store, StoredPouch, UserProfile } from "./types.js";
 
 // TODO: PostgresStore backed by Tiger Data (see db/schema.sql). Swap in src/index.ts.
 
@@ -50,21 +50,26 @@ export function seedPouches(): Pouch[] {
 }
 
 export class MemoryStore implements Store {
-  private pouches = new Map<string, Pouch>();
+  private pouches = new Map<string, StoredPouch>();
   private orders = new Map<string, Order>();
   private topups = new Map<string, TopUp>();
+  private users = new Map<string, UserProfile>();
 
-  constructor(seed: Pouch[] = seedPouches()) {
-    for (const p of seed) this.pouches.set(p.id, p);
+  constructor(seed: StoredPouch[] = seedPouches(), legacyOwnerEmail?: string) {
+    const legacy = legacyOwnerEmail?.trim().toLowerCase();
+    for (const p of seed) this.pouches.set(p.id, legacy && !p.ownerEmail ? { ...p, ownerEmail: legacy } : p);
   }
 
-  async listPouches() {
-    return [...this.pouches.values()];
+  async listPouches(ownerEmail?: string) {
+    const all = [...this.pouches.values()];
+    return ownerEmail ? all.filter((p) => p.ownerEmail === ownerEmail) : all;
   }
   async getPouch(id: string) {
     return this.pouches.get(id);
   }
-  async savePouch(p: Pouch) {
+  async savePouch(p: StoredPouch) {
+    const prev = this.pouches.get(p.id);
+    if (p.ownerEmail === undefined && prev?.ownerEmail) p.ownerEmail = prev.ownerEmail;
     this.pouches.set(p.id, p);
     return p;
   }
@@ -87,5 +92,17 @@ export class MemoryStore implements Store {
   async saveTopUp(t: TopUp) {
     this.topups.set(t.id, t);
     return t;
+  }
+  async listTopUps(pouchId: string) {
+    return [...this.topups.values()]
+      .filter((t) => t.pouchId === pouchId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  async getUser(email: string) {
+    return this.users.get(email);
+  }
+  async saveUser(u: UserProfile) {
+    this.users.set(u.email, u);
+    return u;
   }
 }

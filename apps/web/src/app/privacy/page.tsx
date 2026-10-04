@@ -16,6 +16,11 @@ export default function PrivacyPage() {
         and the wallet addresses used to fund and receive payments. We do not
         store your wallet private keys.
       </p>
+      <h2>Sign-in</h2>
+      <p>
+        Sign-in uses Google. Solpouch stores your email, name and profile
+        picture to identify your pouches.
+      </p>
       <h2>Voice and chat</h2>
       <p>
         Voice conversations with the assistant are processed by ElevenLabs.

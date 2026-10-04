@@ -36,6 +36,10 @@ import {
   usd,
 } from "@/components/ui";
 
+const CHIPS = [10, 25, 50, 100];
+const MAX_TOPUP = 10000;
+const STEPS = ["Choose amount", "Short safety wait (60 s)", "Added to pouch"];
+
 function TopUpSection({
   pouch,
   onDone,
@@ -48,43 +52,100 @@ function TopUpSection({
   const [topup, setTopup] = useState<TopUp | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  const [added, setAdded] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [autoFailed, setAutoFailed] = useState(false);
+  const completing = useRef(false);
+
+  // Resume the newest pending top-up so a reload does not lose it.
+  useEffect(() => {
+    let live = true;
+    api
+      .listPendingTopUps(pouch.id)
+      .then((list) => {
+        if (live && list.length > 0) {
+          setTopup((cur) => cur ?? list[0]);
+          setNow(Date.now());
+        }
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [pouch.id]);
 
   useEffect(() => {
     if (!topup) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
+    const timer = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(timer);
   }, [topup]);
 
-  const remaining = topup
-    ? Math.max(0, new Date(topup.readyAt).getTime() - now)
-    : 0;
+  const readyAt = topup ? new Date(topup.readyAt).getTime() : 0;
+  const remaining = topup ? Math.max(0, readyAt - now) : 0;
   const ready = topup != null && remaining === 0;
   const seconds = Math.ceil(remaining / 1000);
-  const countdown = `${Math.floor(seconds / 3600) > 0 ? `${Math.floor(seconds / 3600)}h ` : ""}${Math.floor((seconds % 3600) / 60)}m ${seconds % 60}s`;
+  const total = topup
+    ? Math.max(1000, readyAt - new Date(topup.createdAt).getTime())
+    : 60000;
+  const pct = topup ? Math.min(100, ((total - remaining) / total) * 100) : 0;
+  const step = added ? 3 : topup ? 2 : 1;
+
+  const complete = useCallback(
+    async (auto: boolean) => {
+      if (!topup || completing.current) return;
+      completing.current = true;
+      setBusy(true);
+      setError(null);
+      try {
+        await api.completeTopUp(topup.id);
+        setAdded(`Added ${usd(toUsdc(topup.amount))} USDC to ${pouch.name}`);
+        setTopup(null);
+        setAmount("");
+        setReason("");
+        setAutoFailed(false);
+        await onDone();
+      } catch (err) {
+        setAutoFailed(true);
+        setError(
+          auto ? `Could not add automatically. ${errMsg(err)}` : errMsg(err),
+        );
+      } finally {
+        completing.current = false;
+        setBusy(false);
+      }
+    },
+    [topup, pouch.name, onDone],
+  );
+
+  useEffect(() => {
+    if (ready && !autoFailed && !completing.current) void complete(true);
+  }, [ready, autoFailed, complete]);
 
   async function start(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return;
     const micros = toMicros(Number(amount));
-    if (
-      !Number.isSafeInteger(micros) ||
-      micros <= 0 ||
-      reason.trim().length < 10
-    ) {
-      setError("Enter a valid amount and a reason of at least 10 characters.");
+    if (!Number.isSafeInteger(micros) || micros <= 0) {
+      setError("Enter a valid amount.");
+      return;
+    }
+    if (Number(amount) > MAX_TOPUP) {
+      setError(
+        `The most you can add at once is ${MAX_TOPUP.toLocaleString()} USDC.`,
+      );
       return;
     }
     setBusy(true);
     setError(null);
-    setDone(false);
+    setAdded(null);
+    setAutoFailed(false);
     try {
+      const note = reason.trim();
       setTopup(
         await api.startTopUp({
           pouchId: pouch.id,
           amount: micros,
-          reason: reason.trim(),
+          ...(note ? { reason: note } : {}),
         }),
       );
       setNow(Date.now());
@@ -94,17 +155,14 @@ function TopUpSection({
       setBusy(false);
     }
   }
-  async function complete() {
-    if (!topup || !ready || busy) return;
+  async function cancel() {
+    if (!topup || busy) return;
     setBusy(true);
     setError(null);
     try {
-      await api.completeTopUp(topup.id);
+      await api.cancelTopUp(topup.id);
       setTopup(null);
-      setAmount("");
-      setReason("");
-      setDone(true);
-      await onDone();
+      setAutoFailed(false);
     } catch (err) {
       setError(errMsg(err));
     } finally {
@@ -113,97 +171,149 @@ function TopUpSection({
   }
 
   return (
-    <section className={card}>
-      <div className="mb-5 flex items-center gap-3">
-        <div>
+    <div id="add-funds" className="scroll-mt-6 space-y-3">
+      {pouch.balance === 0 && !topup && !added && (
+        <p className="rounded bg-[#211d2d] px-4 py-3 text-sm text-[#d9d1e6]">
+          This pouch is empty. Add funds to start spending.
+        </p>
+      )}
+      <section className={card}>
+        <div className="mb-4">
           <h2 className="text-lg font-semibold tracking-tight">Add funds</h2>
           <p className="mt-1 text-xs text-[#a9a5b9]">
-            Top-ups require a waiting period.
+            A short wait on every top-up stops rushed or unauthorised refills.
           </p>
         </div>
-      </div>
-      <ErrorBanner message={error} />
-      {done && <Notice>Top-up complete. Your balance has been updated.</Notice>}
-      {!topup ? (
-        <form onSubmit={start} className="space-y-4">
-          <div>
-            <label className={label} htmlFor="tu-amt">
-              Amount · USDC
-            </label>
-            <input
-              id="tu-amt"
-              className={input}
-              disabled={busy}
-              required
-              type="number"
-              min="0.01"
-              step="0.01"
-              inputMode="decimal"
-              placeholder="0.00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={label} htmlFor="tu-reason">
-              What is this refill for?
-            </label>
-            <textarea
-              id="tu-reason"
-              className={input}
-              disabled={busy}
-              required
-              minLength={10}
-              rows={3}
-              placeholder="e.g. A few extra groceries for the weekend"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-            <p className="mt-2 text-xs text-[#a9a5b9]">
-              At least 10 characters. A waiting period applies before you can
-              complete the top-up.
+        <ol className="mb-5 grid grid-cols-3 gap-2" aria-label="Top-up steps">
+          {STEPS.map((s, i) => {
+            const n = i + 1;
+            const on = n <= step;
+            return (
+              <li
+                key={s}
+                aria-current={n === step ? "step" : undefined}
+                className={`flex flex-col gap-1 border-t-2 pt-2 text-[11px] leading-4 sm:text-xs ${on ? "border-[#14f195] text-white" : "border-[#373041] text-[#a9a5b9]"}`}
+              >
+                <span className="font-semibold">{n}</span>
+                <span>{s}</span>
+              </li>
+            );
+          })}
+        </ol>
+        <ErrorBanner message={error} />
+        {added && <Notice>{added}</Notice>}
+        {!topup ? (
+          <form onSubmit={start} className="space-y-4">
+            <div>
+              <span className={label}>Amount · USDC</span>
+              <div className="mb-3 grid grid-cols-4 gap-2">
+                {CHIPS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setAmount(String(c))}
+                    className={`${btnSecondary} ${Number(amount) === c ? "ring-2 ring-[#14f195]" : ""}`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+              <input
+                id="tu-amt"
+                aria-label="Custom amount in USDC"
+                className={input}
+                disabled={busy}
+                required
+                type="number"
+                min="0.01"
+                max={MAX_TOPUP}
+                step="0.01"
+                inputMode="decimal"
+                placeholder="Custom amount"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className={label} htmlFor="tu-reason">
+                Note (optional)
+              </label>
+              <input
+                id="tu-reason"
+                className={input}
+                disabled={busy}
+                maxLength={200}
+                placeholder="e.g. Weekend groceries"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </div>
+            <button
+              className={`${btnPrimary} w-full`}
+              disabled={busy || !(Number(amount) > 0)}
+              type="submit"
+            >
+              {busy
+                ? "Starting…"
+                : Number(amount) > 0
+                  ? `Add ${usd(Number(amount))} USDC`
+                  : "Add funds"}
+            </button>
+          </form>
+        ) : (
+          <div className="space-y-4">
+            <div className="rounded bg-[#211d2d] p-5">
+              <p className="text-xs font-medium uppercase tracking-wider text-[#a9a5b9]">
+                {ready ? "Adding now" : "Safety wait"}
+              </p>
+              <p className="mt-2 text-3xl font-semibold tracking-tight">
+                {usd(toUsdc(topup.amount))}
+              </p>
+              {topup.reason && (
+                <p className="mt-2 text-sm text-[#a9a5b9]">{topup.reason}</p>
+              )}
+            </div>
+            <div
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(pct)}
+              aria-label="Safety wait progress"
+              className="h-2 w-full overflow-hidden rounded bg-[#373041]"
+            >
+              <div
+                className="h-full bg-[#14f195] transition-[width] duration-500"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <p className="text-sm font-medium" role="status">
+              {ready
+                ? busy
+                  ? "Adding to your pouch…"
+                  : "Wait is over."
+                : `Funds will be added in ${seconds}s. Keep this page open.`}
             </p>
+            <div className="flex flex-wrap gap-3">
+              <button
+                className={`${btnPrimary} flex-1`}
+                disabled={!ready || busy}
+                onClick={() => void complete(false)}
+              >
+                {busy && ready ? "Adding…" : "Add now"}
+              </button>
+              <button
+                className={btnSecondary}
+                disabled={busy}
+                onClick={() => void cancel()}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
-          <button
-            className={`${btnPrimary} w-full`}
-            disabled={
-              busy || reason.trim().length < 10 || !(Number(amount) > 0)
-            }
-            type="submit"
-          >
-            {busy ? "Starting top-up…" : "Start top-up"}
-          </button>
-        </form>
-      ) : (
-        <div className="space-y-4">
-          <div className="rounded bg-[#211d2d] p-5">
-            <p className="text-xs font-medium uppercase tracking-wider text-[#a9a5b9]">
-              {ready ? "Ready to add" : "Cooling down"}
-            </p>
-            <p className="mt-2 text-3xl font-semibold tracking-tight">
-              {usd(toUsdc(topup.amount))}
-            </p>
-            <p className="mt-2 text-sm text-[#a9a5b9]">{topup.reason}</p>
-          </div>
-          <p className="text-sm font-medium" role="status">
-            {ready
-              ? "Your waiting period is over."
-              : `Time remaining: ${countdown}`}
-          </p>
-          <button
-            className={`${btnPrimary} w-full`}
-            disabled={!ready || busy}
-            onClick={complete}
-          >
-            {busy ? "Completing…" : "Complete top-up"}
-          </button>
-          <p className="text-xs leading-5 text-[#a9a5b9]">
-            Keep this page open to complete this top-up. Pending top-ups cannot
-            currently be recovered from the dashboard after a reload.
-          </p>
-        </div>
-      )}
-    </section>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -269,6 +379,14 @@ export default function PouchDetail() {
     };
   }, [load]);
 
+  const pouchReady = pouch?.id === id;
+  useEffect(() => {
+    if (pouchReady && window.location.hash === "#add-funds")
+      document
+        .getElementById("add-funds")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [pouchReady]);
+
   if ((!pouch || pouch.id !== id) && (!error || loading))
     return <PouchSkeleton />;
 
@@ -332,6 +450,7 @@ export default function PouchDetail() {
           {loading ? "Refreshing…" : "Retry refresh"}
         </button>
       )}
+      <TopUpSection key={pouch.id} pouch={pouch} onDone={load} />
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(300px,1fr)]">
         <div className="min-w-0 space-y-6">
           <section className="border-b border-[#373041] pb-6 text-white">
@@ -559,7 +678,6 @@ export default function PouchDetail() {
               </button>
             </div>
           </section>
-          <TopUpSection key={pouch.id} pouch={pouch} onDone={load} />
         </div>
       </div>
     </div>

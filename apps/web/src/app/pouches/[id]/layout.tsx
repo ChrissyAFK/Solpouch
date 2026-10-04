@@ -15,5 +15,5 @@ export default function PouchLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  return <>{children}</>;
 }

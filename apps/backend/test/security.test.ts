@@ -3,12 +3,15 @@ import { createApp } from "../src/app.js";
 import { getMerchant } from "../src/merchants/index.js";
 import { MemoryStore } from "../src/store/memory.js";
 import { MockVaultClient } from "../src/vault/mock.js";
+import { authHeaders, ownedSeed } from "./helpers.js";
 
 delete process.env.GEMINI_API_KEY;
 
 let app: ReturnType<typeof createApp>;
-beforeEach(() => {
-  const store = new MemoryStore();
+let auth: Record<string, string>;
+beforeEach(async () => {
+  auth = await authHeaders();
+  const store = new MemoryStore(ownedSeed());
   const vault = new MockVaultClient(store, (id) => getMerchant(id)?.payTo, () => 1_000_000);
   app = createApp({ store, vault });
 });
@@ -19,7 +22,7 @@ afterEach(() => {
 
 const json = { "Content-Type": "application/json" };
 const badTopup = (ip: string) =>
-  app.request("/topups", { method: "POST", headers: { ...json, "x-forwarded-for": ip }, body: "{}" });
+  app.request("/topups", { method: "POST", headers: { ...json, ...auth, "x-forwarded-for": ip }, body: "{}" });
 
 describe("security", () => {
   it("returns 429 with Retry-After past the limit", async () => {
@@ -41,7 +44,7 @@ describe("security", () => {
     expect((await app.request("/pouches", { headers: h })).status).toBe(404);
     expect((await app.request("/health", { headers: h })).status).toBe(200);
     process.env.PUBLIC_API = "all";
-    expect((await app.request("/pouches", { headers: h })).status).toBe(200);
+    expect((await app.request("/pouches", { headers: { ...h, ...auth } })).status).toBe(200);
   });
 
   it("CORS echoes allowed origins only", async () => {
@@ -64,14 +67,14 @@ describe("security", () => {
   });
 
   it("rejects oversized bodies with 413", async () => {
-    const r = await app.request("/pouches", { method: "POST", headers: json, body: JSON.stringify({ name: "x".repeat(70_000) }) });
+    const r = await app.request("/pouches", { method: "POST", headers: { ...json, ...auth }, body: JSON.stringify({ name: "x".repeat(70_000) }) });
     expect(r.status).toBe(413);
   });
 
   it("rejects a 61 char pouch name with 400", async () => {
     const r = await app.request("/pouches", {
       method: "POST",
-      headers: json,
+      headers: { ...json, ...auth },
       body: JSON.stringify({ name: "a".repeat(61), maxPerOrder: 1, dailyLimit: 1, allowedMerchantIds: [] }),
     });
     expect(r.status).toBe(400);

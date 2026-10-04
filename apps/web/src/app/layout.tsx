@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import { connection } from "next/server";
+import { AuthProvider } from "@/components/AuthProvider";
 import { Shell } from "@/components/Shell";
 import { pageMetadata, siteDescription, siteUrl } from "@/lib/site";
 import "./globals.css";
@@ -36,10 +38,13 @@ export default async function RootLayout({
 }) {
   // Render per request so Next can apply the CSP nonce provided by the proxy.
   await connection();
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html lang="en" data-scroll-behavior="smooth">
       <body>
-        <Shell>{children}</Shell>
+        <AuthProvider nonce={nonce}>
+          <Shell>{children}</Shell>
+        </AuthProvider>
       </body>
     </html>
   );

@@ -12,6 +12,9 @@ import { statsRoutes } from "./routes/stats.js";
 import { topupRoutes } from "./routes/topups.js";
 import { voiceRoutes } from "./routes/voice.js";
 import { chatRoutes } from "./routes/chat.js";
+import { profileRoutes } from "./routes/profile.js";
+import { authRoutes } from "./routes/auth.js";
+import { requireUser } from "./auth/session.js";
 import { rateLimit } from "./security/rateLimit.js";
 
 const DEFAULT_ORIGINS = ["http://localhost:3000", "https://solpouch.tech", "https://www.solpouch.tech"];
@@ -30,7 +33,7 @@ export function createApp(deps: Deps) {
     "*",
     cors({
       origin: (o) => (origins.includes(o) ? o : null),
-      allowHeaders: ["Content-Type", "X-Solpouch-Secret"],
+      allowHeaders: ["Content-Type", "X-Solpouch-Secret", "Authorization"],
     }),
   );
 
@@ -57,6 +60,11 @@ export function createApp(deps: Deps) {
   app.use("/voice/*", rateLimit({ windowMs: MIN, max: 60, key: "voice" }));
 
   app.get("/health", (c) => c.json({ ok: true }));
+  for (const base of ["/pouches", "/orders", "/topups", "/stats", "/profile"]) app.use(`${base}/*`, requireUser);
+  // GET /chat/status is public (mode only); everything else under /chat needs a user.
+  app.use("/chat/*", async (c, next) => (c.req.method === "GET" && c.req.path === "/chat/status" ? next() : requireUser(c as never, next)));
+  app.route("/auth", authRoutes(deps));
+  app.route("/profile", profileRoutes(deps));
   app.route("/pouches", pouchRoutes(deps));
   app.route("/orders", orderRoutes(deps));
   app.route("/topups", topupRoutes(deps));

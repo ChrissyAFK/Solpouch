@@ -16,7 +16,10 @@ test("production scripts require a nonce and do not allow inline code or eval", 
     .find((part) => part.startsWith("script-src "));
   assert.match(scripts, /'nonce-test-nonce' 'strict-dynamic'/);
   assert.doesNotMatch(scripts, /unsafe-inline|unsafe-eval/);
-  assert.match(policy, /connect-src 'self' https:\/\/api\.example\.test https:\/\/api\.elevenlabs\.io wss:\/\/api\.elevenlabs\.io;/);
+  assert.match(policy, /connect-src 'self' https:\/\/api\.example\.test https:\/\/api\.elevenlabs\.io wss:\/\/api\.elevenlabs\.io https:\/\/accounts\.google\.com\/gsi\/;/);
+  assert.match(scripts, /https:\/\/accounts\.google\.com\/gsi\/client/);
+  assert.match(policy, /frame-src https:\/\/accounts\.google\.com\/gsi\/;/);
+  assert.match(policy, /style-src 'self' 'unsafe-inline' https:\/\/accounts\.google\.com\/gsi\/style;/);
   assert.match(policy, /frame-ancestors 'none'/);
   assert.match(policy, /upgrade-insecure-requests/);
 });

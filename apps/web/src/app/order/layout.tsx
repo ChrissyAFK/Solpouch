@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RequireAuth } from "@/components/AuthProvider";
 import { pageMetadata } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -15,5 +16,5 @@ export default function OrderLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  return <RequireAuth>{children}</RequireAuth>;
 }

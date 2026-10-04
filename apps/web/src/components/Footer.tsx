@@ -23,8 +23,8 @@ export function Footer() {
           <nav className={styles.group} aria-label="Footer product">
             <h2>Product</h2>
             <Link href="/dashboard">Overview</Link>
-            <Link href="/dashboard#pouches">Pouches</Link>
-            <Link href="/dashboard#activity">Orders</Link>
+            <Link href="/pouches">Pouches</Link>
+            <Link href="/orders">Orders</Link>
             <Link href="/order">New order</Link>
           </nav>
           <nav className={styles.group} aria-label="Footer company">

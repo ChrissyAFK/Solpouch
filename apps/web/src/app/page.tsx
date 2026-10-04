@@ -181,7 +181,7 @@ export default function LandingPage() {
               A pouch is a budget with its own rules. Keep the grocery run
               separate from takeout or your next project.
             </p>
-            <Link href="/dashboard#pouches" className={styles.textLink}>
+            <Link href="/pouches" className={styles.textLink}>
               Explore the pouches <Arrow />
             </Link>
           </div>

@@ -108,7 +108,9 @@ export interface SpendPoint {
 // POST   /orders/:id/confirm          -> Order (pays; ends "paid" or "rejected")
 // POST   /orders/:id/cancel           -> Order
 // POST   /topups                      StartTopUpBody -> TopUp (status "cooling_down")
+// GET    /topups?pouchId=             -> TopUp[] (pending/cooling_down, newest first)
 // POST   /topups/:id/complete         -> TopUp (only after readyAt)
+// POST   /topups/:id/cancel           -> TopUp (cooling_down -> cancelled)
 // GET    /merchants                   -> Merchant[]
 // GET    /merchants/:id/products      -> Product[]
 // GET    /stats/spend?pouchId=&bucket=day|hour -> SpendPoint[]
@@ -134,8 +136,8 @@ export interface CreateOrderBody {
 export interface StartTopUpBody {
   pouchId: string;
   amount: Micros;
-  /** Required: the user must say why. Part of the friction. */
-  reason: string;
+  /** Optional; defaults to "Top-up". */
+  reason?: string;
 }
 
 export interface ApiError {

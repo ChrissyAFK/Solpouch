@@ -10,6 +10,7 @@ import type {
   StartTopUpBody,
   ApiError,
 } from "@solpouch/shared";
+import { clearSession, getToken } from "./session";
 
 export const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8787";
@@ -31,7 +32,11 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(BACKEND_URL + path, {
       ...init,
-      headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+      headers: {
+        "Content-Type": "application/json",
+        ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+        ...(init?.headers ?? {}),
+      },
       cache: "no-store",
       signal: controller.signal,
     });
@@ -43,6 +48,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
       /* handled below */
     }
     if (!res.ok) {
+      if (res.status === 401) clearSession();
       const body =
         data && typeof data === "object" ? (data as Partial<ApiError>) : {};
       const message =
@@ -82,7 +88,25 @@ const post = <T>(p: string, body?: unknown) =>
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
+export type Profile = {
+  email: string;
+  name: string;
+  picture: string;
+  displayName: string | null;
+  avatar: string | null;
+  googleName: string;
+  googlePicture: string;
+  createdAt: string | number;
+};
+export type UpdateProfileBody = {
+  displayName?: string | null;
+  avatar?: string | null;
+};
+
 export const api = {
+  getProfile: () => req<Profile>("/profile"),
+  updateProfile: (b: UpdateProfileBody) =>
+    req<Profile>("/profile", { method: "PATCH", body: JSON.stringify(b) }),
   pouches: () => req<Pouch[]>("/pouches"),
   pouch: (id: string) => req<Pouch>(`/pouches/${id}`),
   createPouch: (b: CreatePouchBody) => post<Pouch>("/pouches", b),
@@ -93,6 +117,7 @@ export const api = {
     }),
   freeze: (id: string) => post<Pouch>(`/pouches/${id}/freeze`),
   unfreeze: (id: string) => post<Pouch>(`/pouches/${id}/unfreeze`),
+  voiceToken: () => post<{ token: string }>("/auth/voice-token"),
   merchants: () => req<Merchant[]>("/merchants"),
   createOrder: (b: CreateOrderBody) => post<Order>("/orders", b),
   orders: (pouchId?: string) =>
@@ -104,6 +129,9 @@ export const api = {
   cancel: (id: string) => post<Order>(`/orders/${id}/cancel`),
   startTopUp: (b: StartTopUpBody) => post<TopUp>("/topups", b),
   completeTopUp: (id: string) => post<TopUp>(`/topups/${id}/complete`),
+  cancelTopUp: (id: string) => post<TopUp>(`/topups/${id}/cancel`),
+  listPendingTopUps: (pouchId: string) =>
+    req<TopUp[]>(`/topups?pouchId=${encodeURIComponent(pouchId)}`),
   spend: (pouchId: string, bucket: "day" | "hour" = "day") =>
     req<SpendPoint[]>(
       `/stats/spend?pouchId=${encodeURIComponent(pouchId)}&bucket=${bucket}`,

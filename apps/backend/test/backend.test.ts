@@ -3,6 +3,7 @@ import { toMicros } from "@solpouch/shared";
 import { createApp } from "../src/app.js";
 import { getMerchant } from "../src/merchants/index.js";
 import { MemoryStore } from "../src/store/memory.js";
+import { authHeaders, ownedSeed, voiceToken } from "./helpers.js";
 import { MockVaultClient } from "../src/vault/mock.js";
 import { VaultRejected } from "../src/vault/types.js";
 
@@ -18,7 +19,7 @@ let store: MemoryStore;
 let vault: MockVaultClient;
 beforeEach(() => {
   clock = 1_000_000;
-  store = new MemoryStore();
+  store = new MemoryStore(ownedSeed());
   vault = new MockVaultClient(store, (id) => getMerchant(id)?.payTo, () => clock);
 });
 
@@ -76,10 +77,10 @@ describe("MockVaultClient rules", () => {
 
 describe("HTTP flow", () => {
   const mk = () => createApp({ store, vault });
-  const post = (app: ReturnType<typeof mk>, path: string, body?: unknown, headers: Record<string, string> = {}) =>
+  const post = async (app: ReturnType<typeof mk>, path: string, body?: unknown, headers: Record<string, string> = {}) =>
     app.request(path, {
       method: "POST",
-      headers: { "content-type": "application/json", ...headers },
+      headers: { "content-type": "application/json", ...(await authHeaders()), ...headers },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
 
@@ -127,20 +128,53 @@ describe("HTTP flow", () => {
     expect((await uber()).balance).toBe($(120));
   });
 
-  it("top-up requires a reason", async () => {
-    const res = await post(mk(), "/topups", { pouchId: "uber-eats", amount: $(5), reason: "hi" });
-    expect(res.status).toBe(400);
+  it("top-up reason is optional", async () => {
+    const res = await post(mk(), "/topups", { pouchId: "uber-eats", amount: $(5) });
+    expect(res.status).toBe(201);
+    expect((await res.json()).reason).toBe("Top-up");
+  });
+
+  it("pending top-ups list, complete, cancel, ownership", async () => {
+    const app = mk();
+    const get = async (path: string, email?: string) =>
+      app.request(path, { headers: await authHeaders(email) });
+    const a = await (await post(app, "/topups", { pouchId: "uber-eats", amount: $(5) })).json();
+    const b = await (await post(app, "/topups", { pouchId: "uber-eats", amount: $(7), reason: "more" })).json();
+    const list = await (await get("/topups?pouchId=uber-eats")).json();
+    expect(list.map((t: { id: string }) => t.id).sort()).toEqual([a.id, b.id].sort());
+    expect((await get("/topups")).status).toBe(400);
+    expect((await get("/topups?pouchId=uber-eats", "other@example.com")).status).toBe(404);
+
+    const saved = (await store.getTopUp(a.id))!;
+    saved.readyAt = new Date(Date.now() - 1000).toISOString();
+    await store.saveTopUp(saved);
+    expect((await post(app, `/topups/${a.id}/complete`)).status).toBe(200);
+    const after = await (await get("/topups?pouchId=uber-eats")).json();
+    expect(after.map((t: { id: string }) => t.id)).toEqual([b.id]);
+  });
+
+  it("cancel top-up: owner only, then complete is 409", async () => {
+    const app = mk();
+    const get = async (path: string) => app.request(path, { headers: await authHeaders() });
+    const b = await (await post(app, "/topups", { pouchId: "uber-eats", amount: $(7), reason: "more" })).json();
+    const otherCancel = await app.request(`/topups/${b.id}/cancel`, { method: "POST", headers: await authHeaders("other@example.com") });
+    expect(otherCancel.status).toBe(404);
+    const c = await post(app, `/topups/${b.id}/cancel`);
+    expect(c.status).toBe(200);
+    expect((await c.json()).status).toBe("cancelled");
+    expect((await post(app, `/topups/${b.id}/complete`)).status).toBe(409);
+    expect(await (await get("/topups?pouchId=uber-eats")).json()).toEqual([]);
   });
 
   it("voice has no top-up tool and cannot move money outside confirm", async () => {
     const app = mk();
     for (const tool of ["top_up", "topup", "start_topup", "complete_topup", "pay"]) {
-      expect((await post(app, `/voice/tools/${tool}`, { pouchId: "uber-eats", amount: 5 })).status).toBe(404);
+      expect((await post(app, `/voice/tools/${tool}`, { pouchId: "uber-eats", amount: 5, user_token: await voiceToken() })).status).toBe(404);
     }
     expect((await uber()).balance).toBe($(100));
-    const r = await (await post(app, "/voice/tools/create_order", { request: "pad thai" })).json();
+    const r = await (await post(app, "/voice/tools/create_order", { request: "pad thai", user_token: await voiceToken() })).json();
     expect(r.say).toContain("Total");
-    const f = await post(app, "/voice/tools/freeze_all");
+    const f = await post(app, "/voice/tools/freeze_all", { user_token: await voiceToken() });
     expect(f.status).toBe(200);
     expect((await uber()).frozen).toBe(true);
   });
@@ -149,8 +183,8 @@ describe("HTTP flow", () => {
     process.env.ELEVENLABS_TOOL_SECRET = "s3cret";
     try {
       const app = mk();
-      expect((await post(app, "/voice/tools/get_pouches")).status).toBe(401);
-      expect((await post(app, "/voice/tools/get_pouches", {}, { "X-Solpouch-Secret": "s3cret" })).status).toBe(200);
+      expect((await post(app, "/voice/tools/get_pouches", { user_token: await voiceToken() })).status).toBe(401);
+      expect((await post(app, "/voice/tools/get_pouches", { user_token: await voiceToken() }, { "X-Solpouch-Secret": "s3cret" })).status).toBe(200);
     } finally {
       delete process.env.ELEVENLABS_TOOL_SECRET;
     }

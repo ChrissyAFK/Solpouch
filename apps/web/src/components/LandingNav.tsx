@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import styles from "./LandingNav.module.css";
+import { useAuth } from "./AuthProvider";
 
 export function LandingNav() {
   const [open, setOpen] = useState(false);
+  const { user } = useAuth();
   const toggle = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -88,7 +90,7 @@ export function LandingNav() {
             Questions
           </a>
           <Link href="/dashboard" className={styles.launch} onClick={closeMenu}>
-            Open dashboard <span aria-hidden="true">↗</span>
+            {user ? "Open dashboard" : "Sign in"} <span aria-hidden="true">↗</span>
           </Link>
         </nav>
       </div>
