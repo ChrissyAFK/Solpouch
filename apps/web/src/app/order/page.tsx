@@ -7,6 +7,8 @@ import { useSearchParams } from "next/navigation";
 import type { Merchant, Order, Pouch } from "@solpouch/shared";
 import { toUsdc } from "@solpouch/shared";
 import { api, ApiRequestError, errMsg } from "@/lib/api";
+import { PouchGlyph } from "@/components/PouchGlyph";
+import s from "./order.module.css";
 import {
   ErrorBanner,
   Notice,
@@ -135,35 +137,34 @@ function OrderWorkspace() {
   const isDraft = order?.status === "draft";
   const step = !order ? 1 : isDraft ? 2 : 3;
   const merchant = merchants.find((m) => m.id === order?.merchantId);
+  const [paidDate] = useState(() =>
+    new Date().toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }),
+  );
 
   return (
     <div className="mx-auto max-w-6xl">
-      <Link href="/dashboard" className="text-sm text-[#a9a5b9] hover:underline">
+      <Link href="/dashboard" className="text-sm text-[var(--muted)] hover:underline">
         ← Back to overview
       </Link>
       <div className="mt-5 mb-6">
-        <h1 className="text-3xl font-semibold tracking-tight text-[#f1edf8]">
+        <h1 className="text-3xl font-semibold tracking-tight text-[var(--ink)]">
           New order
         </h1>
-        <p className="mt-3 text-[#a9a5b9]">
+        <p className="mt-3 text-[var(--muted)]">
           Review items and pricing before payment.
         </p>
       </div>
-      <ol
-        aria-label="Order progress"
-        className="mb-8 flex flex-wrap gap-5 text-sm"
-      >
+      <ol aria-label="Order progress" className={s.steps}>
         {["Request", "Review", "Payment result"].map((name, i) => (
           <li
             key={name}
             aria-current={step === i + 1 ? "step" : undefined}
-            className={`flex items-center gap-2 ${step === i + 1 ? "font-semibold text-[#f1edf8]" : "text-[#a9a5b9]"}`}
+            className={step === i + 1 ? s.stepCurrent : undefined}
           >
-            <span
-              className={`flex h-7 w-7 items-center justify-center rounded text-xs ${step === i + 1 ? "bg-[#9945ff] text-white" : "bg-[#211d2d]"}`}
-            >
-              {i + 1}
-            </span>
             {name}
           </li>
         ))}
@@ -201,8 +202,23 @@ function OrderWorkspace() {
             {!order ? (
               <form onSubmit={submit} className={`${card} space-y-6`}>
                 <div>
-                  <label className={`${label} mb-3`} htmlFor="req">
-                    Items to order
+                  <div className={s.talkRow}>
+                    <button
+                      type="button"
+                      className={`${btnSecondary} ${s.talk}`}
+                      onClick={() =>
+                        window.dispatchEvent(new CustomEvent("solpouch:talk"))
+                      }
+                    >
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <rect x="9" y="3" width="6" height="11" rx="3" />
+                        <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+                      </svg>
+                      Talk to Solpouch
+                    </button>
+                  </div>
+                  <label className={s.orType} htmlFor="req">
+                    Or type it
                   </label>
                   <textarea
                     id="req"
@@ -211,7 +227,7 @@ function OrderWorkspace() {
                     required
                     value={request}
                     onChange={(e) => setRequest(e.target.value)}
-                    placeholder="e.g. 2 eggs and 1 bread for the week"
+                    placeholder="2 dozen eggs and oat milk, or a chainsaw for the cabin"
                   />
                   <div className="mt-3 flex flex-wrap gap-2">
                     {suggestions.map((text) => (
@@ -219,7 +235,7 @@ function OrderWorkspace() {
                         type="button"
                         key={text}
                         onClick={() => setRequest(text)}
-                        className="rounded border border-[#373041] bg-[#211d2d] px-3 py-2 text-xs text-[#f1edf8] hover:bg-[#34234b]"
+                        className={s.chip}
                       >
                         {text}
                       </button>
@@ -230,23 +246,46 @@ function OrderWorkspace() {
                   <label className={label} htmlFor="pouch">
                     Choose a pouch
                   </label>
-                  <select
-                    id="pouch"
-                    className={input}
-                    value={pouchId}
-                    onChange={(e) => setPouchId(e.target.value)}
-                  >
-                    <option value="">Select automatically</option>
-                    {pouches.map((p) => (
-                      <option key={p.id} value={p.id} disabled={p.frozen}>
-                        {p.name} · {usd(toUsdc(p.balance))}
-                        {p.frozen ? " · Frozen" : ""}
-                      </option>
-                    ))}
-                  </select>
+                  <div className={s.pouchPick}>
+                    {selected && (
+                      <PouchGlyph
+                        name={selected.name}
+                        remaining={toUsdc(
+                          Math.max(0, selected.dailyLimit - selected.spentToday),
+                        )}
+                        limit={toUsdc(selected.dailyLimit)}
+                        size="sm"
+                        frozen={selected.frozen}
+                      />
+                    )}
+                    <select
+                      id="pouch"
+                      className={input}
+                      value={pouchId}
+                      onChange={(e) => setPouchId(e.target.value)}
+                    >
+                      <option value="">Select automatically</option>
+                      {pouches.map((p) => (
+                        <option key={p.id} value={p.id} disabled={p.frozen}>
+                          {p.name} · {usd(toUsdc(p.balance))}
+                          {p.frozen ? " · Frozen" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {selected && (
+                      <span className={`${s.pouchLeft} num`}>
+                        {usd(
+                          toUsdc(
+                            Math.max(0, selected.dailyLimit - selected.spentToday),
+                          ),
+                        )}{" "}
+                        left today
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center justify-between gap-4 border-t border-[#373041] pt-5">
-                  <p className="max-w-64 text-xs leading-relaxed text-[#a9a5b9]">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-t border-[var(--line-strong)] pt-5">
+                  <p className="max-w-64 text-xs leading-relaxed text-[var(--muted)]">
                     No payment until you approve the order.
                   </p>
                   <button
@@ -262,96 +301,172 @@ function OrderWorkspace() {
               <section className={card}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs uppercase tracking-wider text-[#a9a5b9]">
-                      {merchant?.name ?? "Your order"}
-                    </p>
-                    <h2 className="mt-2 text-2xl font-semibold">
+                    <h2 className="text-2xl font-semibold">
                       {isDraft ? "Review order" : "Your order"}
                     </h2>
+                    <p className="mt-1 text-sm text-[var(--muted)]">
+                      {merchant?.name ?? "Your order"}
+                    </p>
                   </div>
-                  <span className="rounded bg-[#211d2d] px-3 py-1.5 text-xs font-semibold capitalize">
-                    {order.status}
-                  </span>
+                  <span className={s.statusPill}>{order.status}</span>
                 </div>
-                <p className="mt-3 text-sm text-[#a9a5b9]">“{order.request}”</p>
+                <p className="mt-3 text-sm text-[var(--muted)]">“{order.request}”</p>
                 {order.status === "paid" && (
-                  <Notice>
-                    {order.txSignature?.startsWith("mock")
-                      ? "Payment complete."
-                      : "Payment recorded."}
-                  </Notice>
+                  <div className={s.receipt} aria-label="Receipt">
+                    <span className={s.stamp}>Paid</span>
+                    <div className={s.receiptHead}>
+                      <div className={s.receiptStore}>
+                        {merchant?.name ?? "Your order"}
+                      </div>
+                      <div className={s.receiptMeta}>{paidDate}</div>
+                    </div>
+                    <ul className={s.receiptItems}>
+                      {order.lines.map((line, i) => (
+                        <li key={i} className={s.receiptItem}>
+                          <span>
+                            {line.product?.name ?? line.requested}
+                            <br />
+                            <span className={s.receiptQty}>
+                              {line.qty} ×{" "}
+                              {line.product
+                                ? usd(toUsdc(line.product.unitPrice))
+                                : "—"}
+                            </span>
+                          </span>
+                          <span className="num">
+                            {line.product ? usd(toUsdc(line.lineTotal)) : "—"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className={s.receiptTotal}>
+                      <span>Total</span>
+                      <span className="num">{usd(toUsdc(order.total))}</span>
+                    </div>
+                    {selected && (
+                      <div className={s.receiptBalances}>
+                        <div>
+                          <span>{selected.name} balance</span>
+                          <b className="num">{usd(toUsdc(selected.balance))}</b>
+                        </div>
+                        <div>
+                          <span>Left today</span>
+                          <b className="num">
+                            {usd(
+                              toUsdc(
+                                Math.max(
+                                  0,
+                                  selected.dailyLimit - selected.spentToday,
+                                ),
+                              ),
+                            )}
+                          </b>
+                        </div>
+                      </div>
+                    )}
+                    <div className={s.receiptFoot}>
+                      {order.txSignature &&
+                      !order.txSignature.startsWith("mock") ? (
+                        <a
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          href={`https://explorer.solana.com/tx/${encodeURIComponent(order.txSignature)}?cluster=devnet`}
+                        >
+                          View on Solana Explorer
+                        </a>
+                      ) : (
+                        <span>Demo payment</span>
+                      )}
+                    </div>
+                  </div>
                 )}
                 {order.status === "rejected" && (
-                  <ErrorBanner
-                    message={`Your pouch declined this payment: ${order.rejectReason ?? "spending rule"}. No completed payment is recorded.`}
-                  />
+                  <div role="alert" className={s.rejected}>
+                    Your pouch declined this payment:{" "}
+                    {order.rejectReason ?? "spending rule"}. No completed
+                    payment is recorded.
+                  </div>
                 )}
                 {order.status === "cancelled" && (
                   <Notice>
                     Order cancelled. You haven’t paid for this cart.
                   </Notice>
                 )}
-                <div className="my-6 divide-y divide-[#373041]">
-                  {order.lines.map((line, i) => (
-                    <article key={i} className="py-5">
-                      <div className="flex justify-between gap-4">
-                        <div>
-                          <h3 className="font-semibold">
-                            {line.product?.name ?? "Item unavailable"}
-                          </h3>
-                          <p className="mt-1 text-sm text-[#a9a5b9]">
-                            {line.product
-                              ? [line.product.brand, line.product.size]
-                                  .filter(Boolean)
-                                  .join(" · ")
-                              : line.requested}
+                {order.status !== "paid" && (
+                <>
+                <div className={s.lines}>
+                  {order.lines.map((line, i) => {
+                    const exact =
+                      !!line.product &&
+                      !line.substitution &&
+                      line.matchScore >= 0.9;
+                    return (
+                      <article key={i} className={s.line}>
+                        <div className="flex justify-between gap-4">
+                          <div>
+                            <h3 className="font-semibold">
+                              {line.product?.name ?? "Item unavailable"}
+                            </h3>
+                            <p className="mt-1 text-sm text-[var(--muted)]">
+                              {line.product
+                                ? [line.product.brand, line.product.size]
+                                    .filter(Boolean)
+                                    .join(" · ")
+                                : line.requested}
+                            </p>
+                          </div>
+                          <p className="num shrink-0 font-semibold">
+                            {line.product ? usd(toUsdc(line.lineTotal)) : "—"}
                           </p>
                         </div>
-                        <p className="shrink-0 font-semibold tabular-nums">
-                          {line.product ? usd(toUsdc(line.lineTotal)) : "—"}
-                        </p>
-                      </div>
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-[#a9a5b9]">
-                        <span>
-                          Requested: {line.requestedQty} × {line.requested}
-                        </span>
-                        <span>
-                          {line.qty} ×{" "}
-                          {line.product
-                            ? usd(toUsdc(line.product.unitPrice))
-                            : "—"}{" "}
-                          · {Math.round(line.matchScore * 100)}% match
-                        </span>
-                      </div>
-                      {(line.substitution || line.note || !line.product) && (
-                        <div
-                          className={`mt-3 rounded px-3 py-2 text-sm ${line.substitution || !line.product ? "bg-[#342816] text-[#f4c879]" : "bg-[#211d2d] text-[#d2ccdc]"}`}
-                        >
-                          <strong>
-                            {line.substitution
-                              ? "Substitution · "
-                              : !line.product
-                                ? "Unavailable · "
-                                : ""}
-                          </strong>
-                          {line.note ??
-                            "Please check this item before approving."}
+                        <div className={`mt-3 flex flex-wrap items-center justify-between gap-2 ${s.secondary}`}>
+                          <span>
+                            Requested: <span className="num">{line.requestedQty}</span> × {line.requested}
+                          </span>
+                          <span className="num">
+                            {line.qty} ×{" "}
+                            {line.product
+                              ? usd(toUsdc(line.product.unitPrice))
+                              : "—"}
+                          </span>
                         </div>
-                      )}
-                    </article>
-                  ))}
+                        {exact ? (
+                          <span className={`${s.state} ${s.exact}`}>
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M3 8.5l3.2 3L13 4.5" />
+                            </svg>
+                            Exact
+                          </span>
+                        ) : (
+                          <div className={s.checkBox}>
+                            <strong>
+                              {!line.product
+                                ? "Unavailable · "
+                                : line.substitution
+                                  ? "Check this · Substitution · "
+                                  : "Check this · "}
+                            </strong>
+                            {line.note ??
+                              "Please check this item before approving."}
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
                 </div>
-                <div className="flex items-center justify-between border-t border-[#373041] pt-5">
-                  <span className="text-sm text-[#a9a5b9]">
+                <div className="flex items-center justify-between border-t border-[var(--line-strong)] pt-5">
+                  <span className="text-sm text-[var(--muted)]">
                     Cart total · USDC
                   </span>
-                  <strong className="text-3xl tracking-tight">
+                  <strong className="num text-3xl tracking-tight">
                     {usd(toUsdc(order.total))}
                   </strong>
                 </div>
-                <p className="mt-2 text-xs text-[#a9a5b9]">
+                <p className="mt-2 text-xs text-[var(--muted)]">
                   Prices come from the store’s catalog.
                 </p>
+                </>
+                )}
                 <div className="mt-6 flex flex-wrap gap-3">
                   {isDraft ? (
                     <>
@@ -389,47 +504,37 @@ function OrderWorkspace() {
                     </button>
                   )}
                 </div>
-                {order.txSignature && !order.txSignature.startsWith("mock") && (
-                  <a
-                    className="mt-4 inline-block text-sm underline"
-                    target="_blank"
-                    rel="noreferrer"
-                    href={`https://explorer.solana.com/tx/${encodeURIComponent(order.txSignature)}?cluster=devnet`}
-                  >
-                    View transaction
-                  </a>
-                )}
               </section>
             )}
           </div>
           <aside className="space-y-5">
             {!selected && (
-              <div className="border-t border-[#373041] pt-4">
+              <div className="border-t border-[var(--line-strong)] pt-4">
                 <h2 className="text-sm font-semibold">Available merchants</h2>
-                <ul className="mt-3 divide-y divide-[#373041]">
+                <ul className="mt-3 divide-y divide-[var(--line-strong)]">
                   {merchants.map((m) => (
-                    <li key={m.id} className="py-3 text-sm text-[#a9a5b9]">
+                    <li key={m.id} className="py-3 text-sm text-[var(--muted)]">
                       {m.name}
                     </li>
                   ))}
                 </ul>
-                <p className="mt-4 text-xs text-[#a9a5b9]">
+                <p className="mt-4 text-xs text-[var(--muted)]">
                   Approval required for every order.
                 </p>
               </div>
             )}
             {selected && (
               <div className={card}>
-                <p className="text-xs uppercase tracking-wider text-[#a9a5b9]">
+                <p className="text-sm text-[var(--muted)]">
                   Paying from
                 </p>
                 <h3 className="mt-3 font-semibold">{selected.name}</h3>
-                <p className="mt-2 text-2xl font-semibold">
+                <p className="num mt-2 text-2xl font-semibold">
                   {usd(toUsdc(selected.balance))}
                 </p>
-                <p className="mt-1 text-xs text-[#a9a5b9]">Available balance</p>
-                <div className="mt-4 border-t border-[#373041] pt-4 text-sm">
-                  {usd(toUsdc(selected.maxPerOrder))} maximum per order
+                <p className="mt-1 text-xs text-[var(--muted)]">Available balance</p>
+                <div className="mt-4 border-t border-[var(--line-strong)] pt-4 text-sm">
+                  <span className="num">{usd(toUsdc(selected.maxPerOrder))}</span> maximum per order
                 </div>
               </div>
             )}
