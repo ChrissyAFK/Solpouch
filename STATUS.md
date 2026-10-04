@@ -139,3 +139,13 @@ The public product page lives at `/`. The existing demo overview moved to `/dash
 - `POST /pouches/freeze-all` + dashboard "Freeze all pouches".
 - Error messages: coded 5xx/503 server messages reach the user; contact email split so Cloudflare email obfuscation doesn't break hydration.
 - Not done: delete/close pouch and withdraw (program `close_pouch` fix not redeployed, no vault/route/UI), wallet-signed top-ups, signed-in browser pass, live voice call check.
+
+## 2026-10-03 night: everything merged and deployed (`scaffold` = `integrate/all`, 5ae2bc0)
+
+- Merged into one line: `fix/audit` (chat persistence, order hand-off, withdrawals with a 7-day hold), `codex/integrate-audit` (includes `fix/audit-2`) and `integrate/next-steps` (program events and rule checks, event indexer, wallet linking, auto-pay within `confirmAbove`). Two review passes; every finding fixed.
+- Auto-pay: only the web order form, only for a near-exact catalog match within `confirmAbove` and the per-order limit. Voice orders always need a spoken yes. All live pouches were reset to `confirm_above = 0` at deploy.
+- Vault program upgraded in place on devnet (slot 507237576). Use `anchor upgrade --program-id <id> --provider.cluster devnet target/deploy/solpouch_vault.so`: `solana program deploy` rejects the SBPF v3 build, and `target/deploy` in a fresh worktree holds a new keypair, so plain `anchor deploy` would create a second program. The program account was extended by 16384 bytes first.
+- Startup rule re-sync (push stored rules on chain when they differ) only runs with `RESYNC_RULES_ON_START=1`.
+- Profile has a Preferences card: appearance (auto, light, dark), motion, text size, saved per browser under `solpouch.prefs`. The landing page stays dark (`.force-dark`).
+- Production: backend `tsx watch` on 8787 and `next start` on 3019 from this checkout on `scaffold`; logs in `backend-run.log` and `web-run.log`.
+- Not verified: the Preferences card and light theme on signed-in pages (no browser session), and a real payment to the new checkout wallet after the upgrade. `ENABLE_INDEXER` is still off. `main` is still behind `scaffold`.
