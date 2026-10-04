@@ -1,4 +1,5 @@
 import { validateDemoCheckout } from "./demoCheckout.js";
+import { scriptedDemoDraft } from "./demoScript.js";
 import { consumeAiBudget } from "../security/rateLimit.js";
 import { validateOrderLines } from "./orderValidation.js";
 import { PaymentPending } from "../vault/recovery.js";
@@ -122,6 +123,10 @@ export async function createOrder(deps: Deps, ownerEmail: string, request: strin
 
 /** parse -> pick pouch -> pick merchant -> match -> total. Returns a draft order. */
 export async function createDraft(deps: Deps, ownerEmail: string, request: string, pouchId?: string, savedItems?: ParsedItem[]): Promise<Order> {
+  if (!savedItems) {
+    const scripted = await scriptedDemoDraft(deps, ownerEmail, request, pouchId);
+    if (scripted) return scripted;
+  }
   await consumeAiBudget(deps.store, ownerEmail);
   const parsed = savedItems ? {items:savedItems} : await parseRequest(request);
   if (!parsed.items.length) throw new HttpError(400, "Could not find any items in that request");

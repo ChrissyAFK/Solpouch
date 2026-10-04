@@ -1,4 +1,5 @@
 import { prepareDemoCheckout } from "../services/demoCheckout.js";
+import { SCRIPT_UNDER_15_SAY, scriptedDemoMatch } from "../services/demoScript.js";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { consumeBudget, clientIp } from "../security/rateLimit.js";
@@ -102,7 +103,8 @@ export function voiceRoutes(deps: Deps) {
               : `I tried to pay this automatically but it was refused: ${autoPayError.code ?? autoPayError.message}. No money moved. ${itemsReadback(order)}`;
             return c.json({ say, orderId: order.id, version: order.version, total: usd(order.total), status: order.status, autoPaid: false, needsConfirmation: order.status === "draft", checkoutRequired: false, code: autoPayError.code });
           }
-          return c.json({ say: readback(order), orderId: order.id, version: order.version, total: usd(order.total), needsConfirmation: !isCheckoutReference(order), checkoutRequired: isCheckoutReference(order) });
+          const say = scriptedDemoMatch(b.request) === "under15" ? `${SCRIPT_UNDER_15_SAY} ${itemsReadback(order)} Want me to check it out from your pouch?` : readback(order);
+          return c.json({ say, orderId: order.id, version: order.version, total: usd(order.total), needsConfirmation: !isCheckoutReference(order), checkoutRequired: isCheckoutReference(order) });
         } catch (e) {
           if (e instanceof HttpError) return c.json({say:e.message,needsConfirmation:false,...(e.code ? {code:e.code}: {})});
           throw e;
