@@ -8,7 +8,7 @@ Split your money into pouches (Uber Eats, groceries, fun money, job-site supplie
 
 Built at StormHacks 2026 · [solpouch.tech](https://solpouch.tech)
 
-> **Status:** in development. Setup instructions will be added as the code lands.
+> **Status:** live demo on Solana devnet with test USDC. Run steps and current state are in [STATUS.md](STATUS.md).
 
 ---
 
@@ -31,7 +31,7 @@ Built at StormHacks 2026 · [solpouch.tech](https://solpouch.tech)
 
 The AI never buys straight from your request. Every order goes through a check step:
 
-- **Structured match.** Gemini compares each found item to what you asked for, field by field (product, brand, size, quantity, unit price), and gives each line a match score.
+- **Structured match.** Claude compares each found item to what you asked for, field by field (product, brand, size, quantity, unit price), and gives each line a match score.
 - **Flagged differences.** Substitutions, price jumps and anything below the match threshold are called out in red and read out loud.
 - **Explicit confirmation.** You approve the exact cart: the same items and total that will be paid. If anything changes after you approve, it asks again.
 - **After delivery (stretch goal).** Snap a photo of the receipt or the delivered items, and Gemini checks them against the order.
@@ -63,12 +63,11 @@ Every payment creates an on-chain receipt account keyed by the order ID, so the 
 
 | Technology | Role |
 |---|---|
-| **Solana** | Our own `solpouch_vault` program (Rust + Anchor) holding every pouch and enforcing its rules, Solana Pay checkout, on-chain receipts |
-| **ElevenLabs** | Voice ordering and voice read-back of every cart, including a phone-call mode for people who'd rather just call |
-| **Gemini** | Understands requests, finds and matches products, scores how well each item matches, explains substitutions |
-| **Tiger Data** | Postgres + TimescaleDB, fed by an indexer that listens to the vault program's events: orders and receipts, spending per pouch over time, price history for repeat bulk items |
+| **Solana** | Our own `solpouch_vault` program (Rust + Anchor) holding every pouch and enforcing its rules, paying merchants and writing on-chain receipts |
+| **ElevenLabs** | Voice ordering and voice read-back of every cart in the dashboard |
+| **Claude** | Understands requests, finds and matches products (including web search for stores outside our catalog), scores how well each item matches, explains substitutions. Gemini is a fallback |
+| **Tiger Data** | Postgres + TimescaleDB holding pouches, orders, top-ups and spending per pouch over time |
 | **TypeScript / Next.js** | Backend and dashboard |
-| **MCP** | Optional: let Claude Code, Codex or another assistant shop from a pouch under the same rules |
 
 ## Architecture
 
@@ -77,7 +76,7 @@ flowchart TD
     U[You: voice, phone call or text] --> V[ElevenLabs voice agent]
     V --> B[Solpouch backend]
     D[Dashboard: pouches, carts, top-ups, history] --> B
-    B --> G[Gemini: request understanding + item matching]
+    B --> G[Claude: request understanding + item matching]
     G --> M[Merchant adapters]
     B --> S[Signer: AI key, can only call pay]
     S --> VP[solpouch_vault program on Solana: enforces pouch rules]
@@ -89,8 +88,8 @@ flowchart TD
 
 **Life of one order**
 
-1. You ask for something. Gemini turns it into a structured shopping list and picks the pouch.
-2. Merchant adapters find candidate items. Gemini scores each one against your request.
+1. You ask for something. Claude turns it into a structured shopping list and picks the pouch.
+2. Merchant adapters find candidate items. Claude scores each one against your request.
 3. Solpouch shows and reads the cart back. You confirm the exact cart.
 4. The backend calls `pay` on the vault program with the AI's key and a unique order ID.
 5. The program checks the pouch's rules on-chain and either pays the merchant or rejects the transaction.
@@ -112,17 +111,17 @@ flowchart TD
 
 | Where | How |
 |---|---|
-| Merchants that accept Solana | Pays directly with Solana Pay, fully automatic after confirmation |
-| Stores that don't accept crypto (Uber Eats, grocery chains, hardware stores) | Buys a gift card for that store with crypto, then uses it |
-| Our demo merchants | A grocery store and a building-supply store that accept Solana Pay on devnet |
+| Merchants that accept Solana | The vault's `pay` instruction sends test USDC to the merchant after you confirm |
+| Stores that don't accept crypto (Uber Eats, grocery chains, hardware stores) | Planned: buy a gift card for that store with crypto. Today the cart is found and priced, and payment goes to the demo pay-to address |
+| Our demo merchants | A grocery store and a building-supply store that accept test USDC on devnet |
 
 ## Hackathon scope
 
 - Dashboard: create pouches, set rules, top up with friction, view carts and history
 - The `solpouch_vault` program deployed to devnet, with tests for every rule, and our own test USDC token
 - Voice ordering with cart read-back and voice confirmation
-- Gemini item matching with substitutions flagged
-- Two demo merchants (grocery, building supply) with Solana Pay checkout
+- Claude item matching with substitutions flagged
+- Two demo merchants (grocery, building supply) paid through the vault program
 - Spending-per-pouch charts from Tiger Data
 - In the demo: a confirmed order, a caught substitution, an empty pouch refusing to spend, the chain itself rejecting an over-limit payment sent from outside the app, and a bulk order placed by voice
 

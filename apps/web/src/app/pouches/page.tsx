@@ -29,7 +29,8 @@ export default function PouchesPage() {
       setPouches(p);
       setMerchants(m);
       setLoadError(false);
-      setError(null);
+      // A quiet refresh must not wipe a freeze error the user hasn't read yet.
+      if (!quiet) setError(null);
     } catch (e) {
       if (!quiet) {
         setLoadError(true);

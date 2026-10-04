@@ -223,6 +223,18 @@ describe("HTTP flow", () => {
     expect((await uber()).frozen).toBe(true);
   });
 
+  it("POST /pouches/freeze-all freezes every pouch and returns them", async () => {
+    const app = mk();
+    const res = await post(app, "/pouches/freeze-all");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.length).toBeGreaterThan(0);
+    expect(body.every((p: { frozen: boolean }) => p.frozen)).toBe(true);
+    expect((await uber()).frozen).toBe(true);
+    // Idempotent: already-frozen pouches are skipped.
+    expect((await post(app, "/pouches/freeze-all")).status).toBe(200);
+  });
+
   it("voice requires the configured secret", async () => {
     const app = mk();
     const body = { user_token: await voiceToken() };

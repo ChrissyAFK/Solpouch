@@ -39,9 +39,18 @@ import {
   usd,
 } from "@/components/ui";
 
+const explorerUrl = (kind: "tx" | "address", value: string) =>
+  `https://explorer.solana.com/${kind}/${encodeURIComponent(value)}?cluster=devnet`;
+const shorten = (s: string) => (s.length > 12 ? `${s.slice(0, 4)}…${s.slice(-4)}` : s);
+
 const CHIPS = [10, 25, 50, 100];
 const MAX_TOPUP = 10000;
-const STEPS = ["Choose amount", "Short safety wait (60 s)", "Added to pouch"];
+// The wait comes from the backend's cooldown, so only show a number once the top-up tells us.
+const steps = (waitSeconds: number | null) => [
+  "Choose amount",
+  waitSeconds ? `Short safety wait (${waitSeconds} s)` : "Short safety wait",
+  "Added to pouch",
+];
 
 function TopUpSection({
   pouch,
@@ -64,6 +73,7 @@ function TopUpSection({
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState<string | null>(null);
+  const [addedTx, setAddedTx] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [autoFailed, setAutoFailed] = useState(false);
   const completing = useRef(false);
@@ -75,9 +85,16 @@ function TopUpSection({
     api
       .listPendingTopUps(pouch.id)
       .then((list) => {
-        if (live && list.length > 0) {
-          setTopup((cur) => cur ?? list[0]);
+        // A failed top-up cannot be completed (409), so show it as a notice instead.
+        const open = list.find((t) => t.status !== "failed");
+        const failed = list.find((t) => t.status === "failed");
+        if (live && open) {
+          setTopup((cur) => cur ?? open);
           setNow(Date.now());
+        } else if (live && failed) {
+          setError(
+            `Your last top-up failed (${failed.failReason ?? "rejected"}). No money was added. You can start a new one.`,
+          );
         }
       })
       .catch(() => {});
@@ -165,6 +182,8 @@ function TopUpSection({
   const total = topup
     ? Math.max(1000, readyAt - new Date(topup.createdAt).getTime())
     : 60000;
+  const waitMs = topup ? Date.parse(topup.readyAt) - Date.parse(topup.createdAt) : NaN;
+  const stepLabels = steps(waitMs > 0 ? Math.round(waitMs / 1000) : null);
   const pct = topup ? Math.min(100, ((total - remaining) / total) * 100) : 0;
   const step = added ? 3 : topup ? 2 : 1;
 
@@ -186,6 +205,7 @@ function TopUpSection({
           throw new Error("Top-up remains pending");
         localStorage.removeItem(storageKey);
         setAdded(`Added ${usd(toUsdc(topup.amount))} USDC to ${pouch.name}`);
+        setAddedTx(result.txSignature ?? null);
         setTopup(null);
         setSubmitted(false);
         setAmount("");
@@ -316,9 +336,12 @@ function TopUpSection({
           <p className="mt-1 text-xs text-[var(--muted)]">
             A short wait on every top-up stops rushed or unauthorised refills.
           </p>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            Devnet demo funds — your wallet isn&apos;t charged.
+          </p>
         </div>
         <ol className="mb-5 grid grid-cols-3 gap-2" aria-label="Top-up steps">
-          {STEPS.map((s, i) => {
+          {stepLabels.map((s, i) => {
             const n = i + 1;
             const on = n <= step;
             return (
@@ -334,7 +357,24 @@ function TopUpSection({
           })}
         </ol>
         <ErrorBanner message={error} />
-        {added && <Notice>{added}</Notice>}
+        {added && (
+          <Notice>
+            {added}
+            {addedTx && (
+              <>
+                {" · "}
+                <a
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                  href={explorerUrl("tx", addedTx)}
+                >
+                  View transaction ↗
+                </a>
+              </>
+            )}
+          </Notice>
+        )}
         {restoring ? (
           <p className="text-sm text-[var(--muted)]" role="status">
             Checking for an unfinished top-up…
@@ -477,6 +517,7 @@ export default function PouchDetail() {
   const [loading, setLoading] = useState(true);
   const [freezing, setFreezing] = useState(false);
   const loadVersion = useRef(0);
+  const merchantsLoaded = useRef(false);
 
   // quiet: background refresh, keeps what is on screen and skips loading and error states.
   const load = useCallback(async (quiet = false) => {
@@ -500,14 +541,19 @@ export default function PouchDetail() {
           setMissing(true);
         throw e;
       }
+      // Merchants rarely change: fetch on a full load or until first success, not every poll.
+      const needMerchants = !quiet || !merchantsLoaded.current;
       const [m, o, s] = await Promise.all([
-        api.merchants(),
+        needMerchants ? api.merchants() : Promise.resolve(null),
         api.orders(id),
         api.spend(id, "day"),
       ]);
       if (version !== loadVersion.current) return;
       setPouch(p);
-      setMerchants(m);
+      if (m) {
+        setMerchants(m);
+        merchantsLoaded.current = true;
+      }
       setOrders(o);
       setSpend(s);
       setError(null);
@@ -568,7 +614,7 @@ export default function PouchDetail() {
   return (
     <div className="space-y-7">
       <Link
-        href="/dashboard"
+        href="/pouches"
         className="inline-flex items-center gap-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)]"
       >
         ← All pouches
@@ -592,6 +638,19 @@ export default function PouchDetail() {
               {pouch.frozen ? "Frozen" : "Active"}
             </span>
           </div>
+          {pouch.address && (
+            <p className="mt-2 text-xs text-[var(--muted)]">
+              On-chain:{" "}
+              <a
+                target="_blank"
+                rel="noopener noreferrer"
+                className="num underline"
+                href={explorerUrl("address", pouch.address)}
+              >
+                {shorten(pouch.address)} ↗
+              </a>
+            </p>
+          )}
           <p className="num mt-3 text-3xl font-semibold">
             {usd(toUsdc(pouch.balance))}{" "}
             <span className="text-sm font-normal text-[var(--muted)]">
@@ -751,6 +810,17 @@ export default function PouchDetail() {
                       >
                         {o.status === "draft" ? "Awaiting approval" : o.status}
                       </span>
+                      {o.txSignature && (
+                        <a
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-[var(--muted)] underline"
+                          href={explorerUrl("tx", o.txSignature)}
+                          aria-label="View receipt on Solana Explorer (opens in a new tab)"
+                        >
+                          receipt ↗
+                        </a>
+                      )}
                       {o.rejectReason && (
                         <span className="text-xs text-[var(--danger)]">
                           {o.rejectReason}
@@ -785,6 +855,7 @@ export default function PouchDetail() {
                 const { name: _name, ...rules } = v;
                 void _name;
                 loadVersion.current++;
+                setLoading(false); // a superseded full load no longer clears it
                 const updated = await api.updateRules(pouch.id, rules);
                 setPouch(updated);
                 setSaved(true);
@@ -809,6 +880,7 @@ export default function PouchDetail() {
                   setFreezing(true);
                   setError(null);
                   loadVersion.current++;
+                  setLoading(false); // a superseded full load no longer clears it
                   try {
                     const updated = await (pouch.frozen
                       ? api.unfreeze(pouch.id)

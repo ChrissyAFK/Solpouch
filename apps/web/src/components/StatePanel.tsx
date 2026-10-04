@@ -9,12 +9,15 @@ export function StatePanel({
   retry,
   home = false,
   newOrder = false,
+  action,
 }: {
   title: string;
   children: ReactNode;
   retry?: () => void;
   home?: boolean;
   newOrder?: boolean;
+  // Optional primary link for a panel whose way forward is somewhere specific.
+  action?: { href: string; label: string };
 }) {
   return (
     <section className={`${card} space-y-5`} aria-label={title}>
@@ -25,6 +28,11 @@ export function StatePanel({
           <button type="button" className={btnPrimary} onClick={retry}>
             Try again
           </button>
+        )}
+        {action && (
+          <Link href={action.href} className={btnPrimary}>
+            {action.label}
+          </Link>
         )}
         {home && (
           <Link href="/dashboard" className={btnSecondary}>

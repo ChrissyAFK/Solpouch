@@ -5,6 +5,9 @@ import { toUsdc } from "@solpouch/shared";
 import { usd } from "@/components/ui";
 import { Icon } from "@/components/Icons";
 
+const explorerTx = (sig: string) =>
+  `https://explorer.solana.com/tx/${encodeURIComponent(sig)}?cluster=devnet`;
+
 export function sortOrders(orders: Order[]): Order[] {
   return [...orders].sort(
     (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
@@ -30,14 +33,17 @@ export function OrderList({
         <span />
       </div>
       {orders.map((o) => (
+        // The receipt link sits beside the row Link: an <a> inside an <a> is invalid.
+        <div key={o.id} style={{ position: "relative" }}>
         <Link
-          key={o.id}
           href={`/order?order=${encodeURIComponent(o.id)}`}
           className="order-row"
         >
           <span className="order-identity">
             <strong>
-              {merchants.find((m) => m.id === o.merchantId)?.name ?? "Order"}
+              {merchants.find((m) => m.id === o.merchantId)?.name ??
+                o.store?.name ??
+                "Order"}
             </strong>
             <span>
               {pouches?.find((p) => p.id === o.pouchId)?.name ?? "Pouch"}
@@ -55,6 +61,26 @@ export function OrderList({
           <strong className="order-amount">{usd(toUsdc(o.total))}</strong>
           <Icon name="arrow" size={15} />
         </Link>
+        {o.txSignature && (
+          <a
+            target="_blank"
+            rel="noopener noreferrer"
+            href={explorerTx(o.txSignature)}
+            aria-label={`View ${merchants.find((m) => m.id === o.merchantId)?.name ?? o.store?.name ?? "order"} receipt on Solana Explorer (opens in a new tab)`}
+            // In normal flow under the row, so it never covers the amount or status on phones.
+            style={{
+              display: "block",
+              textAlign: "right",
+              padding: "0 44px 8px 0",
+              marginTop: -4,
+              fontSize: 11,
+              textDecoration: "underline",
+            }}
+          >
+            receipt ↗
+          </a>
+        )}
+        </div>
       ))}
     </div>
   );

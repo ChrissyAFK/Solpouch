@@ -24,7 +24,7 @@ export function authRoutes(deps: Deps, origins: string[]) {
       const u = { email: user.email.toLowerCase(), name: user.name, picture: user.picture };
       return c.json({ token: await signSession(u), user: await mergedUser(deps.store, u) });
     } catch (e) {
-      if (e instanceof GoogleAuthError && e.notConfigured) return c.json({ error: "google_not_configured" }, 503);
+      if (e instanceof GoogleAuthError && e.notConfigured) return c.json({ error: "Google sign-in is not set up yet. Try again later.", code: "GoogleNotConfigured" }, 503);
       return c.json({ error: "invalid_google_token" }, 401);
     }
   });

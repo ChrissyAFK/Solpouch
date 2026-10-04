@@ -81,6 +81,17 @@ export function pouchRoutes(_baseDeps: Deps) {
       return c.json(publicPouch(await deps.store.savePouch({ ...latest, ...updates })));
     });
   });
+  // Same loop as the voice freeze_all tool; requestDeps scopes the store to the signed-in user.
+  app.post("/freeze-all", async (c) => {
+    const deps = requestDeps(c);
+    const failed: string[] = [];
+    for (const p of await reconcilePouches(deps)) {
+      if (p.frozen) continue;
+      try { await deps.store.withPouchLock(p.id, () => deps.vault.freeze(p.id)); } catch (e) { console.error("freeze-all", p.id, e); failed.push(p.name); }
+    }
+    if (failed.length > 0) throw new HttpError(503, `Could not freeze: ${failed.join(", ")}`);
+    return c.json((await reconcilePouches(deps)).map(publicPouch));
+  });
   for (const action of ["freeze", "unfreeze"] as const) {
     app.post(`/:id/${action}`, async (c) => {
       const deps = requestDeps(c);

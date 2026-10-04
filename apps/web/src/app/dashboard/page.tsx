@@ -36,7 +36,8 @@ export default function OverviewPage() {
       setPouches(p);
       setMerchants(m);
       setLoadError(false);
-      setError(null);
+      // A quiet refresh must not wipe a freeze error the user hasn't read yet.
+      if (!quiet) setError(null);
     } catch (e) {
       if (!quiet) {
         setLoadError(true);
@@ -67,6 +68,20 @@ export default function OverviewPage() {
     useCallback(() => load(), [load]),
     setError,
   );
+  const [freezingAll, setFreezingAll] = useState(false);
+  async function freezeAll() {
+    if (freezingAll) return;
+    setFreezingAll(true);
+    setError(null);
+    try {
+      await api.freezeAll();
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setFreezingAll(false);
+      await load(true);
+    }
+  }
   const balance = pouches?.reduce((s, p) => s + p.balance, 0) ?? 0;
   const spent = pouches?.reduce((s, p) => s + p.spentToday, 0) ?? 0;
   const limit = pouches?.reduce((s, p) => s + p.dailyLimit, 0) ?? 0;
@@ -129,9 +144,20 @@ export default function OverviewPage() {
             Pouches{" "}
             <span className="section-count">{pouches?.length ?? "—"}</span>
           </h2>
-          <Link href="/pouches" className={btnSecondary}>
-            View all pouches <Icon name="arrow" size={15} />
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            {active > 0 && (
+              <button
+                className={btnSecondary}
+                disabled={freezingAll}
+                onClick={() => void freezeAll()}
+              >
+                {freezingAll ? "Freezing…" : "Freeze all pouches"}
+              </button>
+            )}
+            <Link href="/pouches" className={btnSecondary}>
+              View all pouches <Icon name="arrow" size={15} />
+            </Link>
+          </div>
         </div>
         {loading && <RowsSkeleton />}
         {!loading && !loadError && pouches?.length === 0 && (

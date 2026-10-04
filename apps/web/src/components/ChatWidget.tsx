@@ -31,10 +31,10 @@ function ChatIcon() {
     </svg>
   );
 }
-export function ChatWidget() {
-  return <ConversationProvider><ChatPanel /></ConversationProvider>;
+export function ChatWidget({ landing = false }: { landing?: boolean }) {
+  return <ConversationProvider><ChatPanel landing={landing} /></ConversationProvider>;
 }
-function ChatPanel() {
+function ChatPanel({ landing }: { landing: boolean }) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -188,12 +188,14 @@ function ChatPanel() {
   useEffect(() => {
     if (!open) return;
     agentDown.current = false;
+    // Voice status needs a signed-in user; recheck after signing in from the panel.
+    if (!user?.email) { setVoiceEnabled(false); return; }
     let live = true;
     api.voiceStatus()
       .then((data) => { if (live) setVoiceEnabled(data.enabled === true); })
       .catch(() => { if (live) setVoiceEnabled(false); });
     return () => { live = false; };
-  }, [open]);
+  }, [open, user?.email]);
 
   useEffect(
     () => () => {
@@ -429,7 +431,8 @@ function ChatPanel() {
       ? lastUser
       : null;
   return (
-    <div className={styles.widget}>
+    // The landing page has no chat of its own, but keeps one that is already running.
+    <div className={styles.widget} hidden={landing && !open && !connecting && voiceMode === null && messages.length === 0}>
       {open && (
         <section
           id="solpouch-chat-panel"
@@ -438,8 +441,10 @@ function ChatPanel() {
           aria-label="Ask Solpouch"
           onKeyDown={(event) => {
             if (event.key === "Escape") {
+              // Like the launcher, Escape only hides the panel; × ends the chat.
               event.stopPropagation();
-              close();
+              setOpen(false);
+              launcher.current?.focus();
             }
           }}
         >
@@ -552,7 +557,10 @@ function ChatPanel() {
             <div className={styles.orderAction}>
               <Link
                 href={`/order?request=${encodeURIComponent(shoppingRequest)}`}
-                onClick={close}
+                onClick={() => {
+                  // Full-width on phones, so step aside to show the form; the chat keeps going.
+                  if (window.matchMedia("(max-width: 540px)").matches) setOpen(false);
+                }}
               >
                 Open order form <span aria-hidden="true">↗</span>
               </Link>
@@ -620,8 +628,8 @@ function ChatPanel() {
         ref={launcher}
         className={`${styles.launcher} ${open ? styles.launcherOpen : ""}`}
         onClick={() => {
-          if (open) close();
-          else setOpen(true);
+          // The launcher only hides the panel; × ends the chat and any voice call.
+          setOpen(!open);
         }}
         aria-expanded={open}
         aria-controls={open ? "solpouch-chat-panel" : undefined}

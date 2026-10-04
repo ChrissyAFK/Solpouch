@@ -70,7 +70,10 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
       const body =
         data && typeof data === "object" ? (data as Partial<ApiError>) : {};
       const message =
-        res.status >= 500 && body.code !== "PaymentPending"
+        // Coded errors (e.g. "nothing was charged") and 503 notices are written for users.
+        res.status >= 500 &&
+        !body.code &&
+        (res.status !== 503 || typeof body.error !== "string")
           ? "Solpouch is having trouble right now. Try again in a moment."
           : typeof body.error === "string"
             ? body.error
@@ -173,12 +176,15 @@ export const api = {
     req<SpendPoint[]>(
       `/stats/spend?pouchId=${encodeURIComponent(pouchId)}&bucket=${bucket}`,
     ),
+  freezeAll: () => post<Pouch[]>("/pouches/freeze-all"),
 };
 
 export function errMsg(e: unknown): string {
   if (e instanceof ApiRequestError) {
     const messages: Record<string, string> = {
       PaymentPending: e.message,
+      PaymentNotSent: e.message,
+      LookupFailed: e.message,
       PouchFrozen: "This pouch is frozen. Unfreeze it before making a payment.",
       MerchantNotAllowed:
         "This store is not allowed for this pouch. Choose another pouch or update its allowed stores.",

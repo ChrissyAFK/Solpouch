@@ -226,15 +226,42 @@ function OrderWorkspace() {
   }, [showOrder]);
   useLiveRefresh(liveRefresh);
 
+  // Chat handoff (?request=): with one usable pouch, run the lookup once per request value.
+  // It only builds a draft cart; approving and paying stay a manual click.
+  const handoff = searchParams.get("request")?.trim() ?? "";
+  const autoRan = useRef<string | null>(null);
+  const focusedFor = useRef<string | null>(null);
+  const pouchSelect = useRef<HTMLSelectElement>(null);
+  useEffect(() => {
+    if (loading || loadError || !loadedOnce.current || orderRef.current) return;
+    if (!handoff || !merchants.length || busyRef.current) return;
+    const usable = pouches.filter((p) => !p.frozen);
+    // A link that names a different pouch (e.g. a frozen one) is the user's call, not ours.
+    const named = new URLSearchParams(window.location.search).get("pouch");
+    if (usable.length === 1 && (!named || named === usable[0].id)) {
+      if (autoRan.current === handoff) return;
+      autoRan.current = handoff;
+      setPouchId(usable[0].id);
+      void createDraft(handoff, usable[0].id);
+    } else if (focusedFor.current !== handoff) {
+      focusedFor.current = handoff;
+      pouchSelect.current?.focus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, loadError, handoff, pouches, merchants]);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    await createDraft(request.trim(), pouchId || undefined);
+  }
+  async function createDraft(text: string, pid: string | undefined) {
     setBusy(true);
     busyRef.current = true;
     setError(null);
     try {
       const created = await api.createOrder({
-        request: request.trim(),
-        pouchId: pouchId || undefined,
+        request: text,
+        pouchId: pid,
       });
       showOrder(created);
       window.history.replaceState(
@@ -324,9 +351,12 @@ function OrderWorkspace() {
             : "We couldn’t load your order, pouches, or merchants. Try again before building a cart."}
         </StatePanel>
       ) : !order && !pouches.length ? (
-        <StatePanel title="Create a pouch first" home>
-          Set up a pouch and add funds from the overview before placing your
-          first order.
+        <StatePanel
+          title="Create a pouch first"
+          home
+          action={{ href: "/pouches", label: "Create a pouch" }}
+        >
+          Set up a pouch and add funds before placing your first order.
         </StatePanel>
       ) : !order && !merchants.length ? (
         <StatePanel
@@ -400,6 +430,7 @@ function OrderWorkspace() {
                     )}
                     <select
                       id="pouch"
+                      ref={pouchSelect}
                       className={input}
                       value={pouchId}
                       onChange={(e) => setPouchId(e.target.value)}
@@ -525,6 +556,10 @@ function OrderWorkspace() {
                       ) : (
                         <span>Demo payment</span>
                       )}
+                      <Link href="/orders">View all orders</Link>
+                      <Link href={`/pouches/${encodeURIComponent(order.pouchId)}`}>
+                        Open pouch
+                      </Link>
                     </div>
                   </div>
                 )}
