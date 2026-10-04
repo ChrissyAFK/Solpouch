@@ -15,6 +15,26 @@ import { clearSession, getToken } from "./session";
 export const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8787";
 
+export const SESSION_EXPIRED_EVENT = "solpouch:session-expired";
+
+/** fetch with the Google Bearer token; a 401 clears the session. */
+export async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const token = getToken();
+  const res = await fetch(input, {
+    ...init,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (res.status === 401) {
+    clearSession();
+    if (typeof window !== "undefined")
+      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+  }
+  return res;
+}
+
 export class ApiRequestError extends Error {
   code?: string;
   status: number;
@@ -30,11 +50,10 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
   try {
-    res = await fetch(BACKEND_URL + path, {
+    res = await authFetch(BACKEND_URL + path, {
       ...init,
       headers: {
         "Content-Type": "application/json",
-        ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
         ...(init?.headers ?? {}),
       },
       cache: "no-store",
@@ -48,11 +67,10 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
       /* handled below */
     }
     if (!res.ok) {
-      if (res.status === 401) clearSession();
       const body =
         data && typeof data === "object" ? (data as Partial<ApiError>) : {};
       const message =
-        res.status >= 500
+        res.status >= 500 && body.code !== "PaymentPending"
           ? "Solpouch is having trouble right now. Try again in a moment."
           : typeof body.error === "string"
             ? body.error
@@ -103,6 +121,13 @@ export type UpdateProfileBody = {
   avatar?: string | null;
 };
 
+export type WalletUser = {
+  email: string;
+  name?: string;
+  picture?: string;
+  wallet?: string;
+};
+
 export const api = {
   getProfile: () => req<Profile>("/profile"),
   updateProfile: (b: UpdateProfileBody) =>
@@ -118,6 +143,17 @@ export const api = {
   freeze: (id: string) => post<Pouch>(`/pouches/${id}/freeze`),
   unfreeze: (id: string) => post<Pouch>(`/pouches/${id}/unfreeze`),
   voiceToken: () => post<{ token: string }>("/auth/voice-token"),
+  voiceSession: () =>
+    post<{ signedUrl: string; token: string; expiresAt: number | string }>(
+      "/auth/voice-session",
+    ),
+  voiceStatus: () => req<{ enabled: boolean }>("/auth/voice-status"),
+  walletChallenge: (wallet: string) =>
+    post<{ id: string; message: string }>("/auth/wallet/challenge", { wallet }),
+  walletVerify: (id: string, signature: string) =>
+    post<{ user: WalletUser }>("/auth/wallet/verify", { id, signature }),
+  unlinkWallet: () =>
+    req<{ user: WalletUser }>("/auth/wallet", { method: "DELETE" }),
   merchants: () => req<Merchant[]>("/merchants"),
   createOrder: (b: CreateOrderBody) => post<Order>("/orders", b),
   orders: (pouchId?: string) =>
@@ -128,6 +164,7 @@ export const api = {
   confirm: (id: string) => post<Order>(`/orders/${id}/confirm`),
   cancel: (id: string) => post<Order>(`/orders/${id}/cancel`),
   startTopUp: (b: StartTopUpBody) => post<TopUp>("/topups", b),
+  topUp: (id: string) => req<TopUp>(`/topups/${encodeURIComponent(id)}`),
   completeTopUp: (id: string) => post<TopUp>(`/topups/${id}/complete`),
   cancelTopUp: (id: string) => post<TopUp>(`/topups/${id}/cancel`),
   listPendingTopUps: (pouchId: string) =>
@@ -141,6 +178,7 @@ export const api = {
 export function errMsg(e: unknown): string {
   if (e instanceof ApiRequestError) {
     const messages: Record<string, string> = {
+      PaymentPending: e.message,
       PouchFrozen: "This pouch is frozen. Unfreeze it before making a payment.",
       MerchantNotAllowed:
         "This store is not allowed for this pouch. Choose another pouch or update its allowed stores.",

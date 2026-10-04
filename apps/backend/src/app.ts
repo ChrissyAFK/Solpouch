@@ -14,7 +14,10 @@ import { voiceRoutes } from "./routes/voice.js";
 import { chatRoutes } from "./routes/chat.js";
 import { profileRoutes } from "./routes/profile.js";
 import { authRoutes } from "./routes/auth.js";
-import { requireUser } from "./auth/session.js";
+import { verifySession } from "./auth/session.js";
+import { requireVoiceSecret, voiceEmail } from "./security/auth.js";
+import { ownedStore } from "./security/access.js";
+import { StoreConflictError } from "./store/types.js";
 import { rateLimit } from "./security/rateLimit.js";
 
 const DEFAULT_ORIGINS = ["http://localhost:3000", "https://solpouch.tech", "https://www.solpouch.tech"];
@@ -28,6 +31,7 @@ export function createApp(deps: Deps) {
     : DEFAULT_ORIGINS;
 
   app.use("*", secureHeaders());
+  app.use("*", async (c, next) => { c.header("Cache-Control", "no-store"); await next(); });
   app.use("*", bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "Request body too large" } satisfies ApiError, 413) }));
   app.use(
     "*",
@@ -36,34 +40,41 @@ export function createApp(deps: Deps) {
       allowHeaders: ["Content-Type", "X-Solpouch-Secret", "Authorization"],
     }),
   );
+  // No cookies: auth is a Bearer token, so there is no CSRF surface.
 
-  // Cloudflare tunnel traffic (ElevenLabs webhooks) may only reach /health and /voice/*.
-  app.use("*", async (c, next) => {
-    if (c.req.header("cf-connecting-ip") && process.env.PUBLIC_API !== "all") {
-      const p = c.req.path;
-      if (p !== "/health" && p !== "/voice" && !p.startsWith("/voice/")) return c.json({ error: "Not found" }, 404);
-    }
-    await next();
-  });
-
-  const writes = rateLimit({ windowMs: MIN, max: 30, key: "write" });
-  const gemini = rateLimit({ windowMs: MIN, max: 10, key: "gemini-min" });
-  const geminiDay = rateLimit({ windowMs: DAY, max: 200, key: "gemini-day" });
-  const topups = rateLimit({ windowMs: MIN, max: 5, key: "topup" });
-  app.use("*", rateLimit({ windowMs: MIN, max: 120, key: "all" }));
+  const writes = rateLimit({ store: deps.store, windowMs: MIN, max: 30, key: "write" });
+  const gemini = rateLimit({ store: deps.store, windowMs: MIN, max: 10, key: "gemini-min" });
+  const geminiDay = rateLimit({ store: deps.store, windowMs: DAY, max: 200, key: "gemini-day" });
+  const topups = rateLimit({ store: deps.store, windowMs: MIN, max: 5, key: "topup" });
+  app.use("*", rateLimit({ store: deps.store, windowMs: MIN, max: 120, key: "all" }));
   app.use("*", async (c, next) => {
     const m = c.req.method;
     return m === "POST" || m === "PATCH" ? writes(c, next) : next();
   });
   app.on("POST", ["/chat", "/orders"], gemini, geminiDay);
   app.on("POST", "/topups/*", topups);
-  app.use("/voice/*", rateLimit({ windowMs: MIN, max: 60, key: "voice" }));
+  app.use("/voice/*", rateLimit({ store: deps.store, windowMs: MIN, max: 60, key: "voice" }));
 
-  app.get("/health", (c) => c.json({ ok: true }));
-  for (const base of ["/pouches", "/orders", "/topups", "/stats", "/profile"]) app.use(`${base}/*`, requireUser);
-  // GET /chat/status is public (mode only); everything else under /chat needs a user.
-  app.use("/chat/*", async (c, next) => (c.req.method === "GET" && c.req.path === "/chat/status" ? next() : requireUser(c as never, next)));
-  app.route("/auth", authRoutes(deps));
+  app.use("/auth/*", rateLimit({ store: deps.store, windowMs: MIN, max: 20, key: "auth" }));
+  app.route("/auth", authRoutes(deps, origins));
+  app.get("/health", (c) => c.json({ ok: true, mode: process.env.VAULT_MODE === "chain" ? "chain" : "mock", network: process.env.VAULT_MODE === "chain" ? "devnet" : "simulated" }));
+  app.use("*", async (c, next) => {
+    const path = c.req.path;
+    // Public: health, merchant catalog, chat mode. /auth/* routes authenticate themselves.
+    if (path === "/health" || path === "/merchants" || path.startsWith("/merchants/") || path.startsWith("/auth/") || (c.req.method === "GET" && path === "/chat/status")) return next();
+    let email: string | undefined;
+    if (path === "/voice" || path.startsWith("/voice/")) {
+      requireVoiceSecret(c);
+      email = await voiceEmail(c);
+    } else {
+      const m = /^Bearer (.+)$/.exec(c.req.header("authorization") ?? "");
+      email = m ? (await verifySession(m[1]!))?.email : undefined;
+    }
+    if (!email) return c.json({ error: "sign_in_required" } satisfies ApiError, 401);
+    c.set("email", email);
+    c.set("deps", { ...deps, store: ownedStore(deps.store, email) });
+    await next();
+  });
   app.route("/profile", profileRoutes(deps));
   app.route("/pouches", pouchRoutes(deps));
   app.route("/orders", orderRoutes(deps));
@@ -74,6 +85,7 @@ export function createApp(deps: Deps) {
   app.route("/chat", chatRoutes(deps));
 
   app.onError((err, c) => {
+    if (err instanceof StoreConflictError) return c.json({ error: 'This record changed. Reload and try again.', code: 'RecordChanged' }, 409);
     if (err instanceof HttpError) {
       const body: ApiError = { error: err.message, code: err.code };
       return c.json(body, err.status);

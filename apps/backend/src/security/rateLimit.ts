@@ -1,51 +1,28 @@
-import type { Context, MiddlewareHandler } from "hono";
-import { getConnInfo } from "@hono/node-server/conninfo";
+import type { Context, MiddlewareHandler } from 'hono';
+import { getConnInfo } from '@hono/node-server/conninfo';
+import { isIP } from 'node:net';
+import type { Store } from '../store/types.js';
+import { MemoryStore } from '../store/memory.js';
 
+const normalize = (ip: string) => ip.startsWith('::ffff:') ? ip.slice(7) : ip;
 export function clientIp(c: Context): string {
-  const cf = c.req.header("cf-connecting-ip");
-  if (cf) return cf.trim();
-  const xff = c.req.header("x-forwarded-for");
-  if (xff) {
-    const first = xff.split(",")[0]?.trim();
-    if (first) return first;
-  }
-  try {
-    const addr = getConnInfo(c).remote.address;
-    if (addr) return addr;
-  } catch {
-    // no socket (e.g. app.request() in tests)
-  }
-  return "unknown";
+  let peer = 'unknown';
+  try { peer = normalize(getConnInfo(c).remote.address ?? 'unknown'); } catch { /* no socket in in-process tests */ }
+  const trusted = (process.env.TRUSTED_PROXY_IPS ?? '').split(',').map(ip => normalize(ip.trim())).filter(Boolean);
+  if (!trusted.includes(peer)) return peer;
+  // The configured proxy must overwrite this header, never append client-supplied values.
+  const header = process.env.TRUSTED_PROXY_HEADER ?? 'x-forwarded-for';
+  if (header !== 'x-forwarded-for' && header !== 'cf-connecting-ip') return peer;
+  const forwarded = c.req.header(header)?.trim();
+  return forwarded && isIP(forwarded) ? normalize(forwarded) : peer;
 }
-
-interface Opts {
-  windowMs: number;
-  max: number;
-  /** Bucket name, so different limits on the same IP do not share a counter. */
-  key?: string;
-}
-
-/** In-memory fixed-window limiter. State is per call to rateLimit(), so per app instance. */
-export function rateLimit({ windowMs, max, key = "default" }: Opts): MiddlewareHandler {
-  const hits = new Map<string, { count: number; resetAt: number }>();
-  let lastPrune = Date.now();
+interface Opts { windowMs: number; max: number; key?: string; store?: Store }
+export function rateLimit({ windowMs, max, key = 'default', store = new MemoryStore() }: Opts): MiddlewareHandler {
   return async (c, next) => {
-    const now = Date.now();
-    if (now - lastPrune >= 60_000) {
-      lastPrune = now;
-      for (const [k, v] of hits) if (v.resetAt <= now) hits.delete(k);
-    }
-    const id = `${key}:${clientIp(c)}`;
-    let e = hits.get(id);
-    if (!e || e.resetAt <= now) {
-      e = { count: 0, resetAt: now + windowMs };
-      hits.set(id, e);
-    }
-    e.count++;
-    if (e.count > max) {
-      const secs = Math.max(1, Math.ceil((e.resetAt - now) / 1000));
-      c.header("Retry-After", String(secs));
-      return c.json({ error: `Too many requests. Try again in ${secs} seconds.` }, 429);
+    const result = await store.consumeRateLimit(`${key}:${clientIp(c)}`, windowMs, max);
+    if (!result.allowed) {
+      c.header('Retry-After', String(result.retryAfter));
+      return c.json({ error: `Too many requests. Try again in ${result.retryAfter} seconds.` }, 429);
     }
     await next();
   };

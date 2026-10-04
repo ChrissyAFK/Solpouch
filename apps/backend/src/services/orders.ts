@@ -6,6 +6,7 @@ import { getCatalog, getMerchant, merchants, registerWebMerchant } from "../merc
 import { buildFulfillment, checkoutPayTo } from "./fulfillment.js";
 import type { GoogleUser } from "../auth/google.js";
 import type { Store } from "../store/types.js";
+import { PaymentPending } from "../vault/recovery.js";
 import { VaultRejected, type VaultClient } from "../vault/types.js";
 
 export interface Deps {
@@ -15,42 +16,17 @@ export interface Deps {
   verifyGoogle?: (credential: string) => Promise<GoogleUser>;
 }
 
-/** The pouch if it exists AND belongs to ownerEmail, else 404 (never reveals other users' pouches). */
-export async function getOwnedPouch(deps: Deps, id: string, ownerEmail: string) {
-  const p = await deps.store.getPouch(id);
-  if (!p || p.ownerEmail !== ownerEmail) throw new HttpError(404, "Pouch not found");
-  return p;
-}
-
-/** The order if its pouch belongs to ownerEmail, else 404. */
-export async function getOwnedOrder(deps: Deps, id: string, ownerEmail: string): Promise<Order> {
-  const o = await deps.store.getOrder(id);
-  if (!o) throw new HttpError(404, "Order not found");
-  const p = await deps.store.getPouch(o.pouchId);
-  if (!p || p.ownerEmail !== ownerEmail) throw new HttpError(404, "Order not found");
-  return o;
-}
-
-export async function listOwnedOrders(deps: Deps, ownerEmail: string, pouchId?: string): Promise<Order[]> {
-  if (pouchId) {
-    await getOwnedPouch(deps, pouchId, ownerEmail);
-    return deps.store.listOrders(pouchId);
-  }
-  const ids = new Set((await deps.store.listPouches(ownerEmail)).map((p) => p.id));
-  return (await deps.store.listOrders()).filter((o) => ids.has(o.pouchId));
-}
-
 export class HttpError extends Error {
-  constructor(public status: 400 | 404 | 409 | 422, message: string, public code?: string) {
+  constructor(public status: 400 | 401 | 403 | 404 | 409 | 413 | 422 | 429 | 503, message: string, public code?: string) {
     super(message);
   }
 }
 
 /** parse -> pick pouch -> pick merchant -> match -> total. Returns a draft order. */
-export async function createDraft(deps: Deps, ownerEmail: string, request: string, pouchId?: string): Promise<Order> {
+export async function createDraft(deps: Deps, request: string, pouchId?: string): Promise<Order> {
   const parsed = await parseRequest(request);
   if (!parsed.items.length) throw new HttpError(400, "Could not find any items in that request");
-  const pouches = await deps.store.listPouches(ownerEmail);
+  const pouches = await deps.store.listPouches();
 
   let pouch: Pouch | undefined;
   if (pouchId) {
@@ -188,48 +164,53 @@ function catalogOrder(id: string, pouch: Pouch, merchant: Merchant, request: str
   };
 }
 
-export async function confirmOrder(deps: Deps, ownerEmail: string, id: string): Promise<Order> {
-  const order = await getOwnedOrder(deps, id, ownerEmail);
-  if (order.status !== "draft") throw new HttpError(409, `Order is ${order.status}, not draft`);
-  if (order.total <= 0) throw new HttpError(400, "Order has nothing to pay for");
-  const pouch = await deps.store.getPouch(order.pouchId);
-  let merchant = getMerchant(order.merchantId);
-  if (!merchant && order.store) {
-    merchant = registerWebMerchant({
-      id: order.merchantId,
-      name: order.store.name,
-      payTo: checkoutPayTo(),
-      kind: "other",
-      source: "web",
-      url: order.store.url,
-    });
-  }
-  if (!pouch || !merchant) throw new HttpError(404, "Pouch or merchant not found");
-
-  order.status = "paying";
-  await deps.store.saveOrder(order);
-  try {
-    const { txSignature } = await deps.vault.pay(pouch, merchant.payTo, order.total, order.id);
-    order.status = "paid";
-    order.txSignature = txSignature;
-    await deps.store.saveOrder(order);
-    return order;
-  } catch (e) {
-    if (e instanceof VaultRejected) {
-      order.status = "rejected";
-      order.rejectReason = e.code;
-      await deps.store.saveOrder(order);
-      throw new HttpError(422, `Payment refused: ${e.code}`, e.code);
+export async function confirmOrder(deps: Deps, id: string): Promise<Order> {
+  const initial = await deps.store.getOrder(id);
+  if (!initial) throw new HttpError(404, "Order not found");
+  return deps.store.withPouchLock(initial.pouchId, async () => {
+    let order = (await deps.store.getOrder(id))!;
+    if (order.status === "paid") return order;
+    if (order.status !== "draft" && order.status !== "paying") throw new HttpError(409, `Order is ${order.status}`);
+    if (order.total <= 0) throw new HttpError(400, "Order has nothing to pay for");
+    const pouch = await deps.store.getPouch(order.pouchId);
+    let merchant = getMerchant(order.merchantId);
+    if (!merchant && order.store) {
+      merchant = registerWebMerchant({
+        id: order.merchantId,
+        name: order.store.name,
+        payTo: checkoutPayTo(),
+        kind: "other",
+        source: "web",
+        url: order.store.url,
+      });
     }
-    order.status = "draft";
-    await deps.store.saveOrder(order);
-    throw e;
-  }
+    if (!pouch || !merchant) throw new HttpError(404, "Pouch or merchant not found");
+    if (order.status === "draft") order = await deps.store.saveOrder({ ...order, status: "paying" });
+    let txSignature: string;
+    try {
+      ({ txSignature } = await deps.vault.pay(pouch, merchant.payTo, order.total, order.id));
+    } catch (e) {
+      if (e instanceof VaultRejected) {
+        await deps.store.saveOrder({ ...order, status: "rejected", rejectReason: e.code });
+        throw new HttpError(422, `Payment refused: ${e.code}`, e.code);
+      }
+      if (e instanceof PaymentPending) throw new HttpError(503, e.message, "PaymentPending");
+      // Keep paying: the chain may have accepted the transaction even if the response was lost.
+      throw new HttpError(503, "Payment is not confirmed yet. Retry this order to check its status.", "PaymentPending");
+    }
+    // A persistence failure here leaves paying; the journal recovers the same signature on retry.
+    return deps.store.saveOrder({ ...order, status: "paid", txSignature });
+  });
 }
 
-export async function cancelOrder(deps: Deps, ownerEmail: string, id: string): Promise<Order> {
-  const order = await getOwnedOrder(deps, id, ownerEmail);
-  if (order.status !== "draft") throw new HttpError(409, `Order is ${order.status}, not draft`);
-  order.status = "cancelled";
-  return deps.store.saveOrder(order);
+/** Draft and rejected orders can be cancelled, and so can a "paying" order that was never broadcast. */
+export async function cancelOrder(deps: Deps, id: string): Promise<Order> {
+  const initial = await deps.store.getOrder(id);
+  if (!initial) throw new HttpError(404, "Order not found");
+  return deps.store.withPouchLock(initial.pouchId, async () => {
+    const order = (await deps.store.getOrder(id))!;
+    const neverSent = order.status === "paying" && !(await deps.store.getOperation(`pay:${order.id}`));
+    if (order.status !== "draft" && order.status !== "rejected" && !neverSent) throw new HttpError(409, `Order is ${order.status}, not draft`);
+    return deps.store.saveOrder({ ...order, status: "cancelled" });
+  });
 }

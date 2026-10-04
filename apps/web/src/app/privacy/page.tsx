@@ -23,9 +23,9 @@ export default function PrivacyPage() {
       </p>
       <h2>Voice and chat</h2>
       <p>
-        Voice conversations with the assistant are processed by ElevenLabs.
-        Text chat is processed by Google Gemini. Content you send to the
-        assistant is shared with these providers so they can respond.
+        Voice is currently unavailable. When live text chat is configured, your
+        messages and your pouch context are processed by Google Gemini.
+        Demo mode uses preset replies without sending chat to an AI provider.
       </p>
       <h2>No selling of data</h2>
       <p>
@@ -34,7 +34,8 @@ export default function PrivacyPage() {
       </p>
       <h2>Payments</h2>
       <p>
-        Payments settle on the Solana blockchain, which is public. Wallet
+        In chain mode, payments use the configured Solana network, which is public.
+        Demo payments are simulated. Wallet
         addresses and transactions are visible there and cannot be removed by
         us.
       </p>

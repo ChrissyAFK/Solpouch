@@ -208,7 +208,8 @@ function OrderWorkspace() {
   }
   const selected = pouches.find((p) => p.id === (order?.pouchId ?? pouchId));
   const isDraft = order?.status === "draft";
-  const step = !order ? 1 : isDraft ? 2 : 3;
+  const isPaying = order?.status === "paying";
+  const step = !order ? 1 : isDraft || isPaying ? 2 : 3;
   const merchant = merchants.find((m) => m.id === order?.merchantId);
   const paidDate = new Date(order?.createdAt ?? Date.now()).toLocaleDateString(undefined, {
     year: "numeric",
@@ -383,6 +384,12 @@ function OrderWorkspace() {
                   <span className={s.statusPill}>{order.status}</span>
                 </div>
                 <p className="mt-3 text-sm text-[var(--muted)]">“{order.request}”</p>
+                {isPaying && (
+                  <div className={s.checkBox} role="status">
+                    <strong>Checking payment · </strong>
+                    Payment is still being checked. Use “Check payment status” to recover its result. Do not start another order for the same purchase.
+                  </div>
+                )}
                 {order.status === "paid" && (
                   <div className={s.receipt} aria-label="Receipt">
                     <span className={s.stamp}>Paid</span>
@@ -541,7 +548,11 @@ function OrderWorkspace() {
                 </>
                 )}
                 <div className="mt-6 flex flex-wrap gap-3">
-                  {isDraft ? (
+                  {isPaying ? (
+                    <button className={btnPrimary} disabled={busy} onClick={() => void act("confirm")}>
+                      {busy ? "Checking payment…" : "Check payment status"}
+                    </button>
+                  ) : isDraft ? (
                     <>
                       <button
                         className={btnPrimary}

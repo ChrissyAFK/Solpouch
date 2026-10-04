@@ -9,7 +9,9 @@ config({ path: resolve(dirname(fileURLToPath(import.meta.url)), "../../../.env")
 const { ChainVaultClient } = await import("../src/vault/chain.js");
 const { getMerchant } = await import("../src/merchants/index.js");
 
-const vault = new ChainVaultClient((id) => getMerchant(id)?.payTo);
+const { MemoryStore } = await import("../src/store/memory.js");
+// Explicit manual smoke run only; operation journal is ephemeral for this single run.
+const vault = new ChainVaultClient((id) => getMerchant(id)?.payTo, new MemoryStore([]));
 const merchant = getMerchant("mountain-market")!;
 const pouch: Pouch = {
   id: `smoke-${randomBytes(2).toString("hex")}`,
@@ -37,9 +39,9 @@ async function step(name: string, fn: () => Promise<unknown>) {
 
 const used = order();
 await step("createPouch", () => vault.createPouch({ ...pouch, balance: 0 }));
-await step("topUp 5", () => vault.topUp(pouch.id, toMicros(5)));
+await step("topUp 5", () => vault.topUp(pouch.id, toMicros(5), order()));
 await step("pay 1", () => vault.pay(pouch, merchant.payTo, toMicros(1), used));
-await step("pay same order (expect OrderAlreadyUsed)", () => vault.pay(pouch, merchant.payTo, toMicros(1), used));
+await step("pay same order (expect original signature)", () => vault.pay(pouch, merchant.payTo, toMicros(1), used));
 await step("pay 2.5 (expect OverPerOrderLimit)", () => vault.pay(pouch, merchant.payTo, toMicros(2.5), order()));
 await step("freeze", () => vault.freeze(pouch.id));
 await step("pay frozen (expect PouchFrozen)", () => vault.pay(pouch, merchant.payTo, toMicros(1), order()));

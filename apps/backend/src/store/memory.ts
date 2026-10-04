@@ -1,5 +1,6 @@
 import { toMicros, type Order, type Pouch, type TopUp } from "@solpouch/shared";
-import type { Store, StoredPouch, UserProfile } from "./types.js";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { StoreConflictError, sameOperation, validateRateLimit, type Store, type StoredPouch, type UserProfile, type VaultOperation, type AuthChallenge } from "./types.js";
 
 // TODO: PostgresStore backed by Tiger Data (see db/schema.sql). Swap in src/index.ts.
 
@@ -54,55 +55,107 @@ export class MemoryStore implements Store {
   private orders = new Map<string, Order>();
   private topups = new Map<string, TopUp>();
   private users = new Map<string, UserProfile>();
+  private operations = new Map<string, VaultOperation>();
+  private challenges = new Map<string, AuthChallenge>();
+  private rateLimits = new Map<string, { hits: number; expiresAt: number }>();
+  private nextCleanupAt = 0;
+  private cleanupExpired() {
+    const now = Date.now();
+    if (now < this.nextCleanupAt) return;
+    this.nextCleanupAt = now + 60_000;
+    const sweep = <T>(map: Map<string, T>, expiresAt: (value: T) => number) => {
+      const limit = Math.min(1000, map.size);
+      let scanned = 0;
+      for (const [id, value] of map) {
+        if (scanned++ >= limit) break;
+        map.delete(id);
+        // Rotate survivors so later bounded sweeps eventually inspect every entry.
+        if (expiresAt(value) > now) map.set(id, value);
+      }
+    };
+    sweep(this.challenges, (record) => Date.parse(record.expiresAt));
+    sweep(this.rateLimits, (bucket) => bucket.expiresAt);
+  }
+  private locks = new Map<string, Promise<void>>();
+  private heldLocks = new AsyncLocalStorage<Set<string>>();
 
   constructor(seed: StoredPouch[] = seedPouches(), legacyOwnerEmail?: string) {
     const legacy = legacyOwnerEmail?.trim().toLowerCase();
-    for (const p of seed) this.pouches.set(p.id, legacy && !p.ownerEmail ? { ...p, ownerEmail: legacy } : p);
+    for (const p of seed) this.pouches.set(p.id, structuredClone({ ...p, version: p.version ?? 0, ...(legacy && !p.ownerEmail ? { ownerEmail: legacy } : {}) }));
   }
-
+  private save<T extends { id: string; version?: number; createdAt?: string }>(map: Map<string, T>, record: T): T {
+    const current = map.get(record.id);
+    if (current ? record.version !== current.version : record.version !== undefined) throw new StoreConflictError();
+    if (current?.createdAt && record.createdAt && new Date(current.createdAt).toISOString() !== new Date(record.createdAt).toISOString()) throw new StoreConflictError("Creation time cannot change");
+    const saved = structuredClone({ ...record, version: (current?.version ?? 0) + 1 });
+    map.set(record.id, saved);
+    return structuredClone(saved);
+  }
   async listPouches(ownerEmail?: string) {
     const all = [...this.pouches.values()];
-    return ownerEmail ? all.filter((p) => p.ownerEmail === ownerEmail) : all;
+    return structuredClone(ownerEmail ? all.filter((p) => p.ownerEmail === ownerEmail) : all);
   }
-  async getPouch(id: string) {
-    return this.pouches.get(id);
-  }
+  async getPouch(id: string) { return structuredClone(this.pouches.get(id)); }
   async savePouch(p: StoredPouch) {
     const prev = this.pouches.get(p.id);
-    if (p.ownerEmail === undefined && prev?.ownerEmail) p.ownerEmail = prev.ownerEmail;
-    this.pouches.set(p.id, p);
-    return p;
+    return this.save(this.pouches, p.ownerEmail === undefined && prev?.ownerEmail ? { ...p, ownerEmail: prev.ownerEmail } : p);
   }
   async listOrders(pouchId?: string) {
-    const all = [...this.orders.values()];
-    return (pouchId ? all.filter((o) => o.pouchId === pouchId) : all).sort((a, b) =>
-      b.createdAt.localeCompare(a.createdAt),
-    );
+    return structuredClone([...this.orders.values()].filter((o) => !pouchId || o.pouchId === pouchId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
   }
-  async getOrder(id: string) {
-    return this.orders.get(id);
-  }
-  async saveOrder(o: Order) {
-    this.orders.set(o.id, o);
-    return o;
-  }
-  async getTopUp(id: string) {
-    return this.topups.get(id);
-  }
-  async saveTopUp(t: TopUp) {
-    this.topups.set(t.id, t);
-    return t;
-  }
+  async getOrder(id: string) { return structuredClone(this.orders.get(id)); }
+  async saveOrder(o: Order) { return this.save(this.orders, o); }
+  async getTopUp(id: string) { return structuredClone(this.topups.get(id)); }
+  async saveTopUp(t: TopUp) { return this.save(this.topups, t); }
   async listTopUps(pouchId: string) {
-    return [...this.topups.values()]
+    return structuredClone([...this.topups.values()]
       .filter((t) => t.pouchId === pouchId)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
   }
-  async getUser(email: string) {
-    return this.users.get(email);
-  }
+  async getUser(email: string) { return structuredClone(this.users.get(email)); }
   async saveUser(u: UserProfile) {
-    this.users.set(u.email, u);
-    return u;
+    this.users.set(u.email, structuredClone(u));
+    return structuredClone(u);
+  }
+  async findUserByWallet(wallet: string) {
+    for (const u of this.users.values()) if (u.wallet === wallet) return structuredClone(u);
+    return undefined;
+  }
+  async withPouchLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+    const held = this.heldLocks.getStore();
+    if (held?.has(id)) return fn();
+    const previous = this.locks.get(id) ?? Promise.resolve();
+    let release!: () => void;
+    const next = new Promise<void>((resolve) => { release = resolve; });
+    this.locks.set(id, next);
+    await previous;
+    try { return await this.heldLocks.run(new Set([...(held ?? []), id]), fn); }
+    finally { release(); if (this.locks.get(id) === next) this.locks.delete(id); }
+  }
+  async getOperation(id: string) { return structuredClone(this.operations.get(id)); }
+  async saveOperation(record: VaultOperation) {
+    const current = this.operations.get(record.id);
+    if (current && !sameOperation(current, record)) throw new StoreConflictError("Operation is immutable");
+    this.operations.set(record.id, structuredClone(record));
+  }
+  async saveChallenge(record: AuthChallenge) {
+    this.cleanupExpired();
+    if (this.challenges.has(record.id)) throw new StoreConflictError("Challenge already exists");
+    this.challenges.set(record.id, structuredClone(record));
+  }
+  async consumeChallenge(id: string) {
+    const record = this.challenges.get(id);
+    this.challenges.delete(id);
+    return record && Date.parse(record.expiresAt) > Date.now() ? structuredClone(record) : undefined;
+  }
+  async consumeRateLimit(key: string, windowMs: number, max: number) {
+    validateRateLimit(key, windowMs, max);
+    const now = Date.now();
+    this.cleanupExpired();
+    const previous = this.rateLimits.get(key);
+    const bucket = previous && previous.expiresAt > now ? previous : { hits: 0, expiresAt: now + windowMs };
+    bucket.hits++;
+    this.rateLimits.set(key, bucket);
+    return { allowed: bucket.hits <= max, retryAfter: Math.max(1, Math.ceil((bucket.expiresAt - now) / 1000)) };
   }
 }

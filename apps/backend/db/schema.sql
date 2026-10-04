@@ -121,10 +121,46 @@ ALTER TABLE payments SET (
 );
 SELECT add_compression_policy('payments', INTERVAL '7 days', if_not_exists => TRUE);
 
-create table if not exists users (
-  email text primary key,
+CREATE TABLE IF NOT EXISTS users (
+  email text PRIMARY KEY,
   display_name text,
   avatar text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
+-- A user may link one Solana wallet; a wallet belongs to at most one account.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet text;
+CREATE UNIQUE INDEX IF NOT EXISTS users_wallet_key ON users(wallet) WHERE wallet IS NOT NULL;
+
+-- Additive storage-hardening migration. Existing records remain version 0.
+ALTER TABLE pouches ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 0;
+ALTER TABLE topups ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 0;
+ALTER TABLE topups ADD COLUMN IF NOT EXISTS tx_signature text;
+ALTER TABLE topups ADD COLUMN IF NOT EXISTS from_wallet text;
+
+-- Regular tables: journals and auth records must have globally unique identifiers.
+CREATE TABLE IF NOT EXISTS vault_operations (
+  id text PRIMARY KEY,
+  kind text NOT NULL CHECK (kind IN ('pay', 'topup')),
+  pouch_id text NOT NULL,
+  tx_signature text NOT NULL,
+  signed_transaction text NOT NULL,
+  last_valid_block_height bigint NOT NULL,
+  created_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auth_challenges (
+  id text PRIMARY KEY,
+  wallet text NOT NULL,
+  message text NOT NULL,
+  expires_at timestamptz NOT NULL
+);
+-- Challenges are bound to the signed-in Google account. Old rows without an email are unusable and expire.
+ALTER TABLE auth_challenges ADD COLUMN IF NOT EXISTS email text;
+CREATE INDEX IF NOT EXISTS auth_challenges_expiry_idx ON auth_challenges(expires_at);
+CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+  key text PRIMARY KEY,
+  hits bigint NOT NULL,
+  expires_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS rate_limit_buckets_expiry_idx ON rate_limit_buckets(expires_at);

@@ -1,9 +1,10 @@
+import { reconcilePouches } from "../services/reconcile.js";
+import { requestDeps } from "../security/access.js";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { chatMode, demoReply, geminiReply } from "../ai/chat.js";
-import type { AuthEnv } from "../auth/session.js";
-import { listOwnedOrders, type Deps } from "../services/orders.js";
+import { type Deps } from "../services/orders.js";
 import { publicPouch } from "../store/types.js";
 
 const chatBody = z.object({
@@ -15,14 +16,14 @@ const chatBody = z.object({
   message: "The last message must be from the user", path: ["messages"],
 });
 
-export function chatRoutes(deps: Deps) {
-  const app = new Hono<AuthEnv>();
+export function chatRoutes(_baseDeps: Deps) {
+  const app = new Hono();
   app.get("/status", (c) => c.json({ mode: chatMode() }));
   app.post("/", bodyLimit({ maxSize: 192_000, onError: (c) => c.json({ error: "Chat request is too large." }, 413) }), async (c) => {
+    const deps = requestDeps(c);
     const { messages } = chatBody.parse(await c.req.json());
     const mode = chatMode();
-    const email = c.get("user").email;
-    const [stored, orders] = await Promise.all([deps.store.listPouches(email), listOwnedOrders(deps, email)]);
+    const [stored, orders] = await Promise.all([deps.store.listPouches(), deps.store.listOrders()]);
     const pouches = stored.map(publicPouch);
     const context = { pouches, orders: [...orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10) };
     if (mode === "demo") return c.json({ reply: demoReply(messages, context), mode });

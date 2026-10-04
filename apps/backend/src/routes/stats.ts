@@ -1,14 +1,14 @@
+import { requestDeps } from "../security/access.js";
+import { z } from "zod";
 import { Hono } from "hono";
 import type { SpendPoint } from "@solpouch/shared";
-import type { AuthEnv } from "../auth/session.js";
-import { listOwnedOrders, type Deps } from "../services/orders.js";
+import { type Deps } from "../services/orders.js";
 
-// TODO: query the `spend_daily` continuous aggregate in Tiger Data once the Postgres store exists.
-export function statsRoutes(deps: Deps) {
-  const app = new Hono<AuthEnv>();
+export function statsRoutes(_baseDeps: Deps) {
+  const app = new Hono();
   app.get("/spend", async (c) => {
-    const bucket = c.req.query("bucket") === "hour" ? "hour" : "day";
-    const orders = (await listOwnedOrders(deps, c.get("user").email, c.req.query("pouchId"))).filter((o) => o.status === "paid");
+    const bucket = z.enum(["hour", "day"]).parse(c.req.query("bucket") ?? "day");
+    const orders = (await requestDeps(c).store.listOrders(c.req.query("pouchId"))).filter((o) => o.status === "paid");
     const points = new Map<string, SpendPoint>();
     for (const o of orders) {
       const d = new Date(o.createdAt);

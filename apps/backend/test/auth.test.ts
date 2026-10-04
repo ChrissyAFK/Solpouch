@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { createPrivateKey, sign } from "node:crypto";
+import { Keypair } from "@solana/web3.js";
 import { createApp } from "../src/app.js";
 import { getMerchant } from "../src/merchants/index.js";
 import { MemoryStore } from "../src/store/memory.js";
@@ -7,15 +9,20 @@ import { authHeaders, ownedSeed, sessionToken, voiceToken } from "./helpers.js";
 
 delete process.env.GEMINI_API_KEY;
 delete process.env.ELEVENLABS_TOOL_SECRET;
+const VOICE_SECRET = "fixture-voice-secret";
+process.env.VOICE_WEBHOOK_SECRET = VOICE_SECRET;
 
 const A = "a@example.com";
 const B = "b@example.com";
 const json = { "Content-Type": "application/json" };
+const ORIGIN = "http://localhost:3000";
+const now = () => new Date().toISOString();
 
 let app: ReturnType<typeof createApp>;
 let store: MemoryStore;
-beforeEach(() => {
+beforeEach(async () => {
   store = new MemoryStore([...ownedSeed(A), ...ownedSeed(B).map((p) => ({ ...p, id: `b-${p.id}`, address: `b-${p.address}` }))]);
+  for (const [email, wallet] of [[A, "wallet-of-a"], [B, "wallet-of-b"]]) await store.saveUser({ email, wallet, createdAt: now(), updatedAt: now() });
   const vault = new MockVaultClient(store, (id) => getMerchant(id)?.payTo, () => 1_000_000);
   app = createApp({
     store,
@@ -118,7 +125,7 @@ describe("per-user ownership", () => {
 
   it("the pouch cap is per user", async () => {
     for (let i = 0; i < 47; i++) {
-      await store.savePouch({ ...(await store.getPouch("uber-eats"))!, id: `x${i}`, address: `addr${i}` });
+      await store.savePouch({ ...(await store.getPouch("uber-eats"))!, id: `x${i}`, address: `addr${i}`, version: undefined });
     }
     const body = { name: "Over", maxPerOrder: 1, dailyLimit: 1, allowedMerchantIds: [] };
     expect((await req("POST", "/pouches", A, body)).status).toBe(409);
@@ -127,13 +134,13 @@ describe("per-user ownership", () => {
 });
 
 describe("voice tools need a voice token", () => {
-  const tool = (name: string, body: unknown) => app.request(`/voice/tools/${name}`, { method: "POST", headers: json, body: JSON.stringify(body) });
+  const tool = (name: string, body: unknown) => app.request(`/voice/tools/${name}`, { method: "POST", headers: { ...json, "X-Solpouch-Secret": VOICE_SECRET }, body: JSON.stringify(body) });
 
   it("rejects missing, garbage, and session tokens", async () => {
     for (const body of [{}, { user_token: "garbage" }, { user_token: await sessionToken(A) }]) {
       const r = await tool("get_pouches", body);
       expect(r.status).toBe(401);
-      expect(await r.json()).toEqual({ say: "Please sign in to Solpouch first." });
+      expect(await r.json()).toEqual({ error: "sign_in_required" });
     }
   });
 
@@ -150,5 +157,65 @@ describe("voice tools need a voice token", () => {
     const r = await tool("confirm_order", { orderId: order.id, user_token: await voiceToken(A) });
     expect(r.status).toBe(404);
     expect((await store.getOrder(order.id))!.status).toBe("draft");
+  });
+});
+
+describe("wallet linking and top-ups", () => {
+  const C = "c@example.com";
+  const D = "d@example.com";
+  const signWith = (kp: Keypair, message: string) => {
+    const key = createPrivateKey({ key: Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), Buffer.from(kp.secretKey.slice(0, 32))]), format: "der", type: "pkcs8" });
+    return sign(null, Buffer.from(message), key).toString("base64");
+  };
+  const post = async (path: string, who: string, body: unknown) =>
+    app.request(path, { method: "POST", headers: { ...json, origin: ORIGIN, ...(await authHeaders(who)) }, body: JSON.stringify(body) });
+  const challenge = async (who: string, kp: Keypair) => {
+    const res = await post("/auth/wallet/challenge", who, { wallet: kp.publicKey.toBase58() });
+    expect(res.status).toBe(200);
+    return (await res.json()) as { id: string; message: string };
+  };
+
+  it("links a wallet after the user signs the challenge", async () => {
+    const kp = Keypair.generate();
+    const ch = await challenge(C, kp);
+    const res = await post("/auth/wallet/verify", C, { id: ch.id, signature: signWith(kp, ch.message) });
+    expect(res.status).toBe(200);
+    expect((await store.getUser(C))!.wallet).toBe(kp.publicKey.toBase58());
+    expect((await res.json()).user.wallet).toBe(kp.publicKey.toBase58());
+  });
+
+  it("rejects a wallet already linked to another email with 409", async () => {
+    const kp = Keypair.generate();
+    const first = await challenge(C, kp);
+    expect((await post("/auth/wallet/verify", C, { id: first.id, signature: signWith(kp, first.message) })).status).toBe(200);
+    const second = await challenge(D, kp);
+    expect((await post("/auth/wallet/verify", D, { id: second.id, signature: signWith(kp, second.message) })).status).toBe(409);
+    expect((await store.getUser(D))?.wallet).toBeUndefined();
+  });
+
+  it("rejects a challenge issued to another email with 401", async () => {
+    const kp = Keypair.generate();
+    const ch = await challenge(C, kp);
+    expect((await post("/auth/wallet/verify", D, { id: ch.id, signature: signWith(kp, ch.message) })).status).toBe(401);
+    expect((await store.getUser(D))?.wallet).toBeUndefined();
+  });
+
+  it("rejects a bad signature with 401", async () => {
+    const kp = Keypair.generate();
+    const ch = await challenge(C, kp);
+    expect((await post("/auth/wallet/verify", C, { id: ch.id, signature: signWith(Keypair.generate(), ch.message) })).status).toBe(401);
+  });
+
+  it("top-up without a linked wallet is 403, with a linked wallet it works and records the source", async () => {
+    const body = { pouchId: "uber-eats", amount: 5_000_000 };
+    expect((await req("POST", "/topups", A, body)).status).toBe(201);
+    await store.saveUser({ ...(await store.getUser(A))!, wallet: undefined });
+    const denied = await req("POST", "/topups", A, body);
+    expect(denied.status).toBe(403);
+    expect((await denied.json()).error).toBe("Link a wallet to add money");
+    await store.saveUser({ ...(await store.getUser(A))!, wallet: "wallet-of-a" });
+    const ok = await req("POST", "/topups", A, body);
+    expect(ok.status).toBe(201);
+    expect((await ok.json()).fromWallet).toBe("wallet-of-a");
   });
 });

@@ -1,7 +1,6 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { reconcilePouches } from "../services/reconcile.js";
 import { Hono } from "hono";
-import { clientIp } from "../security/rateLimit.js";
-import { verifyVoiceToken } from "../auth/session.js";
+import { requestDeps } from "../security/access.js";
 import { z } from "zod";
 import { toUsdc, type Order } from "@solpouch/shared";
 import { getMerchant } from "../merchants/index.js";
@@ -15,7 +14,6 @@ import { cancelOrder, confirmOrder, createDraft, HttpError, type Deps } from "..
 export const VOICE_TOOLS = ["get_pouches", "create_order", "confirm_order", "cancel_order", "freeze_all"] as const;
 
 const usd = (m: number) => `$${toUsdc(m).toFixed(2)}`;
-let warned = false;
 
 export function readback(order: Order): string {
   const merchant = getMerchant(order.merchantId)?.name ?? "the merchant";
@@ -27,54 +25,20 @@ export function readback(order: Order): string {
   return `From ${merchant}: ${parts.join("; ")}. Total ${usd(order.total)}. Should I place it?`;
 }
 
-const requestBody = z.object({ request: z.string().min(1).max(1000), pouchId: z.string().max(100).optional(), user_token: z.string().optional() });
-const orderIdBody = z.object({ orderId: z.string().min(1).max(100), user_token: z.string().optional() });
+const requestBody = z.object({ request: z.string().trim().min(1).max(1000), pouchId: z.string().min(1).max(100).optional(), user_token: z.string().optional() }).strict();
+const orderIdBody = z.object({ orderId: z.string().min(1).max(100), user_token: z.string().optional() }).strict();
 
-const MAX_FAILS = 10;
-const LOCK_MS = 10 * 60_000;
-function safeEqual(a: string, b: string): boolean {
-  const ha = createHash("sha256").update(a).digest();
-  const hb = createHash("sha256").update(b).digest();
-  return timingSafeEqual(ha, hb);
-}
-
-export function voiceRoutes(deps: Deps) {
+export function voiceRoutes(_baseDeps: Deps) {
   const app = new Hono();
-  const fails = new Map<string, { count: number; windowStart: number; lockedUntil: number }>();
-
+  // Secret verification and wallet-scoped authentication are mandatory app middleware.
   app.post("/tools/:tool", async (c) => {
-    const secret = process.env.ELEVENLABS_TOOL_SECRET;
-    if (secret) {
-      const ip = clientIp(c);
-      const now = Date.now();
-      const st = fails.get(ip);
-      if (st && st.lockedUntil > now) {
-        const secs = Math.ceil((st.lockedUntil - now) / 1000);
-        c.header("Retry-After", String(secs));
-        return c.json({ error: `Too many requests. Try again in ${secs} seconds.` }, 429);
-      }
-      if (!safeEqual(c.req.header("X-Solpouch-Secret") ?? "", secret)) {
-        const cur = st && st.windowStart + LOCK_MS > now ? st : { count: 0, windowStart: now, lockedUntil: 0 };
-        cur.count++;
-        if (cur.count >= MAX_FAILS) cur.lockedUntil = now + LOCK_MS;
-        fails.set(ip, cur);
-        return c.json({ error: "Unauthorized" }, 401);
-      }
-    } else if (process.env.NODE_ENV === "production") {
-      return c.json({ error: "Voice tools are not configured" }, 503);
-    } else if (!warned) {
-      warned = true;
-      console.warn("[voice] ELEVENLABS_TOOL_SECRET is unset: voice tool calls are NOT authenticated");
-    }
+    const deps = requestDeps(c);
     const tool = c.req.param("tool");
-    if (!(VOICE_TOOLS as readonly string[]).includes(tool)) return c.json({ error: `Unknown tool: ${tool}` }, 404);
-    const body = await c.req.json().catch(() => ({}));
-    const email = await verifyVoiceToken((body as { user_token?: unknown } | null)?.user_token);
-    if (!email) return c.json({ say: "Please sign in to Solpouch first." }, 401);
+    const body = await c.req.json();
 
     switch (tool) {
       case "get_pouches": {
-        const pouches = await deps.store.listPouches(email);
+        const pouches = await reconcilePouches(deps);
         const say = pouches
           .map((p) => `${p.name}: ${usd(p.balance)} left, ${usd(Math.max(0, p.dailyLimit - p.spentToday))} available today${p.frozen ? ", frozen" : ""}`)
           .join(". ");
@@ -82,29 +46,29 @@ export function voiceRoutes(deps: Deps) {
       }
       case "create_order": {
         const b = requestBody.parse(body);
-        const order = await createDraft(deps, email, b.request, b.pouchId);
+        const order = await createDraft(deps, b.request, b.pouchId);
         return c.json({ say: readback(order), orderId: order.id, total: usd(order.total), needsConfirmation: true });
       }
       case "confirm_order": {
         const { orderId } = orderIdBody.parse(body);
         try {
-          const order = await confirmOrder(deps, email, orderId);
-          return c.json({ say: `Done. Paid ${usd(order.total)}.`, status: order.status });
+          const order = await confirmOrder(deps, orderId);
+          return c.json({ say: order.txSignature?.startsWith("mock") ? `Demo payment recorded: ${usd(order.total)}. No real funds moved.` : `Payment recorded: ${usd(order.total)}.`, status: order.status });
         } catch (e) {
           if (e instanceof HttpError && e.code) {
-            return c.json({ say: `That payment was refused: ${e.code}. No money moved.`, status: "rejected", code: e.code });
+            return c.json({ say: `The payment could not be confirmed: ${e.code}. Check its status in the app before retrying.`, status: "unconfirmed", code: e.code });
           }
           throw e;
         }
       }
       case "cancel_order": {
         const { orderId } = orderIdBody.parse(body);
-        const order = await cancelOrder(deps, email, orderId);
+        const order = await cancelOrder(deps, orderId);
         return c.json({ say: "Okay, cancelled.", status: order.status });
       }
       case "freeze_all": {
-        const pouches = await deps.store.listPouches(email);
-        for (const p of pouches) await deps.vault.freeze(p.id);
+        const pouches = await reconcilePouches(deps);
+        for (const p of pouches) await deps.store.withPouchLock(p.id, () => deps.vault.freeze(p.id));
         return c.json({ say: `Frozen. All ${pouches.length} pouches are locked until you unfreeze them in the app.` });
       }
       default:

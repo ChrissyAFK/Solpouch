@@ -53,7 +53,7 @@ export async function signVoiceToken(email: string): Promise<string> {
     .setSubject(email)
     .setAudience(VOICE_AUD)
     .setIssuedAt()
-    .setExpirationTime("15m")
+    .setExpirationTime("30m")
     .sign(key());
 }
 

@@ -1,0 +1,10 @@
+{
+  "description": "Apply request_headers to EACH server tool in ElevenLabs. Replace the workspace secret id with your real secret resource id. This is a configuration fragment, not a deployment command.",
+  "request_headers": {
+    "Authorization": { "variable_name": "secret__solpouch_voice_token" },
+    "X-Solpouch-Secret": { "secret_id": "YOUR_WORKSPACE_SECRET_ID" }
+  },
+  "client_dynamic_variables": {
+    "secret__solpouch_voice_token": "Bearer <short-lived-token-from-auth-voice-session>"
+  }
+}

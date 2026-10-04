@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useAuth } from "@/components/AuthProvider";
+import { WalletLink } from "@/components/WalletLink";
 import { StatePanel } from "@/components/StatePanel";
 import { PouchSkeleton } from "@/components/Skeletons";
 import { useParams } from "next/navigation";
@@ -48,6 +50,14 @@ function TopUpSection({
   pouch: Pouch;
   onDone: () => Promise<void>;
 }) {
+  const { user, updateUser } = useAuth();
+  const hasWallet = Boolean(user?.wallet);
+  // Keyed by Google account and pouch so a lost response can be recovered after a reload.
+  const storageKey = `solpouch:topup:${user?.email ?? ""}:${pouch.id}`;
+  const [restoring, setRestoring] = useState(true);
+  const [restoreFailed, setRestoreFailed] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const restoreVersion = useRef(0);
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [topup, setTopup] = useState<TopUp | null>(null);
@@ -75,6 +85,63 @@ function TopUpSection({
     };
   }, [pouch.id]);
 
+  // Recover the saved top-up (id and whether completion was already submitted).
+  const restore = useCallback(async () => {
+    const version = ++restoreVersion.current;
+    setRestoring(true);
+    setRestoreFailed(false);
+    setError(null);
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (!saved) {
+        setSubmitted(false);
+        return;
+      }
+      const record = JSON.parse(saved) as { id?: unknown; submitted?: unknown };
+      if (typeof record.id !== "string") throw new Error("Invalid saved top-up");
+      const recovered = await api.topUp(record.id);
+      if (version !== restoreVersion.current) return;
+      if (recovered.pouchId !== pouch.id)
+        throw new Error("Top-up belongs to another pouch");
+      if (recovered.status === "completed" || recovered.status === "cancelled") {
+        localStorage.removeItem(storageKey);
+        setTopup(null);
+        setSubmitted(false);
+        if (recovered.status === "completed")
+          setAdded(`Added ${usd(toUsdc(recovered.amount))} USDC to ${pouch.name}`);
+        await onDone();
+      } else {
+        setTopup(recovered);
+        setNow(Date.now());
+        setSubmitted(
+          record.submitted === true || recovered.status === "processing",
+        );
+      }
+    } catch (cause) {
+      if (version !== restoreVersion.current) return;
+      setRestoreFailed(true);
+      setError(
+        cause instanceof ApiRequestError
+          ? errMsg(cause)
+          : "Could not recover your saved top-up. Check browser storage and retry before starting another.",
+      );
+    } finally {
+      if (version === restoreVersion.current) setRestoring(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey, pouch.id, pouch.name]);
+  useEffect(() => {
+    void restore();
+    const storageChanged = (event: StorageEvent) => {
+      if (event.key === storageKey) void restore();
+    };
+    window.addEventListener("storage", storageChanged);
+    return () => {
+      restoreVersion.current++;
+      window.removeEventListener("storage", storageChanged);
+    };
+  }, [restore, storageKey]);
+
   useEffect(() => {
     if (!topup) return;
     const timer = setInterval(() => setNow(Date.now()), 500);
@@ -93,38 +160,65 @@ function TopUpSection({
 
   const complete = useCallback(
     async (auto: boolean) => {
-      if (!topup || completing.current) return;
+      if (!topup || completing.current || restoring || restoreFailed) return;
       completing.current = true;
       setBusy(true);
       setError(null);
       try {
-        await api.completeTopUp(topup.id);
+        // Save the identity before the request that can move funds, so a lost response is recoverable.
+        localStorage.setItem(
+          storageKey,
+          JSON.stringify({ id: topup.id, submitted: true }),
+        );
+        setSubmitted(true);
+        const result = await api.completeTopUp(topup.id);
+        if (result.status !== "completed")
+          throw new Error("Top-up remains pending");
+        localStorage.removeItem(storageKey);
         setAdded(`Added ${usd(toUsdc(topup.amount))} USDC to ${pouch.name}`);
         setTopup(null);
+        setSubmitted(false);
         setAmount("");
         setReason("");
         setAutoFailed(false);
         await onDone();
       } catch (err) {
         setAutoFailed(true);
-        setError(
-          auto ? `Could not add automatically. ${errMsg(err)}` : errMsg(err),
-        );
+        const msg =
+          err instanceof ApiRequestError
+            ? errMsg(err)
+            : "Could not confirm this top-up. Keep this request and check its status again.";
+        setError(auto ? `Could not add automatically. ${msg}` : msg);
+        try {
+          const latest = await api.topUp(topup.id);
+          setTopup(latest);
+          if (latest.status === "completed") {
+            localStorage.removeItem(storageKey);
+            setAdded(`Added ${usd(toUsdc(latest.amount))} USDC to ${pouch.name}`);
+            setTopup(null);
+            setSubmitted(false);
+            setError(null);
+            await onDone();
+          }
+        } catch {
+          /* Keep the saved identity for recovery. */
+        }
       } finally {
         completing.current = false;
         setBusy(false);
       }
     },
-    [topup, pouch.name, onDone],
+    [topup, pouch.name, onDone, storageKey, restoring, restoreFailed],
   );
 
   useEffect(() => {
-    if (ready && !autoFailed && !completing.current) void complete(true);
-  }, [ready, autoFailed, complete]);
+    if (ready && !autoFailed && !submitted && !completing.current)
+      void complete(true);
+  }, [ready, autoFailed, submitted, complete]);
 
   async function start(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (busy || restoring || restoreFailed) return;
     const micros = toMicros(Number(amount));
     if (!Number.isSafeInteger(micros) || micros <= 0) {
       setError("Enter a valid amount.");
@@ -141,16 +235,22 @@ function TopUpSection({
     setAdded(null);
     setAutoFailed(false);
     try {
-      const note = reason.trim();
-      setTopup(
-        await api.startTopUp({
-          pouchId: pouch.id,
-          amount: micros,
-          ...(note ? { reason: note } : {}),
-        }),
+      const created = await api.startTopUp({
+        pouchId: pouch.id,
+        amount: micros,
+        reason: reason.trim(),
+      });
+      setTopup(created);
+      setSubmitted(false);
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({ id: created.id, submitted: false }),
       );
       setNow(Date.now());
     } catch (err) {
+      // 403 means no wallet is linked: show the link prompt instead of the form.
+      if (err instanceof ApiRequestError && err.status === 403)
+        updateUser({ wallet: undefined });
       setError(errMsg(err));
     } finally {
       setBusy(false);
@@ -162,7 +262,9 @@ function TopUpSection({
     setError(null);
     try {
       await api.cancelTopUp(topup.id);
+      localStorage.removeItem(storageKey);
       setTopup(null);
+      setSubmitted(false);
       setAutoFailed(false);
     } catch (err) {
       setError(errMsg(err));
@@ -203,7 +305,20 @@ function TopUpSection({
         </ol>
         <ErrorBanner message={error} />
         {added && <Notice>{added}</Notice>}
-        {!topup ? (
+        {restoring ? (
+          <p className="text-sm text-[var(--muted)]" role="status">
+            Checking for an unfinished top-up…
+          </p>
+        ) : restoreFailed ? (
+          <button className={btnSecondary} onClick={() => void restore()}>
+            Retry top-up recovery
+          </button>
+        ) : !topup && !hasWallet ? (
+          <div className="space-y-3">
+            <p className="text-sm text-[var(--ink)]">Link a wallet to add money</p>
+            <WalletLink />
+          </div>
+        ) : !topup ? (
           <form onSubmit={start} className="space-y-4">
             <div>
               <span className={label}>Amount · USDC</span>
@@ -266,7 +381,7 @@ function TopUpSection({
           <div className="space-y-4">
             <div className="rounded bg-[var(--surface-raised)] p-5">
               <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">
-                {ready ? "Adding now" : "Safety wait"}
+                {submitted ? "Checking payment" : ready ? "Adding now" : "Safety wait"}
               </p>
               <p className="mt-2 text-3xl font-semibold tracking-tight">
                 {usd(toUsdc(topup.amount))}
@@ -289,7 +404,9 @@ function TopUpSection({
               />
             </div>
             <p className="text-sm font-medium" role="status">
-              {ready
+              {submitted && !busy
+                ? "This top-up may already be submitted. Check the same request to recover its result."
+                : ready
                 ? busy
                   ? "Adding to your pouch…"
                   : "Wait is over."
@@ -301,7 +418,7 @@ function TopUpSection({
                 disabled={!ready || busy}
                 onClick={() => void complete(false)}
               >
-                {busy && ready ? "Adding…" : "Add now"}
+                {busy && ready ? "Adding…" : submitted ? "Check status" : "Add now"}
               </button>
               <button
                 className={btnSecondary}
