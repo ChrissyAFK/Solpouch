@@ -50,7 +50,7 @@ describe("voice readback", () => {
     const o = order([line("Biscuit", 1_450_000, false)]);
     o.fulfillment = { via: "demo", demo: { sourceTotal: 1_990_000, usdPerCad: 0.73, payTo: "Wallet123" } } as any;
     const say = readback(o);
-    expect(say).toBe("Do you approve this payment of $1.45 from your pouch?");
+    expect(say).toBe("Do you approve this payment of $1.99 from your pouch?");
     expect(say).not.toMatch(/Wallet123|USDC|per CAD/);
   });
 });

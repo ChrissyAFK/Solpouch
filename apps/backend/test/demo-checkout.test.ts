@@ -65,7 +65,7 @@ it("voice preparation gives exact test-token consent and enforces readback delay
  const app=createApp(deps); const token=await voiceToken(deps.store);
  const request=(tool:string,body:object)=>app.request(`/voice/tools/${tool}`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify(body)});
  const quote=await (await request("prepare_demo_checkout",{orderId:draft.id,version:draft.version})).json();
- expect(quote.say).toContain("$3.64 from your pouch");expect(quote.say).not.toContain(payTo);
+ expect(quote.say).toContain("$4.99 from your pouch");expect(quote.say).not.toContain(payTo);
  const early=await (await request("confirm_order",{orderId:draft.id,version:quote.version})).json();
  expect(early.needsConfirmation).toBe(true);expect(deps.vault.pay).not.toHaveBeenCalled();
 });

@@ -38,8 +38,8 @@ export function readback(order: Order): string {
     return `${l.qty} ${l.product.name}${sub}`;
   });
   if (order.fulfillment?.via === "demo" && order.fulfillment.demo) {
-    // The cart was already read back by create_order; only ask for the pouch amount, which differs from the CAD estimate.
-    return `Do you approve this payment of $${toUsdc(order.total).toFixed(2)} from your pouch?`;
+    // The cart was already read back by create_order; ask once, using the same CAD total the user just heard.
+    return `Do you approve this payment of ${usd(order.fulfillment.demo.sourceTotal)} from your pouch?`;
   }
   if (isCheckoutReference(order)) {
     if (demoCheckoutEnabled()) return `From ${merchant}: ${parts.join("; ")}. Total ${usd(order.total)}. Want me to pay for it from your pouch?`;
@@ -149,7 +149,7 @@ export function voiceRoutes(deps: Deps) {
         if (draft.status === "draft" && Date.now() - Date.parse(draft.fulfillment?.demo?.preparedAt ?? draft.createdAt) < VOICE_CONFIRM_MIN_AGE_MS) return c.json({say:"Please listen to the read-back first, then say yes again to place the order.",status:"draft",needsConfirmation:true});
         try {
           const order = await confirmOrder(deps, email, orderId, version ?? -1);
-          return c.json({ say: order.fulfillment?.via === "demo" ? `Payment complete: $${toUsdc(order.total).toFixed(2)}.` : order.txSignature?.startsWith("mock") ? `Payment recorded: ${usd(order.total)}.` : `Payment recorded: ${usd(order.total)}.`, status: order.status });
+          return c.json({ say: order.fulfillment?.via === "demo" ? `Payment complete: ${usd(order.fulfillment.demo?.sourceTotal ?? order.total)}.` : order.txSignature?.startsWith("mock") ? `Payment recorded: ${usd(order.total)}.` : `Payment recorded: ${usd(order.total)}.`, status: order.status });
         } catch (e) {
           if (e instanceof HttpError && (e.code === "WebCheckoutRequired" || e.code === "RecordChanged")) {
             return c.json({ say: e.message, status: "draft", code: e.code });
