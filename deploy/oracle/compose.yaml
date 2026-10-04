@@ -1,0 +1,41 @@
+# Backend API on one VM: Caddy terminates TLS for $API_HOST and proxies to the ghcr image.
+# Run from this folder: docker compose up -d   (see docs/DEPLOY.md)
+services:
+  api:
+    image: ghcr.io/chrissyafk/solpouch-api:${API_TAG:-latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Only Caddy (fixed address below) may set the client IP the rate limiter sees.
+      TRUSTED_PROXY_IPS: 172.30.0.2
+      TRUSTED_PROXY_HEADER: x-forwarded-for
+    volumes:
+      # Keypairs: the backend reads .keys/owner.json and .keys/agent.json from /app.
+      - ./keys:/app/.keys:ro
+    networks:
+      edge:
+        ipv4_address: 172.30.0.3
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      API_HOST: ${API_HOST:-api.solpouch.tech}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [api]
+    networks:
+      edge:
+        ipv4_address: 172.30.0.2
+
+networks:
+  edge:
+    ipam:
+      config: [{ subnet: 172.30.0.0/24 }]
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}

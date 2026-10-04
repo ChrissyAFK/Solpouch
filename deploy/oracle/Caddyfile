@@ -1,0 +1,5 @@
+# Caddy gets and renews the certificate itself once DNS for {$API_HOST} points at this VM.
+{$API_HOST} {
+	encode gzip
+	reverse_proxy api:8787
+}
