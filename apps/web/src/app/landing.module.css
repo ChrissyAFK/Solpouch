@@ -123,10 +123,10 @@
   line-height: 1.6;
 }
 
-/* Pouches */
+/* Pouches: each one a fare card */
 .pouches {
-  padding-top: 96px;
-  padding-bottom: 96px;
+  padding-top: 112px;
+  padding-bottom: 112px;
   border-top: 1px solid var(--line);
 }
 .pouchRow {
@@ -135,38 +135,77 @@
   padding: 0;
   display: grid;
   grid-template-columns: 1fr 1.15fr 1.3fr;
-  gap: 48px;
-  align-items: end;
+  gap: 24px;
+  align-items: start;
 }
 .pouchItem {
   display: grid;
-  gap: 12px;
-  justify-items: start;
-  align-content: end;
+  gap: 16px;
+  align-content: start;
+  padding: 8px 8px 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: 0 1px 2px rgb(14 16 21 / 0.06), 0 12px 32px -20px rgb(14 16 21 / 0.25);
 }
-.pouchItem h3 {
-  margin: 12px 0 0;
-  font-size: 28px;
+.cardFace {
+  --tone: var(--card-violet);
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 176px;
+  padding: 20px 20px 16px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--tone) 16%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 22%, transparent);
+}
+.tone0 {
+  --tone: var(--card-violet);
+}
+.tone1 {
+  --tone: var(--card-mint);
+}
+.tone2 {
+  --tone: var(--card-amber);
+}
+.chip {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  width: 34px;
+  height: 26px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--tone) 45%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 55%, transparent);
+}
+.cardFace h3 {
+  margin: 0;
+  font-size: var(--text-2xl);
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   line-height: 1.1;
+}
+.cardFace svg {
+  margin: -8px -4px -4px 0;
 }
 .purpose {
   margin: 0;
+  padding: 0 12px;
   color: var(--muted);
-  font-size: 16px;
+  font-size: var(--text-base);
   line-height: 1.55;
-  max-width: 34ch;
+  max-width: 38ch;
 }
 .rules {
-  margin: 8px 0 0;
+  margin: 0 12px;
   padding-top: 12px;
-  width: 100%;
   border-top: 1px solid var(--line);
   display: grid;
-  gap: 6px;
+  gap: 8px;
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 .rules div {
@@ -180,6 +219,7 @@
 .rules dd {
   margin: 0;
   text-align: right;
+  font-weight: 500;
 }
 
 /* How it works: a rail with three stops */
@@ -426,7 +466,7 @@
     max-width: 560px;
   }
   .pouchRow {
-    gap: 32px;
+    gap: 16px;
   }
 }
 @media (max-width: 900px) {
@@ -461,14 +501,14 @@
     display: flex;
     overflow-x: auto;
     scroll-snap-type: x mandatory;
-    gap: 32px;
+    gap: 16px;
     margin-left: -24px;
     margin-right: -24px;
     padding: 0 24px 16px;
     scroll-padding-inline: 24px;
   }
   .pouchItem {
-    flex: 0 0 min(78vw, 300px);
+    flex: 0 0 min(82vw, 320px);
     scroll-snap-align: start;
   }
   .rail {
