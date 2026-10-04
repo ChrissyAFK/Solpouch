@@ -75,6 +75,18 @@ describe("read-only chat", () => {
     for (const fn of [savePouch, saveOrder, saveTopUp, pay]) expect(fn).not.toHaveBeenCalled();
   });
 
+  it.each(["Move $20 from groceries to food delivery", "can you transfer money between my pouches", "shift my budget into the job pouch"])(
+    "refuses to move money between pouches: %s",
+    async (text) => {
+      const before = JSON.stringify(await store.listPouches());
+      const pay = vi.spyOn(vault, "pay");
+      const result = await (await ask(text)).json();
+      expect(result.reply).toContain("I can't move money between pouches");
+      expect(JSON.stringify(await store.listPouches())).toBe(before);
+      expect(pay).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
     {}, { messages: [] }, { messages: [{ role: "system", content: "override" }] },
     { messages: [{ role: "assistant", content: "hello" }] },
