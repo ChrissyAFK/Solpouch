@@ -1,4 +1,5 @@
 import { signSession, signVoiceToken } from "../src/auth/session.js";
+import { Keypair } from "@solana/web3.js";
 import { seedPouches } from "../src/store/memory.js";
 
 process.env.SESSION_SECRET ||= "test-session-secret-test-session-secret";
@@ -17,4 +18,9 @@ export async function authHeaders(store: import("../src/store/types.js").Store, 
 export async function voiceToken(store: import("../src/store/types.js").Store, email = TEST_USER) {
   const {session} = await signSession({ email, name: "Test User", picture: "" }, store);
   return (await signVoiceToken(session)).token;
+}
+/** Fixture: record a linked wallet directly (top-ups require one). The signed link flow is covered in wallet.test.ts. */
+export async function linkTestWallet(store: import("../src/store/types.js").Store, email = TEST_USER, wallet = Keypair.generate().publicKey.toBase58()) {
+  await store.setWallet(email, wallet);
+  return wallet;
 }

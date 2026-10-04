@@ -14,7 +14,8 @@ const startBody = z.object({
 
 /**
  * Top-ups are the ONLY way money enters a pouch, and are deliberately slow (friction).
- * This is owner/dashboard-only: it is NOT reachable from the voice tools or any agent path.
+ * This is owner/dashboard-only: it is NOT reachable from the voice tools or any agent path,
+ * and a top-up can only start once the account has linked a wallet.
  */
 export function topupRoutes(deps: Deps) {
   const app = new Hono<AuthEnv>();
@@ -45,7 +46,11 @@ export function topupRoutes(deps: Deps) {
 
   app.post("/", async (c) => {
     const b = startBody.parse(await c.req.json());
-    await getOwnedPouch(deps, b.pouchId, c.get("user").email);
+    const email = c.get("user").email;
+    await getOwnedPouch(deps, b.pouchId, email);
+    // Money only enters from a wallet the account has proven it owns.
+    const wallet = (await deps.store.getUser(email))?.wallet;
+    if (!wallet) throw new HttpError(403, "Link a wallet to add money", "WalletRequired");
     const cooldown = Number(process.env.TOPUP_COOLDOWN_SECONDS ?? 60);
     const now = Date.now();
     const t: TopUp = {
@@ -53,6 +58,7 @@ export function topupRoutes(deps: Deps) {
       pouchId: b.pouchId,
       amount: b.amount,
       reason: b.reason || "Top-up",
+      fromWallet: wallet,
       status: "cooling_down",
       readyAt: new Date(now + cooldown * 1000).toISOString(),
       createdAt: new Date(now).toISOString(),

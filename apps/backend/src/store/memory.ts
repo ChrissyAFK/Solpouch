@@ -1,6 +1,6 @@
 import { toMicros, type Order, type Pouch, type TopUp } from "@solpouch/shared";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { StoreConflictError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type StoredPouch, type UserProfile } from "./types.js";
+import { StoreConflictError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredPouch, type UserProfile } from "./types.js";
 
 // TODO: PostgresStore backed by Tiger Data (see db/schema.sql). Swap in src/index.ts.
 
@@ -57,6 +57,7 @@ export class MemoryStore implements Store {
   private operations = new Map<string, VaultOperation>();
   private users = new Map<string, UserProfile>();
   private sessions = new Map<string, AuthSession>();
+  private challenges = new Map<string, AuthChallenge>();
   private rateLimits = new Map<string, { hits: number; expiresAt: number }>();
   private nextCleanupAt = 0;
   private cleanupExpired() {
@@ -74,6 +75,7 @@ export class MemoryStore implements Store {
       }
     };
     sweep(this.sessions, (record) => Date.parse(record.expiresAt));
+    sweep(this.challenges, (record) => Date.parse(record.expiresAt));
     sweep(this.rateLimits, (bucket) => bucket.expiresAt);
   }
   private locks = new Map<string, Promise<void>>();
@@ -140,7 +142,36 @@ export class MemoryStore implements Store {
   async deleteSessions(email: string) { for (const [id,s] of this.sessions) if (s.email === email) this.sessions.delete(id); }
   async listTopUps(pouchId: string) { return structuredClone([...this.topups.values()].filter(t=>t.pouchId===pouchId).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))); }
   async getUser(email: string) { return structuredClone(this.users.get(email)); }
-  async saveUser(user: UserProfile) { this.users.set(user.email,structuredClone(user)); return structuredClone(user); }
+  async saveUser(user: UserProfile) {
+    const { wallet: _ignored, ...fields } = user; // eslint-disable-line @typescript-eslint/no-unused-vars
+    const current = this.users.get(user.email);
+    const saved = { ...fields, ...(current?.wallet ? { wallet: current.wallet } : {}) };
+    this.users.set(user.email, structuredClone(saved));
+    return structuredClone(saved);
+  }
+  async findUserByWallet(wallet: string) {
+    for (const u of this.users.values()) if (u.wallet === wallet) return structuredClone(u);
+    return undefined;
+  }
+  async setWallet(email: string, wallet: string | null) {
+    const holder = wallet ? await this.findUserByWallet(wallet) : undefined;
+    if (holder && holder.email !== email) throw new StoreConflictError("This wallet is linked to another account");
+    const now = new Date().toISOString();
+    const { wallet: _old, ...current } = this.users.get(email) ?? { email, createdAt: now, updatedAt: now }; // eslint-disable-line @typescript-eslint/no-unused-vars
+    const saved: UserProfile = { ...current, ...(wallet ? { wallet } : {}), updatedAt: now };
+    this.users.set(email, structuredClone(saved));
+    return structuredClone(saved);
+  }
+  async saveChallenge(record: AuthChallenge) {
+    this.cleanupExpired();
+    if (this.challenges.has(record.id)) throw new StoreConflictError("Challenge already exists");
+    this.challenges.set(record.id, structuredClone(record));
+  }
+  async consumeChallenge(id: string) {
+    const record = this.challenges.get(id);
+    this.challenges.delete(id);
+    return record && Date.parse(record.expiresAt) > Date.now() ? structuredClone(record) : undefined;
+  }
   async consumeRateLimit(key: string, windowMs: number, max: number) {
     validateRateLimit(key, windowMs, max);
     const now = Date.now();

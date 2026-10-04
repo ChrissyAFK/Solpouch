@@ -6,6 +6,7 @@ import { ErrorBanner, Notice } from "@/components/ui";
 import { useRequestScope } from "@/lib/useRequestScope";
 import { getToken } from "@/lib/session";
 import { SessionManager } from "@/components/SessionManager";
+import { WalletLink } from "@/components/WalletLink";
 import { AlertPreferences } from "@/components/AccountAlerts";
 import styles from "./profile.module.css";
 
@@ -238,6 +239,17 @@ export default function ProfilePage() {
                 day: "numeric",
               })}
         </p>
+      </section>
+
+      <section className="sp-card" aria-labelledby="wallet-title">
+        <h2 id="wallet-title" className={styles.heading}>
+          Wallet
+        </h2>
+        <p className={styles.hint}>
+          Your linked wallet is used to add money to your pouches. Linking it
+          only proves it&apos;s yours; it doesn&apos;t move money.
+        </p>
+        <WalletLink />
       </section>
 
       <ErrorBanner message={error} />

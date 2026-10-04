@@ -99,6 +99,7 @@ export type Profile = {
   avatar: string | null;
   googleName: string;
   googlePicture: string;
+  wallet: string | null;
   createdAt: string | number;
 };
 export type UpdateProfileBody = {
@@ -106,6 +107,7 @@ export type UpdateProfileBody = {
   avatar?: string | null;
 };
 
+export type WalletUser = { email: string; name?: string; picture?: string; wallet?: string };
 export type AuthSession = { id: string; createdAt: string; expiresAt: string; current: boolean };
 export const api = {
   sessions: () => req<{ sessions: AuthSession[] }>("/auth/sessions"),
@@ -128,6 +130,11 @@ export const api = {
   unfreeze: (id: string) => post<Pouch>(`/pouches/${id}/unfreeze`),
   voiceToken: (signal?: AbortSignal) =>
     req<{ token: string; expiresAt?: string }>("/auth/voice-token", { method: "POST", signal }),
+  walletChallenge: (wallet: string) =>
+    post<{ id: string; message: string; expiresAt: string }>("/auth/wallet/challenge", { wallet }),
+  walletVerify: (id: string, signature: string) =>
+    post<{ user: WalletUser }>("/auth/wallet/verify", { id, signature }),
+  unlinkWallet: () => req<{ user: WalletUser }>("/auth/wallet", { method: "DELETE" }),
   merchants: () => req<Merchant[]>("/merchants"),
   createInstacartLink: (id: string) => post<Order>(`/orders/${encodeURIComponent(id)}/instacart`),
   createOrder: (b: CreateOrderBody) => post<Order>("/orders", b),
@@ -167,6 +174,8 @@ export function errMsg(e: unknown): string {
       OrderAlreadyUsed:
         "This order has already been paid. Refresh to see its latest status.",
       Unauthorized: "You do not have permission to make this change.",
+      WalletRequired: "Link a wallet to add money.",
+      WalletProofInvalid: "The wallet signature was invalid or expired. Try linking again.",
     };
     return (e.code && messages[e.code]) || e.message;
   }

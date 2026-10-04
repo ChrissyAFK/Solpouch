@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useAuth } from "@/components/AuthProvider";
+import { WalletLink } from "@/components/WalletLink";
 import { StatePanel } from "@/components/StatePanel";
 import { PouchSkeleton } from "@/components/Skeletons";
 import { useParams } from "next/navigation";
@@ -48,6 +50,8 @@ function TopUpSection({
   pouch: Pouch;
   onDone: () => Promise<void>;
 }) {
+  const { user, sessionKey, updateUser } = useAuth();
+  const hasWallet = Boolean(user?.wallet);
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [topup, setTopup] = useState<TopUp | null>(null);
@@ -164,6 +168,9 @@ function TopUpSection({
       );
       setNow(Date.now());
     } catch (err) {
+      // The server no longer sees a linked wallet: show the link prompt instead of the form.
+      if (err instanceof ApiRequestError && err.code === "WalletRequired" && sessionKey)
+        updateUser({ wallet: undefined }, sessionKey);
       setError(errMsg(err));
     } finally {
       setBusy(false);
@@ -219,7 +226,12 @@ function TopUpSection({
         {processing && <Notice><strong>Checking top-up</strong><p>The transfer result is not confirmed. Do not start another top-up for the same funds.</p><button className={btnSecondary} disabled={busy} onClick={() => void complete(false)}>Check top-up status</button></Notice>}
         <ErrorBanner message={error} />
         {added && <Notice>{added}</Notice>}
-        {!topup ? (
+        {!topup && !hasWallet ? (
+          <div className="space-y-3">
+            <p className="text-sm text-[var(--ink)]">Link a wallet to add money. Top-ups are recorded against your linked wallet.</p>
+            <WalletLink />
+          </div>
+        ) : !topup ? (
           <form onSubmit={start} className="space-y-4">
             <div>
               <span className={label}>Amount · USDC</span>

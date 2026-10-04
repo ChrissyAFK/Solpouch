@@ -7,8 +7,10 @@ import { Icon, type IconName } from "./Icons";
 import { Footer } from "./Footer";
 import { LandingNav } from "./LandingNav";
 import { ChatWidget } from "./ChatWidget";
-import { UserMenu } from "./AuthProvider";
+import { UserMenu, useAuth } from "./AuthProvider";
+import { shortAddress } from "./WalletLink";
 export function Shell({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuToggle = useRef<HTMLButtonElement>(null);
@@ -176,6 +178,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <strong>{pageLabel}</strong>
           </div>
           <span className="demo-label">Payments on Solana</span>
+          {user?.wallet && (
+            <span className="num" title={`Linked wallet ${user.wallet}`} style={{ fontSize: 12, color: "var(--muted)" }}>
+              {shortAddress(user.wallet)}
+            </span>
+          )}
           <UserMenu />
         </header>
         <main

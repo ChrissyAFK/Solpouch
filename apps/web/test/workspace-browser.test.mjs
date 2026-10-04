@@ -5,10 +5,11 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? 'playwright')
 const browser = await chromium.launch({ channel: process.env.BROWSER_CHANNEL ?? 'chrome', headless: true });
 after(() => browser.close());
 const origin = process.env.WEB_TEST_URL ?? 'http://localhost:3005';
-const a = { token: 'fixture-a', user: { email: 'alice@example.test', name: 'Alice' } };
+// Alice has a linked wallet (top-ups require one); Bob does not.
+const a = { token: 'fixture-a', user: { email: 'alice@example.test', name: 'Alice', wallet: '11111111111111111111111111111112' } };
 const b = { token: 'fixture-b', user: { email: 'bob@example.test', name: 'Bob' } };
 const pouch = { id: 'p', name: 'Shopping', balance: 10000000, spentToday: 0, dailyLimit: 100000000, maxPerOrder: 50000000, allowedMerchantIds: [], frozen: false };
-const profile = user => ({ ...user, picture: '', displayName: null, avatar: null, googleName: user.name, googlePicture: '', createdAt: '2026-01-01T00:00:00Z' });
+const profile = user => ({ wallet: null, ...user, picture: '', displayName: null, avatar: null, googleName: user.name, googlePicture: '', createdAt: '2026-01-01T00:00:00Z' });
 const deferred = () => { let resolve; const promise = new Promise(r => resolve = r); return { promise, resolve }; };
 async function setup(t, handler = async () => false) {
   const page = await browser.newPage(); t.after(() => page.close());
