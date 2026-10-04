@@ -3,11 +3,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errMsg, type Profile } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import Link from "next/link";
-import { WalletLink } from "@/components/WalletLink";
 import { ErrorBanner, Notice } from "@/components/ui";
 import { useRequestScope } from "@/lib/useRequestScope";
 import { getToken } from "@/lib/session";
 import { SessionManager } from "@/components/SessionManager";
+import { WalletLink } from "@/components/WalletLink";
 import { AlertPreferences } from "@/components/AccountAlerts";
 import styles from "./profile.module.css";
 
@@ -247,8 +247,8 @@ export default function ProfilePage() {
           Wallet
         </h2>
         <p className={styles.hint}>
-          Your wallet is used to add money to your pouches. Linking it only
-          proves it&apos;s yours; it doesn&apos;t move money.
+          Your linked wallet is used to add money to your pouches. Linking it
+          only proves it&apos;s yours; it doesn&apos;t move money.
         </p>
         <WalletLink />
         <Link href="/funding" className="underline">Add or withdraw wallet funds</Link>

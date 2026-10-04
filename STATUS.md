@@ -76,8 +76,8 @@ Still open from the audit: `apps/web/test/auth-voice.browser.mjs` still drives t
 
 - Wallet sign-in for owner actions (the backend still signs owner txs for the demo).
 - Production multi-wallet transaction signing and authenticated voice provider binding remain to be built.
-
-- A permanent tunnel on solpouch.tech (the quick tunnel URL changes on restart).
+- Chain indexer (`apps/backend/src/indexer.ts`, `ENABLE_INDEXER=true`, chain mode + Postgres only) is unit-tested against fixture logs and a fake RPC, but has not been run against devnet or Tiger Data; the new schema (`vault_events`, `indexer_cursors`, real-time `spend_daily`) has not been applied to the live database yet.
+- `confirmAbove` auto-pay works for exact catalog orders at or below the amount. The pouch form sets it as "Ask before paying" (empty or 0 asks before every order; it cannot exceed the limit per order). It is covered by tests only, not run against devnet. The updated `voice/prompt.md` (rule 8) must be copied to the ElevenLabs agent.
 - `scripts/chain-smoke.ts` and `scripts/db-check.ts` are manual checks; `test/postgres.test.ts` runs only with `TEST_DATABASE_URL`.
 
 ## Run it
@@ -95,8 +95,12 @@ Program build and tests run in WSL Ubuntu (Rust, Solana CLI 3.1, Anchor 1.2 via 
 
 ```
 anchor build
-anchor test --provider.cluster localnet
+anchor test                       # Anchor.toml cluster is localnet; uses Surfpool by default
+anchor test --validator legacy    # same, with solana-test-validator (no Surfpool needed)
+anchor deploy --provider.cluster devnet   # devnet deploys are explicit; needs the upgrade authority
 ```
+
+`[provider] cluster` is `localnet` so a plain `anchor test` can never deploy to devnet. Pass `--provider.cluster devnet` for any devnet command.
 
 ## Dashboard chat
 

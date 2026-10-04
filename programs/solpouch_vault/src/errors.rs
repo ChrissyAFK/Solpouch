@@ -21,10 +21,20 @@ pub enum VaultError {
     TooManyMerchants,
     #[msg("Vault must be empty to close the pouch")]
     VaultNotEmpty,
+    // New variants go at the end so existing codes 6000-6008 stay stable.
+    // AgentIsMerchant is appended last for the same reason.
     #[msg("Amount must be greater than zero")]
     ZeroAmount,
+    #[msg("Per-order and daily limits must be greater than zero")]
+    ZeroLimit,
+    #[msg("Per-order limit exceeds the daily limit")]
+    PerOrderOverDaily,
+    #[msg("Agent key must differ from the owner")]
+    AgentIsOwner,
+    #[msg("Allowed merchants contain a duplicate")]
+    DuplicateMerchant,
+    #[msg("Merchant token account is not the merchant's associated token account")]
+    MerchantTokenNotAta,
     #[msg("The agent key cannot be an allowed merchant")]
     AgentIsMerchant,
-    #[msg("Duplicate merchant in the allowlist")]
-    DuplicateMerchant,
 }

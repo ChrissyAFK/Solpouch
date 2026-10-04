@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import type { Order, Pouch, SpendPoint, TopUp, Withdrawal } from "@solpouch/shared";
-import { StoreConflictError, spendWindowStart, windowedSpend, type PaymentRecord, type PriceRecord, type UserPatch, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredShoppingList, type StoredPouch, type UserProfile } from "./types.js";
+import { StoreConflictError, WalletAlreadyLinkedError, spendWindowStart, windowedSpend, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredShoppingList, type StoredPouch, type UserProfile, type UserPatch, type PaymentIndex, type VaultEventRecord, type PaymentRecord, type PriceRecord, type IndexerCursor } from "./types.js";
 
 const iso = (v: Date | string) => (v instanceof Date ? v.toISOString() : new Date(v).toISOString());
 type Row = Record<string, any>;
@@ -48,7 +48,7 @@ export function postgresPoolConfig(url: string): pg.PoolConfig {
 const LOCK_WAIT_MS = 10_000;
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-export class PostgresStore implements Store {
+export class PostgresStore implements Store, PaymentIndex {
   readonly persistentLists = true;
   private context = new AsyncLocalStorage<{ client: pg.PoolClient; locks: Set<string>; state: { error?: Error } }>();
   private nextCleanupAt = 0;
@@ -57,7 +57,7 @@ export class PostgresStore implements Store {
     if (now < this.nextCleanupAt) return;
     this.nextCleanupAt = now + 60_000;
     // Limit each sweep so cleanup cannot monopolize a request or lock large tables.
-    for (const [table, key] of [["auth_challenges", "id"], ["web_sessions", "id"], ["rate_limit_buckets", "key"]]) {
+    for (const [table, key] of [["web_sessions", "id"], ["auth_challenges", "id"], ["rate_limit_buckets", "key"]]) {
       await this.query(`DELETE FROM ${table} WHERE ${key} IN (SELECT ${key} FROM ${table} WHERE expires_at <= now() ORDER BY expires_at LIMIT 1000) AND expires_at <= now()`);
     }
   }
@@ -174,12 +174,15 @@ export class PostgresStore implements Store {
   async listOrders(pouchId?: string) { return (await this.query(`SELECT * FROM orders ${pouchId ? "WHERE pouch_id=$1 " : ""}ORDER BY created_at DESC`, pouchId ? [pouchId] : undefined)).rows.map(toOrder); }
   async recordPayment(p: PaymentRecord) {
     return this.lock(`payment:${p.txSignature}`, async () => {
-    // The primary key includes time, and the app and the indexer stamp different times, so dedupe on tx_signature.
+    await this.insertPayment(p);
+    });
+  }
+  /** The primary key includes time, and the app and the indexer stamp different times, so dedupe on (tx_signature, order_id). */
+  private async insertPayment(p: PaymentRecord) {
     await this.query(
-      "INSERT INTO payments (time, pouch_id, merchant_id, order_id, amount, tx_signature) SELECT $1, $2, $3, $4, $5, $6 WHERE NOT EXISTS (SELECT 1 FROM payments WHERE tx_signature = $6) ON CONFLICT DO NOTHING",
+      "INSERT INTO payments (time, pouch_id, merchant_id, order_id, amount, tx_signature) SELECT $1, $2, $3, $4, $5, $6 WHERE NOT EXISTS (SELECT 1 FROM payments WHERE tx_signature = $6 AND lower(order_id) = lower($4)) ON CONFLICT DO NOTHING",
       [p.time, p.pouchId, p.merchantId, p.orderId, p.amount, p.txSignature],
     );
-    });
   }
   async recordPrices(rows: PriceRecord[]) {
     for (const r of rows) await this.query("INSERT INTO prices (time, merchant_id, product_id, unit_price, in_stock) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING", [r.time, r.merchantId, r.productId, r.unitPrice, r.inStock]);
@@ -235,20 +238,37 @@ export class PostgresStore implements Store {
   async listDueWithdrawals(now: Date) { return (await this.query("SELECT * FROM withdrawals WHERE status IN ('holding','processing') AND ready_at <= $1 ORDER BY ready_at", [now.toISOString()])).rows.map(toWithdrawal); }
   async saveWithdrawal(w: Withdrawal) { return toWithdrawal(await this.save("withdrawals", w, { created_at: w.createdAt, pouch_id: w.pouchId, amount: w.amount, reason: w.reason, to_wallet: w.toWallet, status: w.status, ready_at: w.readyAt, tx_signature: w.txSignature ?? null, fail_reason: w.failReason ?? null })); }
 
-  async getUser(email: string) { const { rows } = await this.query("SELECT * FROM users WHERE email=$1", [email]); return rows[0] ? toUser(rows[0]) : undefined; }
-  async findUserByWallet(wallet: string) { const { rows } = await this.query("SELECT * FROM users WHERE wallet=$1", [wallet]); return rows[0] ? toUser(rows[0]) : undefined; }
+  async getUser(email: string) {
+    const { rows } = await this.query("SELECT * FROM users WHERE email = $1", [email]);
+    return rows[0] ? toUser(rows[0]) : undefined;
+  }
   async saveUser(u: UserProfile) {
+    // A profile save never changes or clears a linked wallet, so it cannot undo a concurrent link.
+    const { rows } = await this.query(
+      `INSERT INTO users (email, display_name, avatar, created_at, updated_at) VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (email) DO UPDATE SET display_name=$2, avatar=$3, updated_at=$5 RETURNING *`,
+      [u.email, u.displayName ?? null, u.avatar ?? null, u.createdAt, u.updatedAt],
+    );
+    const saved = toUser(rows[0]);
+    if (!u.wallet || saved.wallet) return saved;
+    // First link only (same rules as setWallet): another account holding it is a StoreConflictError.
+    try { return await this.setWallet(u.email, u.wallet); }
+    catch (e) { if (e instanceof WalletAlreadyLinkedError) return (await this.getUser(u.email)) ?? saved; throw e; }
+  }
+  async findUserByWallet(wallet: string) { const { rows } = await this.query("SELECT * FROM users WHERE wallet=$1", [wallet]); return rows[0] ? toUser(rows[0]) : undefined; }
+  async setWallet(email: string, wallet: string | null) {
     try {
-      await this.query(
-        `INSERT INTO users (email, display_name, avatar, wallet, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6)
-         ON CONFLICT (email) DO UPDATE SET display_name=$2, avatar=$3, wallet=$4, updated_at=$6`,
-        [u.email, u.displayName ?? null, u.avatar ?? null, u.wallet ?? null, u.createdAt, u.updatedAt],
-      );
+      // Conditional upsert: a link only lands when the account has no wallet or already has this one.
+      const { rows } = await this.query(
+        `INSERT INTO users (email, wallet, created_at, updated_at) VALUES ($1,$2,now(),now())
+         ON CONFLICT (email) DO UPDATE SET wallet=$2, updated_at=now()
+         WHERE $2::text IS NULL OR users.wallet IS NULL OR users.wallet = $2::text RETURNING *`, [email, wallet]);
+      if (!rows[0]) throw new WalletAlreadyLinkedError();
+      return toUser(rows[0]);
     } catch (error) {
       if ((error as { code?: string }).code === "23505") throw new StoreConflictError("This wallet is linked to another account");
       throw error;
     }
-    return u;
   }
 
   async updateUser(email: string, patch: UserPatch, now: string) {
@@ -272,13 +292,14 @@ export class PostgresStore implements Store {
   }
   async saveChallenge(c: AuthChallenge) {
     await this.cleanupExpired();
-    const { rowCount } = await this.query("INSERT INTO auth_challenges (id,wallet,email,message,expires_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING", [c.id, c.wallet, c.email, c.message, c.expiresAt]);
+    const { rowCount } = await this.query("INSERT INTO auth_challenges (id,wallet,email,session_id,origin,message,expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING", [c.id, c.wallet, c.email, c.sessionId, c.origin, c.message, c.expiresAt]);
     if (!rowCount) throw new StoreConflictError("Challenge already exists");
   }
   async consumeChallenge(id: string) {
     const { rows } = await this.query("DELETE FROM auth_challenges WHERE id=$1 RETURNING *", [id]);
     const r = rows[0];
-    return r && r.email && Date.parse(iso(r.expires_at)) > Date.now() ? { id: r.id, wallet: r.wallet, email: r.email as string, message: r.message, expiresAt: iso(r.expires_at) } : undefined;
+    // Rows from before the session/origin binding (null columns) never verify.
+    return r && r.email && r.session_id && r.origin && Date.parse(iso(r.expires_at)) > Date.now() ? { id: r.id, wallet: r.wallet, email: r.email as string, sessionId: r.session_id as string, origin: r.origin as string, message: r.message, expiresAt: iso(r.expires_at) } : undefined;
   }
   async consumeRateLimit(key: string, windowMs: number, max: number) {
     validateRateLimit(key, windowMs, max);
@@ -290,5 +311,60 @@ export class PostgresStore implements Store {
         expires_at=CASE WHEN rate_limit_buckets.expires_at <= now() THEN now()+$2::bigint*interval '1 millisecond' ELSE rate_limit_buckets.expires_at END
       RETURNING hits, GREATEST(1,ceil(extract(epoch FROM (expires_at-now())))) AS retry_after`, [key, windowMs]);
     return { allowed: Number(rows[0].hits) <= max, retryAfterSeconds: Number(rows[0].retry_after) };
+  }
+
+  async recordVaultEvents(events: VaultEventRecord[], payments: PaymentRecord[]) {
+    if (!events.length) return 0;
+    // One dedicated connection per transaction so BEGIN/COMMIT cover every insert.
+    // Same lock as recordPayment: a direct write of the same paid order and the indexer cannot both insert it.
+    return this.lock(`payment:${events[0]!.signature}`, async () => {
+      await this.query("BEGIN");
+      try {
+        let inserted = 0;
+        for (const e of events) {
+          const { rowCount } = await this.query(
+            `INSERT INTO vault_events (signature,event_index,name,pouch_address,amount,time,slot,data)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (signature,event_index) DO NOTHING`,
+            [e.signature, e.eventIndex, e.name, e.pouchAddress, e.amount, e.time, e.slot, JSON.stringify(e.data)]);
+          if (!rowCount) continue;
+          inserted++;
+          const p = payments.find((x) => x.txSignature === e.signature && x.eventIndex === e.eventIndex);
+          if (p) await this.insertPayment(p);
+        }
+        await this.query("COMMIT");
+        return inserted;
+      } catch (error) {
+        await this.query("ROLLBACK").catch(() => {});
+        throw error;
+      }
+    });
+  }
+  async getIndexerCursor(name: string) {
+    const { rows } = await this.query("SELECT signature, slot FROM indexer_cursors WHERE name=$1", [name]);
+    return rows[0] ? { signature: rows[0].signature as string, slot: Number(rows[0].slot) } : undefined;
+  }
+  async saveIndexerCursor(name: string, c: IndexerCursor) {
+    await this.query(`INSERT INTO indexer_cursors (name,signature,slot,updated_at) VALUES ($1,$2,$3,now())
+      ON CONFLICT (name) DO UPDATE SET signature=$2, slot=$3, updated_at=now()`, [name, c.signature, c.slot]);
+  }
+  async indexedSpend(pouchIds: string[], bucket: "day" | "hour"): Promise<SpendPoint[] | undefined> {
+    if (!pouchIds.length) return undefined;
+    const { rows: any } = await this.query("SELECT 1 FROM payments WHERE pouch_id = ANY($1::text[]) LIMIT 1", [pouchIds]);
+    if (!any.length) return undefined;
+    // Aggregate payments directly. spend_daily only re-materializes its last 3 days, so a
+    // payment indexed late (backfill, indexer downtime) would be missing from older buckets.
+    const { rows } = await this.query(
+      "SELECT time_bucket($2::interval, time) AS bucket, pouch_id, sum(amount) AS spent, count(*) AS orders FROM payments WHERE pouch_id = ANY($1::text[]) GROUP BY 1, 2 ORDER BY 1, 2",
+      [pouchIds, bucket === "day" ? "1 day" : "1 hour"]);
+    return rows.map((r) => ({ bucket: iso(r.bucket), pouchId: r.pouch_id, spent: Number(r.spent), orders: Number(r.orders) }));
+  }
+
+  async indexedOrderIds(pouchIds: string[], orderIds: string[]): Promise<Set<string>> {
+    if (!pouchIds.length || !orderIds.length) return new Set();
+    const { rows } = await this.query(
+      "SELECT DISTINCT lower(order_id) AS order_id FROM payments WHERE pouch_id = ANY($1::text[]) AND lower(order_id) = ANY($2::text[])",
+      [pouchIds, orderIds.map((id) => id.toLowerCase())],
+    );
+    return new Set(rows.map((r) => String(r.order_id)));
   }
 }

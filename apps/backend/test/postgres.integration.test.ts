@@ -35,6 +35,7 @@ const stores: PostgresStore[] = [];
 let admin: pg.Pool;
 let a: PostgresStore;
 let b: PostgresStore;
+let relational: string;
 const fixturePouch = (id: string): StoredPouch => ({ id, address: `addr-${id}`, name: "Integration test", balance: 10_000_000, maxPerOrder: 5_000_000, dailyLimit: 10_000_000, spentToday: 0, confirmAbove: 0, allowedMerchantIds: ["thai-express"], frozen: false, ownerEmail: "test@example.com" });
 const operation = (id: string, kind: "pay" | "topup", pouchId: string): VaultOperation => ({ id, kind, pouchId, txSignature: `fixture-signature-${id}`, signedTransaction: Buffer.from(`fixture-signed-bytes-${id}`).toString("base64"), lastValidBlockHeight: 100, createdAt: new Date().toISOString() });
 const deferred = () => { let resolve!: () => void; const promise = new Promise<void>(r => { resolve = r; }); return { promise, resolve }; };
@@ -73,7 +74,7 @@ describe.skipIf(!url)("isolated real PostgreSQL (relational schema; fixture RPC)
     admin = new pg.Pool(postgresPoolConfig(url!));
     await admin.query(`CREATE SCHEMA ${schema}`);
     const fullSchema = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8");
-    const relational = fullSchema.split(";").filter(sql => !/CREATE EXTENSION IF NOT EXISTS timescaledb|SELECT create_hypertable|CREATE MATERIALIZED VIEW|SELECT add_continuous_aggregate_policy|ALTER TABLE payments SET|SELECT add_compression_policy/i.test(sql)).join(";");
+    relational = fullSchema.split(";").filter(sql => !/CREATE EXTENSION IF NOT EXISTS timescaledb|SELECT create_hypertable|CREATE MATERIALIZED VIEW|SELECT add_continuous_aggregate_policy|ALTER TABLE payments SET|ALTER MATERIALIZED VIEW|SELECT add_compression_policy/i.test(sql)).join(";");
     await admin.query(`SET search_path TO ${schema}; ${relational}`);
     await admin.query(`CREATE TABLE ${schema}.failure_fixture (kind text PRIMARY KEY);
       CREATE FUNCTION ${schema}.reject_fixture_write() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -183,7 +184,7 @@ describe.skipIf(!url)("isolated real PostgreSQL (relational schema; fixture RPC)
     const results = await Promise.allSettled([a.saveUser(one),b.saveUser(two)]);
     expect(results.filter(r=>r.status==="fulfilled")).toHaveLength(1);
     expect((await b.findUserByWallet("fixture-wallet"))?.email).toMatch(/^wallet-(one|two)@/);
-    await a.saveChallenge({id:"challenge-fixture",wallet:"fixture-wallet",email:one.email,message:"fixture",expiresAt:new Date(Date.now()+60000).toISOString()});
+    await a.saveChallenge({id:"challenge-fixture",wallet:"fixture-wallet",email:one.email,sessionId:"fixture-session",origin:"http://localhost:3003",message:"fixture",expiresAt:new Date(Date.now()+60000).toISOString()});
     const challenges = await Promise.all([a.consumeChallenge("challenge-fixture"),b.consumeChallenge("challenge-fixture")]);
     expect(challenges.filter(Boolean)).toHaveLength(1);
   });
@@ -333,6 +334,68 @@ describe.skipIf(!url)("isolated real PostgreSQL (relational schema; fixture RPC)
     await reconnected.deleteShoppingList(list.id,list.ownerEmail,changed.version!);
     expect(await a.getShoppingList(list.id)).toBeUndefined();
     await expect(a.saveShoppingList(changed)).rejects.toBeInstanceOf(StoreConflictError);
+  });
+  it("re-applies the relational schema idempotently on an existing database",async()=> {
+    await a.savePouch({...fixturePouch("reapply"),confirmAbove:1_234});
+    await admin.query(`SET search_path TO ${schema}; ${relational}`);
+    expect((await b.getPouch("reapply"))?.confirmAbove).toBe(1_234);
+  });
+  it("upgrades an older auth_challenges layout and binds new challenges",async()=> {
+    const legacy=`${schema}_legacy`;
+    await admin.query(`CREATE SCHEMA ${legacy}; SET search_path TO ${legacy}; CREATE TABLE auth_challenges (id text PRIMARY KEY,wallet text NOT NULL,email text NOT NULL,message text NOT NULL,expires_at timestamptz NOT NULL); INSERT INTO auth_challenges VALUES ('old','w','e@example.com','m',now()+interval '1 minute')`);
+    try {
+      await admin.query(`SET search_path TO ${legacy}; ${relational}`);
+      const { rows } = await admin.query(`SELECT session_id, origin FROM ${legacy}.auth_challenges WHERE id='old'`);
+      expect(rows).toEqual([{ session_id: null, origin: null }]);
+    } finally { await admin.query(`DROP SCHEMA ${legacy} CASCADE`); }
+  });
+  it("consumes bound wallet challenges once across pools and never returns expired ones",async()=> {
+    const challenge={id:"challenge",wallet:"fixture-wallet",email:"test@example.com",sessionId:"fixture-session",origin:"http://localhost:3003",message:"fixture message",expiresAt:new Date(Date.now()+60_000).toISOString()};
+    await a.saveChallenge(challenge);
+    await expect(b.saveChallenge(challenge)).rejects.toBeInstanceOf(StoreConflictError);
+    const results=await Promise.all([a.consumeChallenge(challenge.id),b.consumeChallenge(challenge.id)]);
+    expect(results.filter(Boolean)).toEqual([challenge]);
+    await a.saveChallenge({...challenge,id:"expired",expiresAt:new Date(Date.now()-1_000).toISOString()});
+    expect(await b.consumeChallenge("expired")).toBeUndefined();
+  });
+  it("links a wallet conditionally and uniquely across pools without profile edits undoing it",async()=> {
+    const results=await Promise.allSettled([a.setWallet("link@example.com","wallet-a"),b.setWallet("link@example.com","wallet-b")]);
+    expect(results.filter(r=>r.status==="fulfilled")).toHaveLength(1);
+    expect(results.find(r=>r.status==="rejected")).toMatchObject({reason:{name:"WalletAlreadyLinkedError"}});
+    const linked=(await b.getUser("link@example.com"))!.wallet!;
+    const other=linked==="wallet-a"?"wallet-b":"wallet-a";
+    await expect(a.setWallet("link@example.com",linked)).resolves.toMatchObject({wallet:linked});
+    const user=(await a.getUser("link@example.com"))!;
+    await b.saveUser({...user,wallet:undefined,displayName:"Edited"});
+    expect(await a.getUser("link@example.com")).toMatchObject({wallet:linked,displayName:"Edited"});
+    expect((await b.findUserByWallet(linked))?.email).toBe("link@example.com");
+    await expect(a.setWallet("other@example.com",linked)).rejects.toBeInstanceOf(StoreConflictError);
+    await expect(a.setWallet("other@example.com",linked)).rejects.not.toMatchObject({name:"WalletAlreadyLinkedError"});
+    await a.setWallet("link@example.com",null);
+    expect((await b.getUser("link@example.com"))?.wallet).toBeUndefined();
+    await expect(b.setWallet("link@example.com",other)).resolves.toMatchObject({wallet:other});
+    await expect(a.setWallet("other@example.com",linked)).resolves.toMatchObject({wallet:linked});
+  });
+  it("records vault events and payments idempotently and atomically across pools",async()=> {
+    const time=new Date().toISOString();
+    const orderId="AB".repeat(16);
+    const events=[0,1].map(i=>({signature:"sig-index",eventIndex:i,name:i?"Frozen":"PaymentMade",pouchAddress:"addr-indexed",amount:i?null:250,time,slot:7,data:{amount:"250"}}));
+    const payments=[{txSignature:"sig-index",eventIndex:0,time,pouchId:"indexed",merchantId:null,orderId,amount:250}];
+    const counts=await Promise.all([a.recordVaultEvents(events,payments),b.recordVaultEvents(events,payments)]);
+    expect(counts.sort()).toEqual([0,2]);
+    expect(await b.recordVaultEvents(events,payments)).toBe(0);
+    const {rows}=await admin.query(`SELECT count(*)::int AS n FROM ${schema}.payments WHERE tx_signature='sig-index'`);
+    expect(rows[0].n).toBe(1);
+    expect(await b.indexedOrderIds(["indexed"],[orderId.toLowerCase(),"f".repeat(32)])).toEqual(new Set([orderId.toLowerCase()]));
+    expect(await b.indexedOrderIds(["other"],[orderId])).toEqual(new Set());
+    // A payment row that cannot be written rolls back the transaction's events too.
+    const bad=[{...events[0]!,signature:"sig-bad"}];
+    await expect(a.recordVaultEvents(bad,[{...payments[0]!,txSignature:"sig-bad",pouchId:null as unknown as string}])).rejects.toThrow();
+    expect((await admin.query(`SELECT 1 FROM ${schema}.vault_events WHERE signature='sig-bad'`)).rows).toHaveLength(0);
+    expect(await b.getIndexerCursor("it")).toBeUndefined();
+    await a.saveIndexerCursor("it",{signature:"sig-1",slot:5});
+    await a.saveIndexerCursor("it",{signature:"sig-2",slot:9});
+    expect(await b.getIndexerCursor("it")).toEqual({signature:"sig-2",slot:9});
   });
 
 });

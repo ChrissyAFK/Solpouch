@@ -1,6 +1,6 @@
 import { allowedPayTos } from "./allow.js";
 import { randomBytes } from "node:crypto";
-import type { Micros, Pouch } from "@solpouch/shared";
+import { pouchRuleError, type Micros, type Pouch } from "@solpouch/shared";
 import type { Store } from "../store/types.js";
 import { fakeAddress } from "../store/memory.js";
 import { VaultRejected, type VaultClient } from "./types.js";
@@ -23,6 +23,7 @@ export class MockVaultClient implements VaultClient {
   ) {}
 
   async createPouch(pouch: Pouch) {
+    this.checkRules(pouch);
     this.dayStart.set(pouch.id, this.now());
     return { address: pouch.address || fakeAddress() };
   }
@@ -117,8 +118,15 @@ export class MockVaultClient implements VaultClient {
     return { balance: p.balance, spentToday: p.spentToday };
   }
 
-  async updateRules(_pouch: Pouch) {
+  async updateRules(pouch: Pouch) {
+    this.checkRules(pouch);
     return { txSignature: sig() };
+  }
+
+  /** The program's check_rules, run on create and update_rules. */
+  private checkRules(p: Pouch) {
+    const code = pouchRuleError(p);
+    if (code) throw new VaultRejected(code);
   }
 
   private async mustGet(id: string) {

@@ -1,5 +1,5 @@
-import { VaultRejected } from "../vault/types.js";
 import { PaymentPending } from "../vault/recovery.js";
+import { VaultRejected } from "../vault/types.js";
 import { getOwnedPouch, HttpError, type Deps } from "./orders.js";
 
 export async function completeTopUp(deps: Deps, ownerEmail: string, id: string) {
@@ -25,6 +25,7 @@ export async function completeTopUp(deps: Deps, ownerEmail: string, id: string) 
       return await deps.store.saveTopUp({ ...topup, status: "completed", txSignature, completedAt: new Date().toISOString() });
     } catch (error) {
       if (error instanceof VaultRejected) {
+        // The program refused it, so no tokens moved. Close it as failed with the reason; the owner can start a new one.
         await deps.store.saveTopUp({ ...topup, status: "failed", failReason: error.code });
         throw new HttpError(422, `Top-up failed: ${error.code}`, error.code);
       }

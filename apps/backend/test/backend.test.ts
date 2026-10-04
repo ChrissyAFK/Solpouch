@@ -13,11 +13,12 @@ import { createApp } from "../src/app.js";
 import { getMerchant } from "../src/merchants/index.js";
 import { MemoryStore } from "../src/store/memory.js";
 import { payDueWithdrawals } from "../src/services/withdrawals.js";
-import { authHeaders, ownedSeed, TEST_USER, voiceToken } from "./helpers.js";
+import { authHeaders, linkTestWallet, ownedSeed, TEST_USER, voiceToken } from "./helpers.js";
 import { MockVaultClient } from "../src/vault/mock.js";
 import { VaultRejected } from "../src/vault/types.js";
 
 delete process.env.GEMINI_API_KEY;
+delete process.env.ANTHROPIC_API_KEY;
 delete process.env.ELEVENLABS_TOOL_SECRET;
 
 const thai = getMerchant("thai-express")!.payTo;
@@ -31,7 +32,7 @@ beforeEach(async () => {
   clock = Date.now();
   vi.spyOn(Date,"now").mockImplementation(()=>clock);
   store = new MemoryStore(ownedSeed());
-  await store.saveUser({ email: TEST_USER, wallet: "linked-test-wallet", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  await linkTestWallet(store);
   vault = new MockVaultClient(store, (id) => getMerchant(id)?.payTo, () => clock);
 });
 
@@ -189,7 +190,7 @@ describe("HTTP flow", () => {
       const frozen = await start(app, $(1));
       expect(frozen.status).toBe(409);
       expect((await frozen.json()).code).toBe("PouchFrozen");
-      await store.saveUser({ email: TEST_USER, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      await store.setWallet(TEST_USER, null); // unlink: the wallet is no longer saved through profile writes
       expect((await start(app, $(1))).status).toBe(403);
     });
 
@@ -239,7 +240,8 @@ describe("HTTP flow", () => {
     it("a never-sent processing withdrawal fails WalletChanged if the wallet changed", async () => {
       const app = mk();
       const id = await makeProcessing(app);
-      await store.saveUser({ email: TEST_USER, wallet: "other-wallet", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      await store.setWallet(TEST_USER, null);
+      await store.setWallet(TEST_USER, "other-wallet");
       await payDueWithdrawals({ store, vault });
       const w = (await store.getWithdrawal(id))!;
       expect(w.status).toBe("failed");

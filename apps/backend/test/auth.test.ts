@@ -1,14 +1,18 @@
 import { createPrivateKey, sign } from "node:crypto";
 import { Keypair } from "@solana/web3.js";
 const ORIGIN = "http://localhost:3000";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PaymentPending } from "../src/vault/recovery.js";
+import { VaultRejected } from "../src/vault/types.js";
 import { createApp } from "../src/app.js";
+import { VOICE_CONFIRM_MIN_AGE_MS } from "../src/routes/voice.js";
 import { getMerchant } from "../src/merchants/index.js";
 import { MemoryStore } from "../src/store/memory.js";
 import { MockVaultClient } from "../src/vault/mock.js";
-import { authHeaders, ownedSeed, sessionToken, voiceToken } from "./helpers.js";
+import { authHeaders, linkTestWallet, ownedSeed, sessionToken, voiceToken } from "./helpers.js";
 
 delete process.env.GEMINI_API_KEY;
+delete process.env.ANTHROPIC_API_KEY;
 delete process.env.ELEVENLABS_TOOL_SECRET;
 
 const A = "a@example.com";
@@ -107,8 +111,12 @@ describe("per-user ownership", () => {
     expect(await (await req("GET", "/orders", A)).json()).toEqual([]);
     expect((await req("GET", `/orders?pouchId=${order.pouchId}`, A)).status).toBe(404);
     expect(((await (await req("GET", "/orders", B)).json()) as unknown[]).length).toBe(1);
-    const t = await (await req("POST", "/topups", B, { pouchId: order.pouchId, amount: 5, reason: "dinner money" })).json();
+    await linkTestWallet(store, B);
+    const started = await req("POST", "/topups", B, { pouchId: order.pouchId, amount: 5, reason: "dinner money" });
+    expect(started.status).toBe(201);
+    const t = await started.json();
     expect((await req("POST", `/topups/${t.id}/complete`, A)).status).toBe(404);
+    expect((await req("POST", `/topups/${t.id}/cancel`, A)).status).toBe(404);
   });
 
   it("new pouches are owned by the creator", async () => {
@@ -148,6 +156,34 @@ describe("voice tools need a voice token", () => {
     expect((await store.getPouch("b-uber-eats"))!.frozen).toBe(true);
   });
 
+  it("never tells the caller an unconfirmed payment was refused", async () => {
+    await store.savePouch({ ...(await store.getPouch("uber-eats"))!, confirmAbove: 0 }); // 0 = always ask, so the order stays a draft
+    const order = await (await req("POST", "/orders", A, { request: "pad thai" })).json();
+    const pay = vi.spyOn(MockVaultClient.prototype, "pay").mockRejectedValueOnce(new PaymentPending());
+    const token = await voiceToken(store, A);
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.now() + VOICE_CONFIRM_MIN_AGE_MS + 1000); // past the read-back delay
+    const r = await (await tool("confirm_order", { orderId: order.id, version: order.version, user_token: token })).json();
+    now.mockRestore();
+    pay.mockRestore();
+    expect(r.status).toBe("paying");
+    expect(r.code).toBe("PaymentPending");
+    expect(r.say).not.toMatch(/refused|no money moved/i);
+    expect((await store.getOrder(order.id))!.status).toBe("paying");
+  });
+
+  it("reports a chain refusal as refused and closes the order", async () => {
+    await store.savePouch({ ...(await store.getPouch("uber-eats"))!, confirmAbove: 0 }); // 0 = always ask, so the order stays a draft
+    const order = await (await req("POST", "/orders", A, { request: "pad thai" })).json();
+    const pay = vi.spyOn(MockVaultClient.prototype, "pay").mockRejectedValueOnce(new VaultRejected("OverDailyLimit"));
+    const token = await voiceToken(store, A);
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.now() + VOICE_CONFIRM_MIN_AGE_MS + 1000); // past the read-back delay
+    const r = await (await tool("confirm_order", { orderId: order.id, version: order.version, user_token: token })).json();
+    now.mockRestore();
+    pay.mockRestore();
+    expect(r).toMatchObject({ status: "rejected", code: "OverDailyLimit" });
+    expect((await store.getOrder(order.id))!).toMatchObject({ status: "rejected", rejectReason: "OverDailyLimit" });
+  });
+
   it("cannot confirm another user's order", async () => {
     const order = await (await req("POST", "/orders", B, { request: "pad thai" })).json();
     const r = await tool("confirm_order", { orderId: order.id, user_token: await voiceToken(store, A) });
@@ -163,8 +199,13 @@ describe("wallet linking and top-ups", () => {
     const key = createPrivateKey({ key: Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), Buffer.from(kp.secretKey.slice(0, 32))]), format: "der", type: "pkcs8" });
     return sign(null, Buffer.from(message), key).toString("base64");
   };
-  const post = async (path: string, who: string, body: unknown) =>
-    app.request(path, { method: "POST", headers: { ...json, origin: ORIGIN, ...(await authHeaders(store, who)) }, body: JSON.stringify(body) });
+  // Challenges are bound to the session that asked for them, so one session per user.
+  let sessions = new Map<string, Record<string, string>>();
+  beforeEach(() => { sessions = new Map(); });
+  const post = async (path: string, who: string, body: unknown) => {
+    if (!sessions.has(who)) sessions.set(who, await authHeaders(store, who));
+    return app.request(path, { method: "POST", headers: { ...json, origin: ORIGIN, ...sessions.get(who)! }, body: JSON.stringify(body) });
+  };
   const challenge = async (who: string, kp: Keypair) => {
     const res = await post("/auth/wallet/challenge", who, { wallet: kp.publicKey.toBase58() });
     expect(res.status).toBe(200);
@@ -184,22 +225,22 @@ describe("wallet linking and top-ups", () => {
     const kp = Keypair.generate();
     const first = await challenge(C, kp);
     expect((await post("/auth/wallet/verify", C, { id: first.id, signature: signWith(kp, first.message) })).status).toBe(200);
-    const second = await challenge(D, kp);
-    expect((await post("/auth/wallet/verify", D, { id: second.id, signature: signWith(kp, second.message) })).status).toBe(409);
+    // The challenge route refuses up front when another account holds the wallet.
+    expect((await post("/auth/wallet/challenge", D, { wallet: kp.publicKey.toBase58() })).status).toBe(409);
     expect((await store.getUser(D))?.wallet).toBeUndefined();
   });
 
-  it("rejects a challenge issued to another email with 401", async () => {
+  it("rejects a challenge issued to another email", async () => {
     const kp = Keypair.generate();
     const ch = await challenge(C, kp);
-    expect((await post("/auth/wallet/verify", D, { id: ch.id, signature: signWith(kp, ch.message) })).status).toBe(401);
+    expect((await post("/auth/wallet/verify", D, { id: ch.id, signature: signWith(kp, ch.message) })).status).toBe(400); // MERGE_HEAD: WalletProofInvalid is 400, was 401
     expect((await store.getUser(D))?.wallet).toBeUndefined();
   });
 
-  it("rejects a bad signature with 401", async () => {
+  it("rejects a bad signature", async () => {
     const kp = Keypair.generate();
     const ch = await challenge(C, kp);
-    expect((await post("/auth/wallet/verify", C, { id: ch.id, signature: signWith(Keypair.generate(), ch.message) })).status).toBe(401);
+    expect((await post("/auth/wallet/verify", C, { id: ch.id, signature: signWith(Keypair.generate(), ch.message) })).status).toBe(400); // MERGE_HEAD: WalletProofInvalid is 400, was 401
   });
 
 });

@@ -4,7 +4,7 @@ import { HttpError } from "../services/orders.js";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AuthEnv } from "../auth/session.js";
-import { cancelOrder, confirmOrder, createDraft, getOwnedOrder, listOwnedOrders, type Deps } from "../services/orders.js";
+import { cancelOrder, confirmOrder, createOrder, getOwnedOrder, listOwnedOrders, type Deps } from "../services/orders.js";
 
 const createBody = z.object({ request: z.string().min(1).max(1000), pouchId: z.string().max(100).optional() });
 
@@ -13,7 +13,9 @@ export function orderRoutes(deps: Deps) {
 
   app.post("/", async (c) => {
     const b = createBody.parse(await c.req.json());
-    return c.json(await createDraft(deps, c.get("user").email, b.request, b.pouchId), 201);
+    // Usually a draft; an exact catalog cart within the pouch's confirmAbove amount is paid at once.
+    const { order } = await createOrder(deps, c.get("user").email, b.request, b.pouchId);
+    return c.json(order, 201);
   });
 
   app.get("/", async (c) => c.json(await listOwnedOrders(deps, c.get("user").email, c.req.query("pouchId"))));

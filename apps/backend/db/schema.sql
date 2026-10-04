@@ -161,6 +161,7 @@ CREATE TABLE IF NOT EXISTS web_sessions (id text PRIMARY KEY,email text NOT NULL
 CREATE INDEX IF NOT EXISTS web_sessions_email_idx ON web_sessions(email);
 CREATE INDEX IF NOT EXISTS web_sessions_expiry_idx ON web_sessions(expires_at);
 
+-- Wallet linking: an account may link one Solana wallet; a wallet belongs to at most one account.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet text;
 CREATE UNIQUE INDEX IF NOT EXISTS users_wallet_key ON users(wallet) WHERE wallet IS NOT NULL;
 ALTER TABLE topups ADD COLUMN IF NOT EXISTS from_wallet text;
@@ -196,16 +197,6 @@ CREATE TABLE IF NOT EXISTS withdrawals (
 );
 SELECT create_hypertable('withdrawals', 'created_at', if_not_exists => TRUE);
 CREATE INDEX IF NOT EXISTS withdrawals_status_ready_idx ON withdrawals(status, ready_at);
-CREATE TABLE IF NOT EXISTS auth_challenges (
-  id text PRIMARY KEY,
-  wallet text NOT NULL,
-  message text NOT NULL,
-  expires_at timestamptz NOT NULL
-);
--- Challenges are bound to the signed-in Google account. Old rows without an email are unusable and expire.
-ALTER TABLE auth_challenges ADD COLUMN IF NOT EXISTS email text;
-CREATE INDEX IF NOT EXISTS auth_challenges_expiry_idx ON auth_challenges(expires_at);
-
 CREATE TABLE IF NOT EXISTS shopping_lists (
   id text PRIMARY KEY,
   owner_email text NOT NULL,
@@ -218,3 +209,33 @@ CREATE TABLE IF NOT EXISTS shopping_lists (
 CREATE INDEX IF NOT EXISTS shopping_lists_owner ON shopping_lists(owner_email, updated_at DESC);
 
 ALTER TABLE topups ADD COLUMN IF NOT EXISTS fail_reason TEXT;
+-- Single-use link proofs, bound to the signed-in session, its email and the web origin.
+CREATE TABLE IF NOT EXISTS auth_challenges (id text PRIMARY KEY,wallet text NOT NULL,email text NOT NULL,session_id text NOT NULL,origin text NOT NULL,message text NOT NULL,expires_at timestamptz NOT NULL);
+CREATE INDEX IF NOT EXISTS auth_challenges_expiry_idx ON auth_challenges(expires_at);
+-- Databases created from an older auth_challenges layout gain the binding columns; rows without them never verify.
+ALTER TABLE auth_challenges ADD COLUMN IF NOT EXISTS session_id text;
+ALTER TABLE auth_challenges ADD COLUMN IF NOT EXISTS origin text;
+ALTER TABLE auth_challenges ADD COLUMN IF NOT EXISTS email text;
+-- Chain indexer (src/indexer.ts). Regular tables: every decoded vault event,
+-- keyed by (signature, event_index) so replays and backfills are idempotent.
+-- PaymentMade events are also written to the payments hypertable above.
+CREATE TABLE IF NOT EXISTS vault_events (
+  signature     text NOT NULL,
+  event_index   int NOT NULL,
+  name          text NOT NULL,
+  pouch_address text,
+  amount        bigint,
+  time          timestamptz NOT NULL,
+  slot          bigint NOT NULL,
+  data          jsonb NOT NULL DEFAULT '{}',
+  PRIMARY KEY (signature, event_index)
+);
+CREATE INDEX IF NOT EXISTS vault_events_pouch_idx ON vault_events (pouch_address, time);
+CREATE TABLE IF NOT EXISTS indexer_cursors (
+  name       text PRIMARY KEY,
+  signature  text NOT NULL,
+  slot       bigint NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+-- Include not-yet-materialized payments so /stats/spend is current.
+ALTER MATERIALIZED VIEW spend_daily SET (timescaledb.materialized_only = false);

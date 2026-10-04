@@ -12,7 +12,8 @@ import { confirmOrder, getOwnedOrder, listOwnedOrders } from "../src/services/or
 import { completeTopUp } from "../src/services/topups.js";
 import { PaymentPending, recoverTransaction, type RecoveryTransport } from "../src/vault/recovery.js";
 import type { VaultOperation } from "../src/store/types.js";
-import { ensureOnChain, ChainVaultClient } from "../src/vault/chain.js";
+import { ensureOnChain, ChainVaultClient, preflightRejectCode, statusRejectCode } from "../src/vault/chain.js";
+import { VaultRejected } from "../src/vault/types.js";
 
 vi.mock("@solana/spl-token", async (importOriginal) => ({
   ...await importOriginal<typeof import("@solana/spl-token")>(),
@@ -174,6 +175,79 @@ describe("durable signed transaction recovery", () => {
     rpc.status = vi.fn().mockResolvedValue({ confirmed: false, failed: false, found: true });
     await expect(recoverTransaction(store, operation.id, rpc, vi.fn(), operation)).rejects.toThrow("expired");
     expect(rpc.broadcast).not.toHaveBeenCalled();
+  });
+});
+
+describe("definitive chain refusals", () => {
+  const simulated = (code: string) => Object.assign(new Error(`Simulation failed. \nMessage: Transaction simulation failed: Error processing Instruction 1: custom program error: 0x1774. \nLogs: ["Program log: AnchorError occurred. Error Code: ${code}. Error Number: 6004."]. `), { logs: [`Program log: AnchorError occurred. Error Code: ${code}.`] });
+
+  it("names vault errors only from simulation failures and failed statuses", () => {
+    expect(preflightRejectCode(simulated("OverDailyLimit"))).toBe("OverDailyLimit");
+    expect(preflightRejectCode(new Error("Simulation failed. Message: custom program error: 0x1772."))).toBe("MerchantNotAllowed");
+    expect(preflightRejectCode(new Error("fetch failed: Error Code: OverDailyLimit"))).toBeUndefined();
+    expect(preflightRejectCode(new Error("Simulation failed. Message: Blockhash not found."))).toBeUndefined();
+    expect(statusRejectCode({ InstructionError: [1, { Custom: 6003 }] })).toBe("OverPerOrderLimit");
+    expect(statusRejectCode({ InstructionError: [1, { Custom: 1 }] })).toBeUndefined();
+    expect(statusRejectCode(null)).toBeUndefined();
+  });
+
+  it("turns a preflight refusal of an unseen signature into a rejection", async () => {
+    const rpc = { ...transport(), rejection: preflightRejectCode };
+    rpc.status = vi.fn().mockResolvedValue({ confirmed: false, failed: false, seen: false });
+    rpc.broadcast = vi.fn().mockRejectedValue(simulated("OverDailyLimit"));
+    const result = recoverTransaction(store, operation.id, rpc, async () => operation, operation);
+    const error = await result.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(VaultRejected);
+    expect(error).toMatchObject({ code: "OverDailyLimit" });
+  });
+
+  it("never finalizes a refusal on a retry, while an earlier broadcast could still land", async () => {
+    const rpc = { ...transport(), rejection: preflightRejectCode };
+    rpc.status = vi.fn().mockResolvedValue({ confirmed: false, failed: false, seen: false });
+    rpc.broadcast = vi.fn().mockRejectedValueOnce(new Error("socket hang up")).mockRejectedValue(simulated("InsufficientFunds"));
+    await expect(recoverTransaction(store, operation.id, rpc, async () => operation, operation)).rejects.toThrow("not confirmed");
+    await expect(recoverTransaction(store, operation.id, rpc, vi.fn(), operation)).rejects.toThrow("not confirmed");
+    expect(rpc.broadcast).toHaveBeenCalledTimes(2);
+  });
+
+  it("stays pending when the signature may have landed or the error could hide a success", async () => {
+    const seen = { ...transport(), rejection: preflightRejectCode };
+    seen.status = vi.fn().mockResolvedValueOnce({ confirmed: false, failed: false, seen: false }).mockResolvedValue({ confirmed: false, failed: false, seen: true });
+    seen.broadcast = vi.fn().mockRejectedValue(simulated("OverDailyLimit"));
+    await expect(recoverTransaction(store, operation.id, seen, async () => operation, operation)).rejects.toThrow("not confirmed");
+
+    const reused = { ...transport(), rejection: () => "OrderAlreadyUsed" as const };
+    reused.status = vi.fn().mockResolvedValue({ confirmed: false, failed: false, seen: false });
+    reused.broadcast = vi.fn().mockRejectedValue(new Error("Simulation failed. already in use"));
+    await expect(recoverTransaction(store, operation.id, reused, async () => operation, operation)).rejects.toThrow("not confirmed");
+
+    const unknown = { ...transport(), rejection: preflightRejectCode };
+    unknown.status = vi.fn().mockResolvedValue({ confirmed: false, failed: false, seen: false });
+    unknown.broadcast = vi.fn().mockRejectedValue(new Error("socket hang up"));
+    await expect(recoverTransaction(store, operation.id, unknown, async () => operation, operation)).rejects.toThrow("not confirmed");
+  });
+
+  it("treats a landed transaction that failed with a vault error as refused", async () => {
+    await store.saveOperation(operation);
+    const rpc = transport();
+    rpc.status = vi.fn().mockResolvedValue({ confirmed: false, failed: true, seen: true, rejectCode: "MerchantNotAllowed" });
+    await expect(recoverTransaction(store, operation.id, rpc, vi.fn(), operation)).rejects.toMatchObject({ code: "MerchantNotAllowed" });
+    expect(rpc.broadcast).not.toHaveBeenCalled();
+  });
+
+  it("marks the order rejected so it is not stuck paying", async () => {
+    await draft();
+    vi.spyOn(vault, "pay").mockRejectedValueOnce(new VaultRejected("OverDailyLimit"));
+    await expect(confirmOrder({ store, vault }, TEST_USER, "one")).rejects.toMatchObject({ status: 422, code: "OverDailyLimit" });
+    expect(await store.getOrder("one")).toMatchObject({ status: "rejected", rejectReason: "OverDailyLimit" });
+  });
+
+  it("cancels a refused top-up instead of leaving it processing", async () => {
+    const t = await store.saveTopUp({ id: "t1", pouchId: "uber-eats", amount: toMicros(5), reason: "test", status: "processing", readyAt: new Date(0).toISOString(), createdAt: new Date(0).toISOString() });
+    vi.spyOn(vault, "topUp").mockRejectedValueOnce(new VaultRejected("Unauthorized"));
+    await expect(completeTopUp({ store, vault }, TEST_USER, t.id)).rejects.toMatchObject({ status: 422, code: "Unauthorized" });
+    // HEAD and MERGE_HEAD disagreed (failed + failReason vs cancelled): kept "failed", which orders-fixes.test.ts also asserts.
+    expect(await store.getTopUp("t1")).toMatchObject({ status: "failed", failReason: "Unauthorized" });
   });
 });
 

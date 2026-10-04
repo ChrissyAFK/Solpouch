@@ -69,8 +69,9 @@ describe("GET /stats/spend", () => {
     const { base, app } = await setup();
     await base.saveOrder(order("1", "groceries", "2026-01-01T10:10:00.000Z", 1000));
     await base.saveOrder(order("2", "uber-eats", "2026-01-01T10:10:00.000Z", 1000));
-    await base.recordPayment(pay(1, "2026-01-01T10:10:00.000Z"));
-    await base.recordPayment(pay(2, "2026-01-01T10:10:00.000Z", "uber-eats"));
+    // Same payment as the paid order: the indexed row carries the order's id, so it is counted once.
+    await base.recordPayment({ ...pay(1, "2026-01-01T10:10:00.000Z"), orderId: "1" });
+    await base.recordPayment({ ...pay(2, "2026-01-01T10:10:00.000Z", "uber-eats"), orderId: "2" });
     expect(await get(app, "?bucket=hour")).toEqual([{ bucket: "2026-01-01T10:00:00.000Z", pouchId: "groceries", spent: 1000, orders: 1 }]);
     expect((await app.request("/stats/spend?pouchId=uber-eats")).status).toBe(404);
   });

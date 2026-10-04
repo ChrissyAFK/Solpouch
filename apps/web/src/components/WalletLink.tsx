@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, errMsg } from "@/lib/api";
+import { api, ApiRequestError, errMsg } from "@/lib/api";
 import { getToken } from "@/lib/session";
 import { useAuth } from "./AuthProvider";
 import styles from "./WalletLink.module.css";
 
 type Wallet = {
-  publicKey?: { toBase58(): string };
+  publicKey?: { toBase58(): string } | null;
   connect(): Promise<{ publicKey: { toBase58(): string } }>;
   signMessage?(
     message: Uint8Array,
@@ -33,7 +33,7 @@ export function shortAddress(a: string) {
   return `${a.slice(0, 4)}…${a.slice(-4)}`;
 }
 
-/** Links a Solana wallet to the signed-in Google account (proves ownership; moves no money). */
+/** Links a Solana wallet to the signed-in account by signing a challenge (proves ownership; moves no money). */
 export function WalletLink() {
   const { user, updateUser, sessionKey } = useAuth();
   const [available, setAvailable] = useState<boolean | null>(null);
@@ -90,11 +90,13 @@ export function WalletLink() {
         (cause as { code?: unknown } | null)?.code === 4001 ||
         (cause instanceof Error && /reject|cancel|denied/i.test(cause.message));
       setError(
-        rejected
-          ? "Linking was cancelled. Try again."
-          : cause instanceof Error
-            ? cause.message
-            : errMsg(cause),
+        cause instanceof ApiRequestError
+          ? errMsg(cause)
+          : rejected
+            ? "Linking was cancelled in the wallet. Try again."
+            : cause instanceof Error
+              ? cause.message
+              : errMsg(cause),
       );
     } finally {
       linking.current = false;

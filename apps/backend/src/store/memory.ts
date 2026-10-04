@@ -1,6 +1,6 @@
 import { toMicros, type Order, type Pouch, type SpendPoint, type TopUp, type Withdrawal } from "@solpouch/shared";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { StoreConflictError, spendWindowStart, windowedSpend, type PaymentRecord, type PriceRecord, type UserPatch, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredShoppingList, type StoredPouch, type UserProfile } from "./types.js";
+import { StoreConflictError, WalletAlreadyLinkedError, sameOperation, spendBucket, spendWindowStart, validateRateLimit, windowedSpend, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredShoppingList, type StoredPouch, type UserProfile, type UserPatch, type PaymentIndex, type VaultEventRecord, type PaymentRecord, type PriceRecord, type IndexerCursor } from "./types.js";
 
 // TODO: PostgresStore backed by Tiger Data (see db/schema.sql). Swap in src/index.ts.
 
@@ -33,7 +33,7 @@ export function seedPouches(): Pouch[] {
       balance: toMicros(300),
       maxPerOrder: toMicros(120),
       dailyLimit: toMicros(150),
-      confirmAbove: toMicros(30),
+      confirmAbove: 0,
       allowedMerchantIds: [],
     },
     {
@@ -50,7 +50,7 @@ export function seedPouches(): Pouch[] {
   ];
 }
 
-export class MemoryStore implements Store {
+export class MemoryStore implements Store, PaymentIndex {
   private shoppingLists = new Map<string, StoredShoppingList>();
   private pouches = new Map<string, StoredPouch>();
   private orders = new Map<string, Order>();
@@ -61,6 +61,9 @@ export class MemoryStore implements Store {
   private challenges = new Map<string, AuthChallenge>();
   private sessions = new Map<string, AuthSession>();
   private rateLimits = new Map<string, { hits: number; expiresAt: number }>();
+  private vaultEvents = new Map<string, VaultEventRecord>();
+  private payments = new Map<string, PaymentRecord>();
+  private cursors = new Map<string, IndexerCursor>();
   private nextCleanupAt = 0;
   private cleanupExpired() {
     const now = Date.now();
@@ -113,11 +116,12 @@ export class MemoryStore implements Store {
   async listOrders(pouchId?: string) {
     return structuredClone([...this.orders.values()].filter((o) => !pouchId || o.pouchId === pouchId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
   }
-  private payments: PaymentRecord[] = [];
   private prices = new Map<string, PriceRecord>();
   async recordPayment(p: PaymentRecord) {
-    if (this.payments.some((x) => x.txSignature === p.txSignature)) return;
-    this.payments.push({ ...p });
+    // Same (transaction, order) as an indexed or earlier direct payment: already counted.
+    const key = `${p.txSignature}|${p.orderId.toLowerCase()}`;
+    if (this.payments.has(key)) return;
+    this.payments.set(key, structuredClone(p));
   }
   async recordPrices(rows: PriceRecord[]) {
     for (const r of rows) { const k = `${r.merchantId}|${r.productId}|${r.time}`; if (!this.prices.has(k)) this.prices.set(k, { ...r }); }
@@ -126,7 +130,7 @@ export class MemoryStore implements Store {
     const ids = new Set(pouchIds);
     const from = Date.parse(since);
     const points = new Map<string, SpendPoint>();
-    for (const p of this.payments) {
+    for (const p of this.payments.values()) {
       if (!ids.has(p.pouchId) || Date.parse(p.time) < from) continue;
       const d = new Date(p.time);
       if (bucket === "day") d.setUTCHours(0, 0, 0, 0); else d.setUTCMinutes(0, 0, 0);
@@ -193,10 +197,15 @@ export class MemoryStore implements Store {
   async deleteSessions(email: string) { for (const [id,s] of this.sessions) if (s.email === email) this.sessions.delete(id); }
   async listTopUps(pouchId: string) { return structuredClone([...this.topups.values()].filter(t=>t.pouchId===pouchId).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))); }
   async getUser(email: string) { return structuredClone(this.users.get(email)); }
-  async findUserByWallet(wallet: string) { return structuredClone([...this.users.values()].find(u => u.wallet === wallet)); }
   async saveUser(user: UserProfile) {
-    if (user.wallet && [...this.users.values()].some(u => u.wallet === user.wallet && u.email !== user.email)) throw new StoreConflictError("This wallet is linked to another account");
-    this.users.set(user.email, structuredClone(user)); return structuredClone(user);
+    const current = this.users.get(user.email);
+    // A save can first-link a wallet (same rules as setWallet) but never change or clear a linked one.
+    if (user.wallet && !current?.wallet && [...this.users.values()].some(u => u.wallet === user.wallet && u.email !== user.email)) throw new StoreConflictError("This wallet is linked to another account");
+    const { wallet: _ignored, ...fields } = user; // eslint-disable-line @typescript-eslint/no-unused-vars
+    const wallet = current?.wallet ?? user.wallet;
+    const saved = { ...fields, ...(wallet ? { wallet } : {}) };
+    this.users.set(user.email, structuredClone(saved));
+    return structuredClone(saved);
   }
   async updateUser(email: string, patch: UserPatch, now: string) {
     const prev = this.users.get(email) ?? { email, createdAt: now, updatedAt: now };
@@ -210,13 +219,31 @@ export class MemoryStore implements Store {
     this.users.set(email, structuredClone(next));
     return structuredClone(next);
   }
+  async findUserByWallet(wallet: string) {
+    for (const u of this.users.values()) if (u.wallet === wallet) return structuredClone(u);
+    return undefined;
+  }
+  async setWallet(email: string, wallet: string | null) {
+    // Check and write with no await in between, so concurrent links cannot both pass the checks.
+    if (wallet) {
+      for (const u of this.users.values()) if (u.wallet === wallet && u.email !== email) throw new StoreConflictError("This wallet is linked to another account");
+      const linked = this.users.get(email)?.wallet;
+      if (linked && linked !== wallet) throw new WalletAlreadyLinkedError();
+    }
+    const now = new Date().toISOString();
+    const { wallet: _old, ...current } = this.users.get(email) ?? { email, createdAt: now, updatedAt: now }; // eslint-disable-line @typescript-eslint/no-unused-vars
+    const saved: UserProfile = { ...current, ...(wallet ? { wallet } : {}), updatedAt: now };
+    this.users.set(email, structuredClone(saved));
+    return structuredClone(saved);
+  }
   async saveChallenge(record: AuthChallenge) {
     this.cleanupExpired();
     if (this.challenges.has(record.id)) throw new StoreConflictError("Challenge already exists");
     this.challenges.set(record.id, structuredClone(record));
   }
   async consumeChallenge(id: string) {
-    const record = this.challenges.get(id); this.challenges.delete(id);
+    const record = this.challenges.get(id);
+    this.challenges.delete(id);
     return record && Date.parse(record.expiresAt) > Date.now() ? structuredClone(record) : undefined;
   }
   async consumeRateLimit(key: string, windowMs: number, max: number) {
@@ -228,5 +255,47 @@ export class MemoryStore implements Store {
     bucket.hits++;
     this.rateLimits.set(key, bucket);
     return { allowed: bucket.hits <= max, retryAfterSeconds: Math.max(1, Math.ceil((bucket.expiresAt - now) / 1000)) };
+  }
+  async recordVaultEvents(events: VaultEventRecord[], payments: PaymentRecord[]) {
+    let inserted = 0;
+    for (const e of events) {
+      const key = `${e.signature}#${e.eventIndex}`;
+      if (this.vaultEvents.has(key)) continue;
+      this.vaultEvents.set(key, structuredClone(e));
+      inserted++;
+      const p = payments.find((x) => x.txSignature === e.signature && x.eventIndex === e.eventIndex);
+      // A paid order the app already wrote directly (same transaction and order) is the same payment.
+      const payKey = p ? `${p.txSignature}|${p.orderId.toLowerCase()}` : "";
+      if (p && !this.payments.has(payKey)) this.payments.set(payKey, structuredClone(p));
+    }
+    return inserted;
+  }
+  async getIndexerCursor(name: string) { return structuredClone(this.cursors.get(name)); }
+  async saveIndexerCursor(name: string, cursor: IndexerCursor) { this.cursors.set(name, structuredClone(cursor)); }
+  async indexedSpend(pouchIds: string[], bucket: "day" | "hour") {
+    const ids = new Set(pouchIds);
+    const rows = [...this.payments.values()].filter((p) => ids.has(p.pouchId));
+    if (!rows.length) return undefined;
+    const points = new Map<string, SpendPoint>();
+    for (const p of rows) {
+      const b = spendBucket(p.time, bucket);
+      const key = `${p.pouchId}|${b}`;
+      const pt = points.get(key) ?? { bucket: b, pouchId: p.pouchId, spent: 0, orders: 0 };
+      pt.spent += p.amount;
+      pt.orders += 1;
+      points.set(key, pt);
+    }
+    return [...points.values()].sort((a, b) => a.bucket.localeCompare(b.bucket) || a.pouchId.localeCompare(b.pouchId));
+  }
+
+  async indexedOrderIds(pouchIds: string[], orderIds: string[]) {
+    const pouches = new Set(pouchIds);
+    const wanted = new Set(orderIds.map((id) => id.toLowerCase()));
+    const found = new Set<string>();
+    for (const p of this.payments.values()) {
+      const id = p.orderId.toLowerCase();
+      if (pouches.has(p.pouchId) && wanted.has(id)) found.add(id);
+    }
+    return found;
   }
 }

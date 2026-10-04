@@ -327,6 +327,9 @@ export type SolpouchVault = {
         },
         {
           "name": "merchantToken",
+          "docs": [
+            "Must be the canonical ATA of an allowlisted merchant (checked in the handler)."
+          ],
           "writable": true
         },
         {
@@ -738,6 +741,45 @@ export type SolpouchVault = {
       ]
     },
     {
+      "name": "pouchClosed",
+      "discriminator": [
+        7,
+        26,
+        23,
+        202,
+        70,
+        178,
+        227,
+        141
+      ]
+    },
+    {
+      "name": "pouchCreated",
+      "discriminator": [
+        68,
+        216,
+        178,
+        83,
+        69,
+        109,
+        53,
+        12
+      ]
+    },
+    {
+      "name": "rulesSet",
+      "discriminator": [
+        202,
+        104,
+        215,
+        176,
+        23,
+        71,
+        106,
+        72
+      ]
+    },
+    {
       "name": "toppedUp",
       "discriminator": [
         97,
@@ -830,13 +872,33 @@ export type SolpouchVault = {
     },
     {
       "code": 6010,
-      "name": "agentIsMerchant",
-      "msg": "The agent key cannot be an allowed merchant"
+      "name": "zeroLimit",
+      "msg": "Per-order and daily limits must be greater than zero"
     },
     {
       "code": 6011,
+      "name": "perOrderOverDaily",
+      "msg": "Per-order limit exceeds the daily limit"
+    },
+    {
+      "code": 6012,
+      "name": "agentIsOwner",
+      "msg": "Agent key must differ from the owner"
+    },
+    {
+      "code": 6013,
       "name": "duplicateMerchant",
-      "msg": "Duplicate merchant in the allowlist"
+      "msg": "Allowed merchants contain a duplicate"
+    },
+    {
+      "code": 6014,
+      "name": "merchantTokenNotAta",
+      "msg": "Merchant token account is not the merchant's associated token account"
+    },
+    {
+      "code": 6015,
+      "name": "agentIsMerchant",
+      "msg": "The agent key cannot be an allowed merchant"
     }
   ],
   "types": [
@@ -949,6 +1011,58 @@ export type SolpouchVault = {
       }
     },
     {
+      "name": "pouchClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pouch",
+            "type": "pubkey"
+          },
+          {
+            "name": "time",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "pouchCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pouch",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "agent",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "maxPerOrder",
+            "type": "u64"
+          },
+          {
+            "name": "dailyLimit",
+            "type": "u64"
+          },
+          {
+            "name": "time",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "receipt",
       "type": {
         "kind": "struct",
@@ -964,6 +1078,49 @@ export type SolpouchVault = {
           {
             "name": "amount",
             "type": "u64"
+          },
+          {
+            "name": "time",
+            "type": "i64"
+          },
+          {
+            "name": "orderId",
+            "docs": [
+              "Client order id; also the receipt PDA seed. Appended last so older fields keep their offsets."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "rulesSet",
+      "docs": [
+        "Emitted with the rules in effect after `set_rules` (unchanged fields included)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pouch",
+            "type": "pubkey"
+          },
+          {
+            "name": "maxPerOrder",
+            "type": "u64"
+          },
+          {
+            "name": "dailyLimit",
+            "type": "u64"
+          },
+          {
+            "name": "merchantCount",
+            "type": "u8"
           },
           {
             "name": "time",
@@ -984,6 +1141,10 @@ export type SolpouchVault = {
           {
             "name": "amount",
             "type": "u64"
+          },
+          {
+            "name": "time",
+            "type": "i64"
           }
         ]
       }
@@ -1012,6 +1173,10 @@ export type SolpouchVault = {
           {
             "name": "amount",
             "type": "u64"
+          },
+          {
+            "name": "time",
+            "type": "i64"
           }
         ]
       }

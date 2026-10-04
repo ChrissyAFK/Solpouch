@@ -10,8 +10,10 @@ solpouch_vault = "AqixXTfd8n914z7QCsNmBuZcFbDsitbGrBfCHStmJT8F"
 [programs.localnet]
 solpouch_vault = "AqixXTfd8n914z7QCsNmBuZcFbDsitbGrBfCHStmJT8F"
 
+# localnet so a plain `anchor test` never deploys to devnet.
+# Deploy to devnet explicitly: `anchor deploy --provider.cluster devnet`.
 [provider]
-cluster = "devnet"
+cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

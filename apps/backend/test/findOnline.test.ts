@@ -1,7 +1,8 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const { generateContent } = vi.hoisted(() => ({ generateContent: vi.fn() }));
 vi.mock("@google/genai", () => ({ GoogleGenAI: class { models = { generateContent }; } }));
 import { findOnline } from "../src/ai/findOnline.js";
+beforeEach(() => vi.stubEnv("ANTHROPIC_API_KEY", ""));
 afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 it("returns no quote when search is not configured", async () => {
   vi.stubEnv("GEMINI_API_KEY", "");

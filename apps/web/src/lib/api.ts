@@ -127,6 +127,7 @@ export type Profile = {
   avatar: string | null;
   googleName: string;
   googlePicture: string;
+  wallet: string | null;
   createdAt: string | number;
 };
 export type UpdateProfileBody = {
@@ -134,13 +135,8 @@ export type UpdateProfileBody = {
   avatar?: string | null;
 };
 
+export type WalletUser = { email: string; name?: string; picture?: string; wallet?: string };
 export type AuthSession = { id: string; createdAt: string; expiresAt: string; current: boolean };
-export type WalletUser = {
-  email: string;
-  name?: string;
-  picture?: string;
-  wallet?: string;
-};
 
 export type FundingRequest = { id: string; direction: "BUY" | "SELL"; country: "US" | "CA"; currency: "USD" | "CAD"; amount: string; wallet: string; environment: "staging"; status: "created" | "session_ready" | "session_uncertain" | "processing" | "provider_completed" | "sandbox_completed" | "confirmed" | "failed" | "cancelled" | "refunded"; createdAt: string; updatedAt: string; providerOrderId?: string; txSignature?: string; cryptoAmount?: string; message?: string };
 export type FundingConfig = { environment: "staging"; productionEnabled: false; configured: boolean; countries: { country: "US" | "CA"; currency: "USD" | "CAD"; buyEnabled: boolean; sellEnabled: boolean }[]; notice: string };
@@ -183,11 +179,10 @@ export const api = {
     req<{ signedUrl: string; token: string; expiresAt: number | string }>("/auth/voice-session", { method: "POST", signal }),
   voiceStatus: () => req<{ enabled: boolean }>("/auth/voice-status"),
   walletChallenge: (wallet: string) =>
-    post<{ id: string; message: string }>("/auth/wallet/challenge", { wallet }),
+    post<{ id: string; message: string; expiresAt: string }>("/auth/wallet/challenge", { wallet }),
   walletVerify: (id: string, signature: string) =>
     post<{ user: WalletUser }>("/auth/wallet/verify", { id, signature }),
-  unlinkWallet: () =>
-    req<{ user: WalletUser }>("/auth/wallet", { method: "DELETE" }),
+  unlinkWallet: () => req<{ user: WalletUser }>("/auth/wallet", { method: "DELETE" }),
   merchants: () => req<Merchant[]>("/merchants"),
   createInstacartLink: (id: string) => post<Order>(`/orders/${encodeURIComponent(id)}/instacart`),
   createOrder: (b: CreateOrderBody) => post<Order>("/orders", b),
@@ -240,6 +235,14 @@ export function errMsg(e: unknown): string {
       OrderAlreadyUsed:
         "This order has already been paid. Refresh to see its latest status.",
       Unauthorized: "You do not have permission to make this change.",
+      ZeroAmount: "The amount must be more than zero.",
+      ZeroLimit: "Limits must be more than zero.",
+      PerOrderOverDaily: "The limit per order cannot be higher than the daily limit.",
+      DuplicateMerchant: "Each store can only be added to a pouch once.",
+      ConfirmAboveTooHigh: "The automatic payment amount cannot be higher than the limit per order.",
+      MerchantTokenNotAta: "This store's payment account is not set up correctly. No money moved.",
+      WalletRequired: "Link a wallet to add money.",
+      WalletProofInvalid: "The wallet signature was invalid or expired. Try linking again.",
     };
     return (e.code && messages[e.code]) || e.message;
   }

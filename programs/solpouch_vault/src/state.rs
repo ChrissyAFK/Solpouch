@@ -28,6 +28,8 @@ pub struct Receipt {
     pub merchant: Pubkey,
     pub amount: u64,
     pub time: i64,
+    /// Client order id; also the receipt PDA seed. Appended last so older fields keep their offsets.
+    pub order_id: [u8; 16],
 }
 
 /// Zero-pads a name to 32 bytes; longer names are truncated here and rejected by the handler.

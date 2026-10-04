@@ -8,6 +8,7 @@ import { Footer } from "./Footer";
 import { LandingNav } from "./LandingNav";
 import { ChatWidget } from "./ChatWidget";
 import { UserMenu, useAuth } from "./AuthProvider";
+import { shortAddress } from "./WalletLink";
 export function Shell({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const pathname = usePathname();
@@ -197,10 +198,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
             {user?.wallet && (
               <span
                 className="num"
-                title={user.wallet}
+                title={`Linked wallet ${user.wallet}`}
                 style={{ fontSize: 12, color: "var(--muted)" }}
               >
-                {user.wallet.slice(0, 4)}…{user.wallet.slice(-4)}
+                {shortAddress(user.wallet)}
               </span>
             )}
             <UserMenu />

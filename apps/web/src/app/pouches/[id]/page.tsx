@@ -60,7 +60,7 @@ function TopUpSection({
   pouch: Pouch;
   onDone: () => Promise<void>;
 }) {
-  const { user } = useAuth();
+  const { user, sessionKey, updateUser } = useAuth();
   const hasWallet = Boolean(user?.wallet);
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
@@ -199,6 +199,9 @@ function TopUpSection({
       );
       setNow(Date.now());
     } catch (err) {
+      // The server no longer sees a linked wallet: show the link prompt instead of the form.
+      if (err instanceof ApiRequestError && err.code === "WalletRequired" && sessionKey)
+        updateUser({ wallet: undefined }, sessionKey);
       setError(errMsg(err));
     } finally {
       setBusy(false);
@@ -269,7 +272,12 @@ function TopUpSection({
             )}
           </Notice>
         )}
-        {!topup && !hasWallet ? (<div className="space-y-3"><p>Link a wallet to add money</p><WalletLink /></div>) : !topup ? (
+        {!topup && !hasWallet ? (
+          <div className="space-y-3">
+            <p className="text-sm text-[var(--ink)]">Link a wallet to add money. Top-ups are recorded against your linked wallet.</p>
+            <WalletLink />
+          </div>
+        ) : !topup ? (
           <form onSubmit={start} className="space-y-4">
             <div>
               <span className={label}>Amount · USDC</span>

@@ -42,6 +42,6 @@ pub fn handler(ctx: Context<TopUp>, amount: u64) -> Result<()> {
         ),
         amount,
     )?;
-    emit!(ToppedUp { pouch: ctx.accounts.pouch.key(), amount });
+    emit!(ToppedUp { pouch: ctx.accounts.pouch.key(), amount, time: Clock::get()?.unix_timestamp });
     Ok(())
 }

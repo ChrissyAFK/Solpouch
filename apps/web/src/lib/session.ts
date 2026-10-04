@@ -1,7 +1,4 @@
-export type SessionUser = {
-  email: string; name?: string; picture?: string;
-  wallet?: string;
-};
+export type SessionUser = { email: string; name?: string; picture?: string; wallet?: string };
 const KEY = "solpouch.session";
 type Stored = { token: string; user: SessionUser };
 const listeners = new Set<() => void>();

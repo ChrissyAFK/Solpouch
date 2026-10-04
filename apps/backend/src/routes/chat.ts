@@ -2,7 +2,7 @@ import { consumeAiBudget } from "../security/rateLimit.js";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
-import { chatMode, demoReply, geminiReply, claudeReply } from "../ai/chat.js";
+import { chatMode, claudeReply, demoReply, geminiReply } from "../ai/chat.js";
 import type { AuthEnv } from "../auth/session.js";
 import { listOwnedOrders, type Deps } from "../services/orders.js";
 import { publicPouch } from "../store/types.js";

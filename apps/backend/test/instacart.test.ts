@@ -30,7 +30,7 @@ describe("Instacart shopping-list handoff", () => {
     await expect(createInstacartList("Groceries", [{ name: "eggs", quantity: 2 }])).rejects.toMatchObject({ code:"InstacartUnavailable",message:expect.not.stringContaining("sensitive") });
   });
   it("persists and reuses links without moving funds, enforcing ownership and blocking duplicate checkout payment", async () => {
-    vi.stubEnv("GEMINI_API_KEY", "");vi.stubEnv("INSTACART_API_KEY", "fixture");vi.stubEnv("INSTACART_ENV", "dev");
+    vi.stubEnv("GEMINI_API_KEY", "");vi.stubEnv("ANTHROPIC_API_KEY", "");vi.stubEnv("INSTACART_API_KEY", "fixture");vi.stubEnv("INSTACART_ENV", "dev");
     const fetch=vi.fn().mockImplementation(async()=>new Response(JSON.stringify({products_link_url:link}))); vi.stubGlobal("fetch",fetch);
     const store=new MemoryStore(ownedSeed());const vault=new MockVaultClient(store,id=>getMerchant(id)?.payTo); const app=createApp({store,vault});
     const order=await createDraft({store,vault},TEST_USER,"2 eggs","groceries"); const balance=(await store.getPouch("groceries"))!.balance;

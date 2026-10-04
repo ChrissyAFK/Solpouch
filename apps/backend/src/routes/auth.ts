@@ -1,15 +1,18 @@
 import { randomBytes } from "node:crypto";
-import { validSignature, validWallet } from "../security/auth.js";
-import { StoreConflictError } from "../store/types.js";
 import { Hono } from "hono";
 import { z } from "zod";
 import { GoogleAuthError, verifyGoogleIdToken } from "../auth/google.js";
 import { AuthUnavailableError, requireUser, signSession, signVoiceToken, type AuthEnv } from "../auth/session.js";
 import { rateLimit } from "../security/rateLimit.js";
+import { validSignature, validWallet } from "../security/wallet.js";
+import { StoreConflictError, WalletAlreadyLinkedError } from "../store/types.js";
 import { mergedUser } from "./profile.js";
 import { HttpError, type Deps } from "../services/orders.js";
 const googleBody = z.object({ credential: z.string().min(1).max(4096) });
-export function authRoutes(deps: Deps, origins: string[]) {
+const challengeBody = z.object({ wallet: z.string().max(44).refine(validWallet, "Invalid wallet address") }).strict();
+const verifyBody = z.object({ id: z.string().regex(/^[a-f0-9]{48}$/), signature: z.string().max(100) }).strict();
+const CHALLENGE_MS = 5 * 60_000;
+export function authRoutes(deps: Deps, origins: string[] = []) {
   const app = new Hono<AuthEnv>();
   const verify = deps.verifyGoogle ?? verifyGoogleIdToken;
   const auth = requireUser(deps.store);
@@ -45,50 +48,6 @@ export function authRoutes(deps: Deps, origins: string[]) {
   });
   app.use("/wallet/*", auth, async (c, next) => deps.store.withPouchLock(`user:${c.get("user").email}`, next));
   app.use("/wallet", auth, async (c, next) => deps.store.withPouchLock(`user:${c.get("user").email}`, next));
-
-  // Link a Solana wallet to the signed-in Google account (proof of ownership by signing a message).
-  app.post("/wallet/challenge", auth, async (c) => {
-    const { wallet } = z.object({ wallet: z.string().max(44).refine(validWallet, "Invalid wallet address") }).strict().parse(await c.req.json());
-    const origin = c.req.header("origin");
-    if (!origin || !origins.includes(origin)) throw new HttpError(403, "Open Solpouch on an allowed website to link a wallet");
-    const email = c.get("user").email;
-    const id = randomBytes(24).toString("hex");
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + 5 * 60_000).toISOString();
-    const message = `${new URL(origin).host} wants to link this wallet to your Solpouch account (${email}).\n\nWallet: ${wallet}\nURI: ${origin}\nNonce: ${id}\nIssued At: ${now.toISOString()}\nExpiration Time: ${expiresAt}\n\nThis proves you own the wallet. It does not approve a transaction.`;
-    await deps.store.saveChallenge({ id, wallet, email, message, expiresAt });
-    return c.json({ id, message });
-  });
-
-  app.post("/wallet/verify", auth, async (c) => {
-    const { id, signature } = z.object({ id: z.string().regex(/^[a-f0-9]{48}$/), signature: z.string().max(100) }).strict().parse(await c.req.json());
-    const session = c.get("user");
-    const challenge = await deps.store.consumeChallenge(id);
-    const origin = c.req.header("origin");
-    if (!challenge || Date.parse(challenge.expiresAt) <= Date.now() || !origin || !origins.includes(origin) || !challenge.message.includes(`\nURI: ${origin}\n`) || challenge.email !== session.email || !validSignature(challenge.wallet, challenge.message, signature)) {
-      throw new HttpError(401, "Signature is invalid or expired. Try linking again");
-    }
-    const holder = await deps.store.findUserByWallet(challenge.wallet);
-    if (holder && holder.email !== session.email) throw new HttpError(409, "This wallet is linked to another account");
-    const now = new Date().toISOString();
-    try {
-      await deps.store.updateUser(session.email, { wallet: challenge.wallet }, now);
-    } catch (e) {
-      if (e instanceof StoreConflictError) throw new HttpError(409, "This wallet is linked to another account");
-      throw e;
-    }
-    return c.json({ user: await mergedUser(deps.store, session) });
-  });
-
-  app.delete("/wallet", auth, async (c) => {
-    const session = c.get("user");
-    const prev = await deps.store.getUser(session.email);
-    if (prev?.wallet) {
-      await deps.store.updateUser(session.email, { wallet: null }, new Date().toISOString());
-    }
-    return c.json({ user: await mergedUser(deps.store, session) });
-  });
-
   const voiceConfigured = () => Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_AGENT_ID && (process.env.VOICE_WEBHOOK_SECRET || process.env.ELEVENLABS_TOOL_SECRET) && process.env.ELEVENLABS_SECURE_TOOLS_CONFIGURED === "true");
   app.get("/voice-status", auth, (c) => c.json({ enabled: voiceConfigured() }));
   app.post("/voice-session", auth, async (c) => {
@@ -109,6 +68,47 @@ export function authRoutes(deps: Deps, origins: string[]) {
     }
     return c.json({ signedUrl, ...(await signVoiceToken(c.get("session"))) });
   });
-
+  // Link a Solana wallet to the signed-in account by signing a challenge. Proves ownership; moves no money.
+  const walletLimit = rateLimit({ store: deps.store, windowMs: 60000, max: 20, key: "auth-wallet" });
+  const allowedOrigin = (origin: string | undefined) => !!origin && origins.includes(origin);
+  app.post("/wallet/challenge", walletLimit, auth, async c => {
+    const { wallet } = challengeBody.parse(await c.req.json());
+    const origin = c.req.header("origin");
+    if (!allowedOrigin(origin)) throw new HttpError(403, "Open Solpouch on an allowed website to link a wallet");
+    const session = c.get("session");
+    const linked = (await deps.store.getUser(session.email))?.wallet;
+    if (linked && linked !== wallet) throw new HttpError(409, "Unlink your current wallet before linking another");
+    const holder = await deps.store.findUserByWallet(wallet);
+    if (holder && holder.email !== session.email) throw new HttpError(409, "This wallet is linked to another account");
+    const id = randomBytes(24).toString("hex");
+    const now = new Date();
+    const expiresAt = new Date(Math.min(now.getTime() + CHALLENGE_MS, Date.parse(session.expiresAt))).toISOString();
+    const message = `${new URL(origin!).host} wants to link this wallet to your Solpouch account (${session.email}).\n\nWallet: ${wallet}\nURI: ${origin}\nNonce: ${id}\nIssued At: ${now.toISOString()}\nExpiration Time: ${expiresAt}\n\nThis proves you own the wallet. It does not approve a transaction.`;
+    await deps.store.saveChallenge({ id, wallet, email: session.email, sessionId: session.id, origin: origin!, message, expiresAt });
+    return c.json({ id, message, expiresAt });
+  });
+  app.post("/wallet/verify", walletLimit, auth, async c => {
+    const { id, signature } = verifyBody.parse(await c.req.json());
+    const session = c.get("session");
+    const origin = c.req.header("origin");
+    const challenge = await deps.store.consumeChallenge(id); // single use, even when it fails below
+    if (!challenge || Date.parse(challenge.expiresAt) <= Date.now() || challenge.email !== session.email || challenge.sessionId !== session.id
+      || !allowedOrigin(origin) || challenge.origin !== origin || !validSignature(challenge.wallet, challenge.message, signature)) {
+      throw new HttpError(400, "Signature is invalid or expired. Try linking again", "WalletProofInvalid");
+    }
+    const linked = (await deps.store.getUser(session.email))?.wallet;
+    if (linked && linked !== challenge.wallet) throw new HttpError(409, "Unlink your current wallet before linking another");
+    try { await deps.store.setWallet(session.email, challenge.wallet); }
+    catch (e) {
+      if (e instanceof WalletAlreadyLinkedError) throw new HttpError(409, "Unlink your current wallet before linking another");
+      if (e instanceof StoreConflictError) throw new HttpError(409, "This wallet is linked to another account");
+      throw e;
+    }
+    return c.json({ user: await mergedUser(deps.store, c.get("user")) });
+  });
+  app.delete("/wallet", auth, async c => {
+    await deps.store.setWallet(c.get("user").email, null);
+    return c.json({ user: await mergedUser(deps.store, c.get("user")) });
+  });
   return app;
 }

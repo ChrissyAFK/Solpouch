@@ -35,13 +35,13 @@ export function profileRoutes(deps: Deps) {
 
   const shape = (g: SessionUser, p: { displayName?: string; avatar?: string; wallet?: string; createdAt: string }) => ({
     email: g.email,
-    wallet: p.wallet,
     name: p.displayName ?? g.name,
     picture: p.avatar ?? g.picture,
     displayName: p.displayName ?? null,
     avatar: p.avatar ?? null,
     googleName: g.name,
     googlePicture: g.picture,
+    wallet: p.wallet ?? null,
     createdAt: p.createdAt,
   });
 

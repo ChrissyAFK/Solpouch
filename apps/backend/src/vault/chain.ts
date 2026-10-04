@@ -55,20 +55,26 @@ function orderBytes(orderId: string): Buffer {
   return b;
 }
 
-const PROGRAM_ERRORS = new Set([
-  "Unauthorized",
-  "PouchFrozen",
-  "MerchantNotAllowed",
-  "OverPerOrderLimit",
-  "OverDailyLimit",
-  "InsufficientFunds",
-  "NameTooLong",
-  "TooManyMerchants",
-  "VaultNotEmpty",
-  "ZeroAmount",
-  "AgentIsMerchant",
-  "DuplicateMerchant",
-]);
+const ERROR_NAMES = new Map<number, string>(((idlJson as { errors?: { code: number; name: string }[] }).errors ?? []).map(e => [e.code, e.name]));
+// Every named error in the IDL (plus the long-standing names, in case an IDL omits them) is a definitive program refusal.
+const PROGRAM_ERRORS = new Set<string>([...[  "Unauthorized",  "PouchFrozen",  "MerchantNotAllowed",  "OverPerOrderLimit",  "OverDailyLimit",  "InsufficientFunds",  "NameTooLong",  "TooManyMerchants",  "VaultNotEmpty",  "ZeroAmount",  "AgentIsMerchant",  "DuplicateMerchant", ], ...ERROR_NAMES.values()]);
+
+/** Name the vault program error inside a failed transaction status, if it is one. */
+export function statusRejectCode(err: unknown): VaultRejectCode | undefined {
+  const custom = (err as { InstructionError?: [number, { Custom?: number }] } | null)?.InstructionError?.[1]?.Custom;
+  const name = custom === undefined ? undefined : ERROR_NAMES.get(custom);
+  return name && PROGRAM_ERRORS.has(name) ? name as VaultRejectCode : undefined;
+}
+
+/** Name the vault program error that refused a preflight simulation, if it is one. */
+export function preflightRejectCode(e: unknown): VaultRejectCode | undefined {
+  const message = (e as { message?: unknown })?.message;
+  // Only a failed simulation proves the transaction was never processed.
+  if (typeof message !== "string" || !message.startsWith("Simulation failed")) return undefined;
+  try { mapError(e); } catch (mapped) { if (mapped instanceof VaultRejected) return mapped.code; }
+  const hex = /custom program error: (0x[0-9a-f]+)/i.exec(message)?.[1];
+  return hex ? statusRejectCode({ InstructionError: [0, { Custom: Number(hex) }] }) : undefined;
+}
 
 export function mapError(e: unknown): never {
   if (e instanceof VaultRejected) throw e;
@@ -197,15 +203,18 @@ export class ChainVaultClient implements VaultClient {
     return recoverTransaction(this.store, id, {
       status: async (signature) => {
         const value = (await this.connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
-        return { confirmed: !!value && !value.err && (value.confirmationStatus === "confirmed" || value.confirmationStatus === "finalized"), failed: !!value?.err && (value?.confirmationStatus === "confirmed" || value?.confirmationStatus === "finalized"), found: !!value };
+        const settled = !!value && (value.confirmationStatus === "confirmed" || value.confirmationStatus === "finalized");
+        // A processed-level error can still be dropped by a fork: only a confirmed or finalized failure is final.
+        return { confirmed: settled && !value.err, failed: settled && !!value.err, seen: !!value, found: !!value, rejectCode: settled ? statusRejectCode(value.err) : undefined };
       },
       blockHeight: () => this.connection.getBlockHeight(COMMITMENT),
       broadcast: async (bytes) => { try { return await this.connection.sendRawTransaction(bytes, { skipPreflight: false, maxRetries: 0 }); } catch (e) { return programRejection(e); } },
       confirm: async (operation) => {
         const tx = Transaction.from(Buffer.from(operation.signedTransaction, "base64"));
         const result = await this.connection.confirmTransaction({ signature: operation.txSignature, blockhash: tx.recentBlockhash!, lastValidBlockHeight: operation.lastValidBlockHeight }, COMMITMENT);
-        return { failed: !!result.value.err };
+        return { failed: !!result.value.err, rejectCode: statusRejectCode(result.value.err) };
       },
+      rejection: preflightRejectCode,
     }, async () => {
       const tx = await build();
       const latest = await this.connection.getLatestBlockhash(COMMITMENT);
