@@ -8,6 +8,8 @@ import type {
   UpdateRulesBody,
   CreateOrderBody,
   StartTopUpBody,
+  Withdrawal,
+  StartWithdrawalBody,
   ApiError,
 } from "@solpouch/shared";
 import { clearSession, getToken } from "./session";
@@ -172,6 +174,12 @@ export const api = {
   cancelTopUp: (id: string) => post<TopUp>(`/topups/${id}/cancel`),
   listPendingTopUps: (pouchId: string) =>
     req<TopUp[]>(`/topups?pouchId=${encodeURIComponent(pouchId)}`),
+  startWithdrawal: (b: StartWithdrawalBody) =>
+    post<Withdrawal>("/withdrawals", b),
+  listWithdrawals: (pouchId: string) =>
+    req<Withdrawal[]>(`/withdrawals?pouchId=${encodeURIComponent(pouchId)}`),
+  cancelWithdrawal: (id: string) =>
+    post<Withdrawal>(`/withdrawals/${encodeURIComponent(id)}/cancel`),
   spend: (pouchId: string, bucket: "day" | "hour" = "day") =>
     req<SpendPoint[]>(
       `/stats/spend?pouchId=${encodeURIComponent(pouchId)}&bucket=${bucket}`,
@@ -185,7 +193,7 @@ export function errMsg(e: unknown): string {
       PaymentPending: e.message,
       PaymentNotSent: e.message,
       LookupFailed: e.message,
-      PouchFrozen: "This pouch is frozen. Unfreeze it before making a payment.",
+      PouchFrozen: "This pouch is frozen. Unfreeze it first.",
       MerchantNotAllowed:
         "This store is not allowed for this pouch. Choose another pouch or update its allowed stores.",
       OverPerOrderLimit:
@@ -193,6 +201,8 @@ export function errMsg(e: unknown): string {
       OverDailyLimit: "This payment would exceed the pouch's daily limit.",
       InsufficientFunds:
         "This pouch does not have enough funds for this payment.",
+      WithdrawalPending:
+        "This pouch already has a withdrawal on hold. Cancel it to start a new one.",
       CooldownActive:
         "The waiting period has not ended. Wait for the timer before completing the top-up.",
       OrderAlreadyUsed:

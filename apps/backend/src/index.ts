@@ -37,6 +37,11 @@ if (process.env.VAULT_MODE === "chain") {
 }
 const app = createApp({ store, vault });
 
+// Pays withdrawals whose hold is over. Uses the base store (system access), never a user-scoped one.
+const { payDueWithdrawals } = await import("./services/withdrawals.js");
+setInterval(() => void payDueWithdrawals({ store, vault }), 60_000).unref?.();
+setTimeout(() => void payDueWithdrawals({ store, vault }), 5_000).unref?.();
+
 const port = Number(process.env.BACKEND_PORT ?? 8787);
 serve({ fetch: app.fetch, port }, () => {
   console.log(`solpouch backend on :${port} (vault=${process.env.VAULT_MODE ?? "mock"}, ai=${aiProvider()})`);

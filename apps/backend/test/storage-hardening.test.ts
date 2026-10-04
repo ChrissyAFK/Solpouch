@@ -5,6 +5,9 @@ import { MemoryStore, seedPouches } from "../src/store/memory.js";
 import { PostgresStore, postgresPoolConfig } from "../src/store/postgres.js";
 import { StoreConflictError, type VaultOperation } from "../src/store/types.js";
 import type pg from "pg";
+import type { Withdrawal } from "@solpouch/shared";
+import { MockVaultClient } from "../src/vault/mock.js";
+import { VaultRejected } from "../src/vault/types.js";
 
 function postgresFixture(pool: object) {
   return new (PostgresStore as unknown as new (p: pg.Pool) => PostgresStore)(Object.assign(new EventEmitter(), pool) as unknown as pg.Pool);
@@ -181,5 +184,36 @@ describe("Postgres boundary checks (mocked connections; no live database)", () =
     expect((await store.getPouch("p"))?.spentToday).toBe(9);
     row.spent_day = new Date("2000-01-01");
     expect((await store.getPouch("p"))?.spentToday).toBe(0);
+  });
+});
+
+describe("withdrawals", () => {
+  const wd = (over: Partial<Withdrawal> = {}): Withdrawal => ({ id: "w", pouchId: "p", amount: 5, reason: "test", toWallet: "wallet", status: "holding", readyAt: "2026-10-10T00:00:00.000Z", createdAt: "2026-10-03T00:00:00.000Z", ...over });
+
+  it("versions, detaches, lists newest first and lists due holds only", async () => {
+    const store = new MemoryStore([]);
+    const first = await store.saveWithdrawal(wd());
+    expect(first.version).toBe(1);
+    first.status = "failed";
+    expect((await store.getWithdrawal("w"))?.status).toBe("holding");
+    expect((await store.saveWithdrawal({ ...first, status: "processing" })).version).toBe(2);
+    await expect(store.saveWithdrawal({ ...first, status: "holding" })).rejects.toBeInstanceOf(StoreConflictError);
+    await store.saveWithdrawal(wd({ id: "newer", createdAt: "2026-10-04T00:00:00.000Z" }));
+    await store.saveWithdrawal(wd({ id: "other", pouchId: "q" }));
+    expect((await store.listWithdrawals("p")).map((x) => x.id)).toEqual(["newer", "w"]);
+    const due = await store.listDueWithdrawals(new Date("2026-10-10T00:00:00.000Z"));
+    expect(due.map((x) => x.id).sort()).toEqual(["newer", "other", "w"]);
+    expect(await store.listDueWithdrawals(new Date("2026-10-09T23:59:59.000Z"))).toEqual([]);
+  });
+
+  it("mock vault withdraw lowers the balance, rejects overdraw, and is idempotent per operation", async () => {
+    const store = new MemoryStore([pouch()]);
+    const vault = new MockVaultClient(store, () => undefined);
+    const start = (await store.getPouch("uber-eats"))!.balance;
+    const a = await vault.withdraw("uber-eats", 10, "wallet", "op1");
+    expect((await store.getPouch("uber-eats"))!.balance).toBe(start - 10);
+    expect(await vault.withdraw("uber-eats", 10, "wallet", "op1")).toEqual(a);
+    expect((await store.getPouch("uber-eats"))!.balance).toBe(start - 10);
+    await expect(vault.withdraw("uber-eats", start, "wallet", "op2")).rejects.toBeInstanceOf(VaultRejected);
   });
 });

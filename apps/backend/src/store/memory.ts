@@ -1,4 +1,4 @@
-import { toMicros, type Order, type Pouch, type TopUp } from "@solpouch/shared";
+import { toMicros, type Order, type Pouch, type TopUp, type Withdrawal } from "@solpouch/shared";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { StoreConflictError, sameOperation, validateRateLimit, type Store, type StoredPouch, type UserProfile, type VaultOperation, type AuthChallenge, type UserPatch } from "./types.js";
 
@@ -52,6 +52,7 @@ export class MemoryStore implements Store {
   private pouches = new Map<string, StoredPouch>();
   private orders = new Map<string, Order>();
   private topups = new Map<string, TopUp>();
+  private withdrawals = new Map<string, Withdrawal>();
   private users = new Map<string, UserProfile>();
   private operations = new Map<string, VaultOperation>();
   private challenges = new Map<string, AuthChallenge>();
@@ -109,6 +110,18 @@ export class MemoryStore implements Store {
     return structuredClone([...this.topups.values()]
       .filter((t) => t.pouchId === pouchId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+  }
+  async getWithdrawal(id: string) { return structuredClone(this.withdrawals.get(id)); }
+  async saveWithdrawal(w: Withdrawal) { return this.save(this.withdrawals, w); }
+  async listWithdrawals(pouchId: string) {
+    return structuredClone([...this.withdrawals.values()]
+      .filter((w) => w.pouchId === pouchId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+  }
+  async listDueWithdrawals(now: Date) {
+    return structuredClone([...this.withdrawals.values()]
+      .filter((w) => (w.status === "holding" || w.status === "processing") && Date.parse(w.readyAt) <= now.getTime())
+      .sort((a, b) => a.readyAt.localeCompare(b.readyAt)));
   }
   async getUser(email: string) { return structuredClone(this.users.get(email)); }
   private assertWalletFree(email: string, wallet: string | undefined) {

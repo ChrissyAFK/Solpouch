@@ -116,6 +116,36 @@ export interface SpendPoint {
   orders: number;
 }
 
+export type WithdrawalStatus = "holding" | "processing" | "completed" | "cancelled" | "failed";
+
+/**
+ * Money leaving a pouch for the owner's linked wallet. It is held for a fraud
+ * review window (7 days by default) during which the owner can cancel it; the
+ * held amount can't be spent by orders.
+ */
+export interface Withdrawal {
+  version?: number;
+  id: string;
+  pouchId: string;
+  amount: Micros;
+  reason: string;
+  /** The linked wallet the money goes to, fixed when requested. */
+  toWallet: string;
+  status: WithdrawalStatus;
+  /** When the hold ends and the withdrawal is paid out. */
+  readyAt: string;
+  createdAt: string;
+  txSignature?: string;
+  /** Set when status is "failed". */
+  failReason?: string;
+}
+
+export interface StartWithdrawalBody {
+  pouchId: string;
+  amount: Micros;
+  reason?: string;
+}
+
 // ---- REST API ----
 // GET    /pouches                     -> Pouch[]
 // POST   /pouches                     CreatePouchBody -> Pouch
@@ -129,6 +159,10 @@ export interface SpendPoint {
 // POST   /orders/:id/confirm          -> Order (pays; ends "paid" or "rejected")
 // POST   /orders/:id/cancel           -> Order
 // POST   /topups                      StartTopUpBody -> TopUp (status "cooling_down")
+// POST   /withdrawals                 StartWithdrawalBody -> Withdrawal (status "holding", readyAt = now + hold)
+// GET    /withdrawals?pouchId=        -> Withdrawal[] (holding/processing, plus completed/failed from the last 7 days)
+// POST   /withdrawals/:id/cancel      -> Withdrawal (holding -> cancelled)
+// Due withdrawals are paid out by the backend; there is no client "complete" call.
 // GET    /topups?pouchId=             -> TopUp[] (pending/cooling_down, newest first)
 // POST   /topups/:id/complete         -> TopUp (only after readyAt)
 // POST   /topups/:id/cancel           -> TopUp (cooling_down -> cancelled)

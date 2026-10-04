@@ -7,6 +7,7 @@ import { buildFulfillment, checkoutPayTo } from "./fulfillment.js";
 import type { GoogleUser } from "../auth/google.js";
 import type { Store } from "../store/types.js";
 import { PaymentPending } from "../vault/recovery.js";
+import { heldAmount } from "./withdrawals.js";
 import { VaultRejected, type VaultClient } from "../vault/types.js";
 
 export interface Deps {
@@ -192,6 +193,9 @@ export async function confirmOrder(deps: Deps, id: string): Promise<Order> {
       if (!isAnyStore(pouch) && !pouch.allowedMerchantIds.includes(order.merchantId)) {
         await deps.store.saveOrder({ ...order, status: "rejected", rejectReason: "MerchantNotAllowed" });
         throw new HttpError(422, "Payment refused: MerchantNotAllowed", "MerchantNotAllowed");
+      }
+      if (order.total > pouch.balance - (await heldAmount(deps.store, pouch.id))) {
+        throw new HttpError(422, "Payment refused: InsufficientFunds", "InsufficientFunds");
       }
       order = await deps.store.saveOrder({ ...order, status: "paying" });
     }

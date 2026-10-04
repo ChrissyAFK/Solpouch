@@ -1,4 +1,4 @@
-import type { Order, Pouch, TopUp } from "@solpouch/shared";
+import type { Order, Pouch, TopUp, Withdrawal } from "@solpouch/shared";
 
 /** A pouch as stored: carries its owner. Never send ownerEmail over the API, use publicPouch(). */
 export type StoredPouch = Pouch & { ownerEmail?: string };
@@ -20,7 +20,7 @@ export class StoreConflictError extends Error {
 }
 export interface VaultOperation {
   id: string;
-  kind: "pay" | "topup";
+  kind: "pay" | "topup" | "withdraw";
   pouchId: string;
   txSignature: string;
   signedTransaction: string;
@@ -43,6 +43,12 @@ export interface Store {
   saveTopUp(t: TopUp): Promise<TopUp>;
   /** Newest first. */
   listTopUps(pouchId: string): Promise<TopUp[]>;
+  getWithdrawal(id: string): Promise<Withdrawal | undefined>;
+  saveWithdrawal(w: Withdrawal): Promise<Withdrawal>;
+  /** Newest first. */
+  listWithdrawals(pouchId: string): Promise<Withdrawal[]>;
+  /** Status "holding" or "processing" with readyAt <= now, across all pouches (system use: payout sweeper). */
+  listDueWithdrawals(now: Date): Promise<Withdrawal[]>;
 
   getUser(email: string): Promise<UserProfile | undefined>;
   saveUser(u: UserProfile): Promise<UserProfile>;

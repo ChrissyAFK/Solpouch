@@ -10,6 +10,7 @@ import { orderRoutes } from "./routes/orders.js";
 import { pouchRoutes } from "./routes/pouches.js";
 import { statsRoutes } from "./routes/stats.js";
 import { topupRoutes } from "./routes/topups.js";
+import { withdrawalRoutes } from "./routes/withdrawals.js";
 import { voiceRoutes } from "./routes/voice.js";
 import { chatRoutes } from "./routes/chat.js";
 import { profileRoutes } from "./routes/profile.js";
@@ -53,6 +54,7 @@ export function createApp(deps: Deps) {
   });
   app.on("POST", ["/chat", "/orders", "/voice/tools/create_order"], gemini, geminiDay);
   app.on("POST", "/topups/*", topups);
+  app.on("POST", "/withdrawals/*", topups);
   app.use("/voice/*", rateLimit({ store: deps.store, windowMs: MIN, max: 60, key: "voice" }));
 
   app.use("/auth/*", rateLimit({ store: deps.store, windowMs: MIN, max: 20, key: "auth" }));
@@ -79,6 +81,7 @@ export function createApp(deps: Deps) {
   app.route("/pouches", pouchRoutes(deps));
   app.route("/orders", orderRoutes(deps));
   app.route("/topups", topupRoutes(deps));
+  app.route("/withdrawals", withdrawalRoutes(deps));
   app.route("/merchants", merchantRoutes());
   app.route("/stats", statsRoutes(deps));
   app.route("/voice", voiceRoutes(deps));

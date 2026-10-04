@@ -21,6 +21,7 @@ import type {
   Pouch,
   SpendPoint,
   TopUp,
+  Withdrawal,
 } from "@solpouch/shared";
 import { toMicros, toUsdc } from "@solpouch/shared";
 import { api, ApiRequestError, errMsg } from "@/lib/api";
@@ -505,6 +506,228 @@ function TopUpSection({
   );
 }
 
+const DAY_MS = 86_400_000;
+// "x days y h left", dropping to hours and minutes in the last day.
+const timeLeft = (ms: number) => {
+  if (ms <= 0) return "releasing now";
+  const days = Math.floor(ms / DAY_MS);
+  const hours = Math.floor((ms % DAY_MS) / 3_600_000);
+  if (days > 0) return `${days} ${days === 1 ? "day" : "days"} ${hours} h left`;
+  return `${hours} h ${Math.floor((ms % 3_600_000) / 60_000)} min left`;
+};
+
+function WithdrawSection({
+  pouch,
+  onDone,
+  onHeld,
+}: {
+  pouch: Pouch;
+  onDone: () => Promise<void>;
+  // Reports the amount held by withdrawals so the header can show what is spendable.
+  onHeld: (held: number) => void;
+}) {
+  const { user } = useAuth();
+  const hasWallet = Boolean(user?.wallet);
+  const [list, setList] = useState<Withdrawal[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [now, setNow] = useState(() => Date.now());
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(async () => {
+    const l = await api.listWithdrawals(pouch.id);
+    setList(l);
+    setLoaded(true);
+    onHeld(
+      l
+        .filter((w) => w.status === "holding" || w.status === "processing")
+        .reduce((sum, w) => sum + w.amount, 0),
+    );
+  }, [pouch.id, onHeld]);
+
+  // Withdrawals only change slowly, so poll every 30 s and tick the countdown each minute.
+  useEffect(() => {
+    void refresh().catch(() => {});
+    const poll = setInterval(() => void refresh().catch(() => {}), 30_000);
+    const tick = setInterval(() => setNow(Date.now()), 60_000);
+    return () => {
+      clearInterval(poll);
+      clearInterval(tick);
+      onHeld(0);
+    };
+  }, [refresh, onHeld]);
+
+  // Newest first from the backend: the live one wins, else the latest finished one.
+  const active = list.find((w) => w.status === "holding" || w.status === "processing");
+  const last = active ?? list.find((w) => w.status === "completed" || w.status === "failed");
+  const held = list
+    .filter((w) => w.status === "holding" || w.status === "processing")
+    .reduce((sum, w) => sum + w.amount, 0);
+  const maxAmount = toUsdc(Math.max(0, pouch.balance - held));
+
+  async function start(e: React.FormEvent) {
+    e.preventDefault();
+    const value = Number(amount);
+    if (!(value > 0)) return;
+    if (value > maxAmount) {
+      setError("This is more than the available balance.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.startWithdrawal({ pouchId: pouch.id, amount: toMicros(value) });
+      setAmount("");
+      await refresh();
+      await onDone();
+    } catch (err) {
+      setError(errMsg(err));
+      void refresh().catch(() => {});
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancel(id: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.cancelWithdrawal(id);
+      await refresh();
+      await onDone();
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className={card}>
+      <h2 className="mb-5 text-lg font-semibold tracking-tight">Withdraw</h2>
+      <ErrorBanner message={error} />
+      {!hasWallet ? (
+        <p className="text-sm text-[var(--muted)]">
+          A linked wallet is needed to withdraw money.
+        </p>
+      ) : !loaded ? (
+        <p className="text-sm text-[var(--muted)]" role="status">
+          Checking withdrawals…
+        </p>
+      ) : active?.status === "holding" ? (
+        <div className="space-y-4">
+          <div className="rounded bg-[var(--surface-raised)] p-5">
+            <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">
+              On hold
+            </p>
+            <p className="mt-2 text-3xl font-semibold tracking-tight">
+              {usd(toUsdc(active.amount))}
+            </p>
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              To {shorten(active.toWallet)}
+            </p>
+          </div>
+          {pouch.frozen && new Date(active.readyAt).getTime() <= now ? (
+            <p className="text-sm" role="status">
+              Paused while this pouch is frozen
+            </p>
+          ) : (
+            <p className="text-sm" role="status">
+              Releases {new Date(active.readyAt).toLocaleString()} ·{" "}
+              <span className="font-medium">
+                {timeLeft(new Date(active.readyAt).getTime() - now)}
+              </span>
+            </p>
+          )}
+          <button
+            className={btnSecondary}
+            disabled={busy}
+            onClick={() => void cancel(active.id)}
+          >
+            {busy ? "Cancelling…" : "Cancel withdrawal"}
+          </button>
+        </div>
+      ) : active ? (
+        <div className="space-y-4">
+          <p className="text-sm font-medium" role="status">
+            Sending to your wallet…
+          </p>
+          {now - new Date(active.readyAt).getTime() > 10 * 60_000 && (
+            <button
+              className={btnSecondary}
+              disabled={busy}
+              onClick={() => void cancel(active.id)}
+            >
+              {busy ? "Cancelling…" : "Cancel withdrawal"}
+            </button>
+          )}
+        </div>
+      ) : pouch.frozen ? (
+        <p className="text-sm text-[var(--muted)]">Unfreeze this pouch to withdraw.</p>
+      ) : (
+        <div className="space-y-4">
+          {last?.status === "completed" && (
+            <Notice>
+              {usd(toUsdc(last.amount))} USDC was sent to your wallet.
+              {last.txSignature && (
+                <>
+                  {" "}
+                  <a
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline"
+                    href={explorerUrl("tx", last.txSignature)}
+                  >
+                    View transaction ↗
+                  </a>
+                </>
+              )}
+            </Notice>
+          )}
+          {last?.status === "failed" && (
+            <ErrorBanner
+              message={`Your last withdrawal failed (${last.failReason ?? "rejected"}). No money left the pouch, so you can request again.`}
+            />
+          )}
+          <form onSubmit={start} className="space-y-4">
+            <div>
+              <label className={label} htmlFor="wd-amt">
+                Amount · USDC
+              </label>
+              <input
+                id="wd-amt"
+                className={input}
+                disabled={busy}
+                required
+                type="number"
+                min="0.01"
+                max={maxAmount}
+                step="0.01"
+                inputMode="decimal"
+                placeholder={`Up to ${usd(maxAmount)}`}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+            </div>
+            <p className="text-sm text-[var(--muted)]">
+              Withdrawals are held for 7 days for fraud checks. You can cancel any
+              time before then. Held money can&apos;t be spent.
+            </p>
+            <button
+              className={`${btnPrimary} w-full`}
+              disabled={busy || !(Number(amount) > 0)}
+              type="submit"
+            >
+              {busy ? "Requesting…" : "Request withdrawal"}
+            </button>
+          </form>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function PouchDetail() {
   const { id } = useParams<{ id: string }>();
   const [pouch, setPouch] = useState<Pouch | null>(null);
@@ -516,6 +739,7 @@ export default function PouchDetail() {
   const [missing, setMissing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [freezing, setFreezing] = useState(false);
+  const [heldMicros, setHeldMicros] = useState(0);
   const loadVersion = useRef(0);
   const merchantsLoaded = useRef(false);
 
@@ -657,6 +881,14 @@ export default function PouchDetail() {
               USDC balance
             </span>
           </p>
+          {heldMicros > 0 && (
+            <p className="num mt-1 text-sm text-[var(--muted)]">
+              <span className="text-[var(--ink)]">
+                {usd(toUsdc(Math.max(0, pouch.balance - heldMicros)))}
+              </span>{" "}
+              available to spend ({usd(toUsdc(heldMicros))} on hold)
+            </p>
+          )}
           <p className="num mt-1 text-sm text-[var(--muted)]">
             <span className="text-[var(--ink)]">{usd(toUsdc(available))}</span>{" "}
             left today of {usd(toUsdc(pouch.dailyLimit))} daily limit
@@ -687,6 +919,12 @@ export default function PouchDetail() {
         </button>
       )}
       <TopUpSection key={pouch.id} pouch={pouch} onDone={load} />
+      <WithdrawSection
+        key={`w-${pouch.id}`}
+        pouch={pouch}
+        onDone={load}
+        onHeld={setHeldMicros}
+      />
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(300px,1fr)]">
         <div className="min-w-0 space-y-6">
           <section className={card}>

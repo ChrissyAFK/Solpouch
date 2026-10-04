@@ -34,6 +34,12 @@ export class SyncedVaultClient implements VaultClient {
     return r;
   }
 
+  async withdraw(pouchId: string, amount: Micros, toWallet: string, operationId?: string) {
+    const r = await this.inner.withdraw(pouchId, amount, toWallet, operationId);
+    await this.refresh(pouchId).catch(() => { /* Chain result is authoritative; a later write or startup repairs the cache. */ });
+    return r;
+  }
+
   async pay(pouch: Pouch, merchantPayTo: string, amount: Micros, orderId: string) {
     const r = await this.inner.pay(pouch, merchantPayTo, amount, orderId);
     await this.refresh(pouch.id).catch(() => { /* Never turn a confirmed payment into a retryable payment failure. */ });

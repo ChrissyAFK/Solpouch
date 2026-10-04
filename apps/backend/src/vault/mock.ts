@@ -44,6 +44,19 @@ export class MockVaultClient implements VaultClient {
     return { txSignature };
   }
 
+  async withdraw(pouchId: string, amount: Micros, _toWallet: string, operationId?: string) {
+    const key = operationId ? `withdraw:${operationId}` : undefined;
+    const previous = key && this.outcomes.get(key);
+    if (previous) return { txSignature: previous };
+    const p = await this.mustGet(pouchId);
+    if (amount > p.balance) throw new VaultRejected("InsufficientFunds");
+    p.balance -= amount;
+    await this.store.savePouch(p);
+    const txSignature = sig();
+    if (key) this.outcomes.set(key, txSignature);
+    return { txSignature };
+  }
+
   async pay(pouch: Pouch, merchantPayTo: string, amount: Micros, orderId: string) {
     const key = `pay:${orderId}`;
     const previous = this.outcomes.get(key);

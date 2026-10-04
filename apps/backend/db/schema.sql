@@ -153,6 +153,37 @@ CREATE TABLE IF NOT EXISTS vault_operations (
   last_valid_block_height bigint NOT NULL,
   created_at timestamptz NOT NULL
 );
+-- Widen (additive): withdrawals journal their chain transaction as kind 'withdraw'.
+DO $$
+DECLARE def text;
+BEGIN
+  SELECT pg_get_constraintdef(oid) INTO def FROM pg_constraint
+    WHERE conname = 'vault_operations_kind_check' AND conrelid = 'vault_operations'::regclass;
+  IF def IS NULL OR def NOT LIKE '%withdraw%' THEN
+    IF def IS NOT NULL THEN
+      ALTER TABLE vault_operations DROP CONSTRAINT vault_operations_kind_check;
+    END IF;
+    ALTER TABLE vault_operations ADD CONSTRAINT vault_operations_kind_check CHECK (kind IN ('pay', 'topup', 'withdraw'));
+  END IF;
+END $$;
+
+-- Delayed withdrawals to the owner's linked wallet (same shape as topups).
+CREATE TABLE IF NOT EXISTS withdrawals (
+  id            text NOT NULL,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  pouch_id      text NOT NULL REFERENCES pouches(id),
+  amount        bigint NOT NULL,
+  reason        text NOT NULL,
+  to_wallet     text NOT NULL,
+  status        text NOT NULL,
+  ready_at      timestamptz NOT NULL,
+  tx_signature  text,
+  fail_reason   text,
+  version       bigint NOT NULL DEFAULT 0,
+  PRIMARY KEY (id, created_at)
+);
+SELECT create_hypertable('withdrawals', 'created_at', if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS withdrawals_status_ready_idx ON withdrawals(status, ready_at);
 CREATE TABLE IF NOT EXISTS auth_challenges (
   id text PRIMARY KEY,
   wallet text NOT NULL,

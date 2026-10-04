@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import type { Order, TopUp } from "@solpouch/shared";
+import type { Order, TopUp, Withdrawal } from "@solpouch/shared";
 import { HttpError } from "../services/orders.js";
 import { StoreConflictError, sameOperation, validateRateLimit, type Store, type StoredPouch, type UserProfile, type VaultOperation, type AuthChallenge, type UserPatch } from "./types.js";
 
@@ -22,6 +22,9 @@ function toOrder(r: Row): Order {
 }
 function toTopUp(r: Row): TopUp {
   return { id: r.id, pouchId: r.pouch_id, amount: Number(r.amount), reason: r.reason, status: r.status, readyAt: iso(r.ready_at), createdAt: iso(r.created_at), version: Number(r.version), ...(r.from_wallet ? { fromWallet: r.from_wallet } : {}), ...(r.fail_reason ? { failReason: r.fail_reason } : {}), ...(r.tx_signature ? { txSignature: r.tx_signature } : {}) };
+}
+function toWithdrawal(r: Row): Withdrawal {
+  return { id: r.id, pouchId: r.pouch_id, amount: Number(r.amount), reason: r.reason, toWallet: r.to_wallet, status: r.status, readyAt: iso(r.ready_at), createdAt: iso(r.created_at), version: Number(r.version), ...(r.fail_reason ? { failReason: r.fail_reason } : {}), ...(r.tx_signature ? { txSignature: r.tx_signature } : {}) };
 }
 function toOperation(r: Row): VaultOperation {
   return { id: r.id, kind: r.kind, pouchId: r.pouch_id, txSignature: r.tx_signature, signedTransaction: r.signed_transaction, lastValidBlockHeight: Number(r.last_valid_block_height), createdAt: iso(r.created_at) };
@@ -127,7 +130,7 @@ export class PostgresStore implements Store {
   }
   withPouchLock<T>(id: string, fn: () => Promise<T>) { return this.lock(`pouch:${id}`, fn); }
 
-  private async save(table: "pouches" | "orders" | "topups", record: { id: string; version?: number; createdAt?: string }, fields: Record<string, unknown>): Promise<Row> {
+  private async save(table: "pouches" | "orders" | "topups" | "withdrawals", record: { id: string; version?: number; createdAt?: string }, fields: Record<string, unknown>): Promise<Row> {
     // Timescale's primary keys include created_at. Serialize by logical ID so a
     // changed timestamp cannot create a second object with the same public ID.
     return this.lock(`record:${table}:${record.id}`, async () => {
@@ -170,6 +173,11 @@ export class PostgresStore implements Store {
   async getTopUp(id: string) { const { rows } = await this.query("SELECT * FROM topups WHERE id=$1 ORDER BY created_at DESC LIMIT 1", [id]); return rows[0] ? toTopUp(rows[0]) : undefined; }
   async listTopUps(pouchId: string) { return (await this.query("SELECT * FROM topups WHERE pouch_id=$1 ORDER BY created_at DESC", [pouchId])).rows.map(toTopUp); }
   async saveTopUp(t: TopUp) { return toTopUp(await this.save("topups", t, { created_at: t.createdAt, pouch_id: t.pouchId, amount: t.amount, reason: t.reason, status: t.status, ready_at: t.readyAt, tx_signature: t.txSignature ?? null, from_wallet: t.fromWallet ?? null, fail_reason: t.failReason ?? null })); }
+
+  async getWithdrawal(id: string) { const { rows } = await this.query("SELECT * FROM withdrawals WHERE id=$1 ORDER BY created_at DESC LIMIT 1", [id]); return rows[0] ? toWithdrawal(rows[0]) : undefined; }
+  async listWithdrawals(pouchId: string) { return (await this.query("SELECT * FROM withdrawals WHERE pouch_id=$1 ORDER BY created_at DESC", [pouchId])).rows.map(toWithdrawal); }
+  async listDueWithdrawals(now: Date) { return (await this.query("SELECT * FROM withdrawals WHERE status IN ('holding','processing') AND ready_at <= $1 ORDER BY ready_at", [now.toISOString()])).rows.map(toWithdrawal); }
+  async saveWithdrawal(w: Withdrawal) { return toWithdrawal(await this.save("withdrawals", w, { created_at: w.createdAt, pouch_id: w.pouchId, amount: w.amount, reason: w.reason, to_wallet: w.toWallet, status: w.status, ready_at: w.readyAt, tx_signature: w.txSignature ?? null, fail_reason: w.failReason ?? null })); }
 
   async getUser(email: string) { const { rows } = await this.query("SELECT * FROM users WHERE email=$1", [email]); return rows[0] ? toUser(rows[0]) : undefined; }
   async findUserByWallet(wallet: string) { const { rows } = await this.query("SELECT * FROM users WHERE wallet=$1", [wallet]); return rows[0] ? toUser(rows[0]) : undefined; }
