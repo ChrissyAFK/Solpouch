@@ -19,9 +19,11 @@ const usd = (m: number) => `$${toUsdc(m).toFixed(2)}`;
 let warned = false;
 export const VOICE_CONFIRM_MIN_AGE_MS = 4000;
 
+const price = (l: Order["lines"][number]) => (l.product?.estimated ? `about ${usd(l.lineTotal)}, estimated` : usd(l.lineTotal));
+
 function itemsReadback(order: Order): string {
   const merchant = getMerchant(order.merchantId)?.name ?? "the merchant";
-  const parts = order.lines.map((l) => (l.product ? `${l.qty} ${l.product.name}, ${usd(l.lineTotal)}` : `${l.requested}: nothing found`));
+  const parts = order.lines.map((l) => (l.product ? `${l.qty} ${l.product.name}, ${price(l)}` : `${l.requested}: nothing found`));
   return `From ${merchant}: ${parts.join("; ")}. Total ${usd(order.total)}.`;
 }
 
@@ -32,7 +34,7 @@ export function readback(order: Order): string {
   const parts = order.lines.map((l) => {
     if (!l.product) return `${l.requested}: nothing found`;
     const sub = l.substitution ? ` as a substitute. ${l.note ?? ""}`.trimEnd() : "";
-    return `${l.qty} ${l.product.name}, ${usd(l.lineTotal)}${sub}`;
+    return `${l.qty} ${l.product.name}, ${price(l)}${sub}`;
   });
   if (order.fulfillment?.via === "demo" && order.fulfillment.demo) {
     const demo = order.fulfillment.demo;
@@ -125,7 +127,7 @@ export function voiceRoutes(deps: Deps) {
           }
           return c.json({ say: readback(order), orderId: order.id, version: order.version, total: usd(order.total), needsConfirmation: !isCheckoutReference(order), checkoutRequired: isCheckoutReference(order) });
         } catch (e) {
-          if (e instanceof HttpError) return c.json({say:e.message,needsConfirmation:false,...(e.code ? {code:e.code}: {})});
+          if (e instanceof HttpError) return c.json({ say: e.message, needsConfirmation: false, ...(e.code === "NeedClarification" ? { needsAnswer: true } : {}), ...(e.code ? { code: e.code } : {}) });
           throw e;
         }
       }
