@@ -317,6 +317,9 @@
         },
         {
           "name": "merchant_token",
+          "docs": [
+            "Must be the canonical ATA of an allowlisted merchant (checked in the handler)."
+          ],
           "writable": true
         },
         {
@@ -728,6 +731,45 @@
       ]
     },
     {
+      "name": "PouchClosed",
+      "discriminator": [
+        7,
+        26,
+        23,
+        202,
+        70,
+        178,
+        227,
+        141
+      ]
+    },
+    {
+      "name": "PouchCreated",
+      "discriminator": [
+        68,
+        216,
+        178,
+        83,
+        69,
+        109,
+        53,
+        12
+      ]
+    },
+    {
+      "name": "RulesSet",
+      "discriminator": [
+        202,
+        104,
+        215,
+        176,
+        23,
+        71,
+        106,
+        72
+      ]
+    },
+    {
       "name": "ToppedUp",
       "discriminator": [
         97,
@@ -812,6 +854,36 @@
       "code": 6008,
       "name": "VaultNotEmpty",
       "msg": "Vault must be empty to close the pouch"
+    },
+    {
+      "code": 6009,
+      "name": "ZeroAmount",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6010,
+      "name": "ZeroLimit",
+      "msg": "Per-order and daily limits must be greater than zero"
+    },
+    {
+      "code": 6011,
+      "name": "PerOrderOverDaily",
+      "msg": "Per-order limit exceeds the daily limit"
+    },
+    {
+      "code": 6012,
+      "name": "AgentIsOwner",
+      "msg": "Agent key must differ from the owner"
+    },
+    {
+      "code": 6013,
+      "name": "DuplicateMerchant",
+      "msg": "Allowed merchants contain a duplicate"
+    },
+    {
+      "code": 6014,
+      "name": "MerchantTokenNotAta",
+      "msg": "Merchant token account is not the merchant's associated token account"
     }
   ],
   "types": [
@@ -924,6 +996,58 @@
       }
     },
     {
+      "name": "PouchClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pouch",
+            "type": "pubkey"
+          },
+          {
+            "name": "time",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PouchCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pouch",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "agent",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "max_per_order",
+            "type": "u64"
+          },
+          {
+            "name": "daily_limit",
+            "type": "u64"
+          },
+          {
+            "name": "time",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "Receipt",
       "type": {
         "kind": "struct",
@@ -939,6 +1063,49 @@
           {
             "name": "amount",
             "type": "u64"
+          },
+          {
+            "name": "time",
+            "type": "i64"
+          },
+          {
+            "name": "order_id",
+            "docs": [
+              "Client order id; also the receipt PDA seed. Appended last so older fields keep their offsets."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "RulesSet",
+      "docs": [
+        "Emitted with the rules in effect after `set_rules` (unchanged fields included)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pouch",
+            "type": "pubkey"
+          },
+          {
+            "name": "max_per_order",
+            "type": "u64"
+          },
+          {
+            "name": "daily_limit",
+            "type": "u64"
+          },
+          {
+            "name": "merchant_count",
+            "type": "u8"
           },
           {
             "name": "time",
@@ -959,6 +1126,10 @@
           {
             "name": "amount",
             "type": "u64"
+          },
+          {
+            "name": "time",
+            "type": "i64"
           }
         ]
       }
@@ -987,6 +1158,10 @@
           {
             "name": "amount",
             "type": "u64"
+          },
+          {
+            "name": "time",
+            "type": "i64"
           }
         ]
       }
