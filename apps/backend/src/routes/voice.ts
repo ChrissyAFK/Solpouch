@@ -1,5 +1,5 @@
 import { prepareDemoCheckout } from "../services/demoCheckout.js";
-import { SCRIPT_UNDER_15_SAY, scriptedDemoMatch } from "../services/demoScript.js";
+import { SCRIPT_UNDER_15_SAY, demoVoiceRequest, scriptedDemoMatch } from "../services/demoScript.js";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { consumeBudget, clientIp } from "../security/rateLimit.js";
@@ -91,6 +91,7 @@ export function voiceRoutes(deps: Deps) {
       }
       case "create_order": {
         const b = requestBody.parse(body);
+        b.request = demoVoiceRequest(b.request);
         try {
           const { order, autoPaid, autoPayError } = await createOrder(deps, email, b.request, b.pouchId, { autoPay: false });
           if (autoPaid) {

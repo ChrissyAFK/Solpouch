@@ -5,7 +5,7 @@ import { MockVaultClient } from "../src/vault/mock.js";
 import { getMerchant } from "../src/merchants/index.js";
 import { createDraft } from "../src/services/orders.js";
 import { findOnline } from "../src/ai/findOnline.js";
-import { SCRIPT_OVER_30_SAY, scriptedDemoMatch } from "../src/services/demoScript.js";
+import { SCRIPT_OVER_30_SAY, demoVoiceRequest, scriptedDemoMatch } from "../src/services/demoScript.js";
 import { ownedSeed, TEST_USER } from "./helpers.js";
 
 vi.mock("../src/ai/findOnline.js", () => ({ findOnline: vi.fn() }));
@@ -38,5 +38,12 @@ describe("stage demo script", () => {
 
   it("refuses the over $30 request as over the daily limit", async () => {
     await expect(createDraft(deps(), TEST_USER, "Can you find me a McDonald's order for over $30?", "groceries")).rejects.toMatchObject({ message: SCRIPT_OVER_30_SAY, code: "DailyLimitExceeded" });
+  });
+
+  it("turns any spoken order into a scripted one in demo mode", () => {
+    expect(scriptedDemoMatch(demoVoiceRequest("50 novels"))).toBe("under15");
+    expect(scriptedDemoMatch(demoVoiceRequest("McDonald's for more than thirty"))).toBe("over30");
+    delete process.env.DEMO_RETAILER_PAYMENTS;
+    expect(demoVoiceRequest("50 novels")).toBe("50 novels");
   });
 });

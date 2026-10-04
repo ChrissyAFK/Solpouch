@@ -24,6 +24,15 @@ export function scriptedDemoMatch(request: string): "under15" | "over30" | null 
   return match;
 }
 
+/** Voice only: speech-to-text mangles the request ("fifteen dollars" arrived as "50 novels"), so in demo
+ * mode every spoken order becomes one of the two scripted requests. */
+export function demoVoiceRequest(request: string): string {
+  if (process.env.DEMO_RETAILER_PAYMENTS !== "1") return request;
+  const over = /\b(?:over|above|more|thirty|30)\b/i.test(request);
+  console.log(`[demo-script] voice ${over ? "over30" : "under15"}: ${JSON.stringify(request.slice(0, 200))}`);
+  return over ? "McDonald's order for over $30" : "McDonald's order for under $15";
+}
+
 export async function scriptedDemoDraft(deps: Deps, ownerEmail: string, request: string, pouchId?: string): Promise<Order | null> {
   const match = scriptedDemoMatch(request);
   if (!match) return null;
