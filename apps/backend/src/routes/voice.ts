@@ -19,12 +19,14 @@ const usd = (m: number) => `$${toUsdc(m).toFixed(2)}`;
 let warned = false;
 export const VOICE_CONFIRM_MIN_AGE_MS = 4000;
 
-const price = (l: Order["lines"][number]) => (l.product?.estimated ? `about ${usd(l.lineTotal)}, estimated` : usd(l.lineTotal));
+// Items are read without per-line prices; only the total is spoken.
+const estimated = (order: Order) => order.lines.some((l) => l.product?.estimated);
+const total = (order: Order) => `${estimated(order) ? "Estimated total" : "Total"} ${usd(order.total)}`;
 
 function itemsReadback(order: Order): string {
   const merchant = getMerchant(order.merchantId)?.name ?? "the merchant";
-  const parts = order.lines.map((l) => (l.product ? `${l.qty} ${l.product.name}, ${price(l)}` : `${l.requested}: nothing found`));
-  return `From ${merchant}: ${parts.join("; ")}. Total ${usd(order.total)}.`;
+  const parts = order.lines.map((l) => (l.product ? `${l.qty} ${l.product.name}` : `${l.requested}: nothing found`));
+  return `From ${merchant}: ${parts.join("; ")}. ${total(order)}.`;
 }
 
 const PENDING_SAY = "I sent that payment but can't confirm it yet, so it may have gone through. Don't start a new order. In a minute I can confirm this same order again; that only checks it and never pays twice.";
@@ -34,10 +36,9 @@ export function readback(order: Order): string {
   const parts = order.lines.map((l) => {
     if (!l.product) return `${l.requested}: nothing found`;
     const sub = l.substitution ? ` as a substitute. ${l.note ?? ""}`.trimEnd() : "";
-    return `${l.qty} ${l.product.name}, ${price(l)}${sub}`;
+    return `${l.qty} ${l.product.name}${sub}`;
   });
   if (order.fulfillment?.via === "demo" && order.fulfillment.demo) {
-    const demo = order.fulfillment.demo;
     // The cart was already read back by create_order; only ask for the pouch amount, which differs from the CAD estimate.
     return `Do you approve this payment of $${toUsdc(order.total).toFixed(2)} from your pouch?`;
   }
@@ -46,7 +47,7 @@ export function readback(order: Order): string {
     if (demoCheckoutEnabled()) return `From ${merchant}: ${parts.join("; ")}. ${est ? "Estimated total" : "Total"} CAD ${usd(order.total)}.${est ? " Prices are estimates." : ""} Want me to pay for it from your pouch?`;
     return `From ${merchant}: ${parts.join("; ")}. ${est ? "Estimated total" : "Total"} CAD ${usd(order.total)}. ${est ? "This is a search estimate only. Check current prices and complete" : "Complete"} checkout with the retailer using the link on the order page. Solpouch has not placed an order.`;
   }
-  return `From ${merchant}: ${parts.join("; ")}. Total ${usd(order.total)}. Should I place it?`;
+  return `From ${merchant}: ${parts.join("; ")}. ${total(order)}. Should I place it?`;
 }
 
 const requestBody = z.object({ request: z.string().min(1).max(1000), pouchId: z.string().max(100).optional(), user_token: z.string().optional() });

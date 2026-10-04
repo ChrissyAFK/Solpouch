@@ -20,11 +20,12 @@ afterEach(() => {
 });
 
 describe("voice readback", () => {
-  it("says which prices are estimates", () => {
+  it("lists the items with only the final price", () => {
     setEnv(false);
     const say = readback(order([line("Tenders Combo", 11_990_000, false), line("Biscuit", 1_990_000, true)]));
-    expect(say).toContain("1 Tenders Combo, $11.99");
-    expect(say).toContain("1 Biscuit, about $1.99, estimated");
+    expect(say).toContain("1 Tenders Combo; 1 Biscuit.");
+    expect(say).toContain("Estimated total CAD $13.98.");
+    expect(say).not.toMatch(/\$11\.99|\$1\.99/);
   });
   it("keeps the retailer wording when checkout is not enabled", () => {
     setEnv(false);
