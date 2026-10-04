@@ -36,5 +36,8 @@ pub fn handler(
         require!(m.len() <= MAX_MERCHANTS, VaultError::TooManyMerchants);
         p.allowed_merchants = m;
     }
+    if agent.is_some() || !p.allowed_merchants.is_empty() {
+        crate::logic::check_merchants(&p.agent, &p.allowed_merchants).map_err(|e| error!(e))?;
+    }
     Ok(())
 }

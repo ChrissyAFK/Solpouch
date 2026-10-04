@@ -30,6 +30,7 @@ pub struct TopUp<'info> {
 }
 
 pub fn handler(ctx: Context<TopUp>, amount: u64) -> Result<()> {
+    require!(amount > 0, crate::errors::VaultError::ZeroAmount);
     transfer(
         CpiContext::new(
             ctx.accounts.token_program.key(),

@@ -7,6 +7,7 @@ import {
   createMint,
   createAccount,
   mintTo,
+  transfer,
   getAccount,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
@@ -117,16 +118,18 @@ describe("solpouch_vault", () => {
   });
 
   it("agent cannot top up", async () => {
+    let failed = false;
     try {
       await program.methods
         .topUp(new BN(1))
         .accounts({ owner: agent.publicKey, pouch, vault, ownerToken, tokenProgram: TOKEN_PROGRAM_ID })
         .signers([agent])
         .rpc();
-      assert.fail("expected failure");
     } catch (e) {
-      assert.notInclude(String(e), "expected failure");
+      failed = true;
+      assert.match(String(e), /ConstraintHasOne|Unauthorized|2001/);
     }
+    assert.isTrue(failed, "expected agent top up to fail");
   });
 
   it("agent pays an allowed merchant", async () => {
@@ -144,16 +147,18 @@ describe("solpouch_vault", () => {
 
   it("rejects a reused order_id", async () => {
     const id = orderId(1);
+    let failed = false;
     try {
       await program.methods
         .pay(new BN(1_000), id)
         .accounts(payAccounts(id))
         .signers([agent])
         .rpc();
-      assert.fail("expected failure");
     } catch (e) {
-      assert.notInclude(String(e), "expected failure");
+      failed = true;
+      assert.match(String(e), /already in use/i);
     }
+    assert.isTrue(failed, "expected reused order_id to fail");
   });
 
   it("rejects over the per-order limit", async () => {
@@ -198,16 +203,59 @@ describe("solpouch_vault", () => {
     await program.methods.pay(new BN(1_000), id).accounts(payAccounts(id)).signers([agent]).rpc();
   });
 
-  it("owner withdraws and closes the pouch", async () => {
+  it("rejects a zero-amount payment", async () => {
+    const id = orderId(7);
+    await expectError(
+      program.methods.pay(new BN(0), id).accounts(payAccounts(id)).signers([agent]).rpc(),
+      "ZeroAmount"
+    );
+  });
+
+  it("rejects create_pouch when the agent is an allowed merchant", async () => {
+    const name2 = "badagent";
+    const pouch2 = PublicKey.findProgramAddressSync(
+      [Buffer.from("pouch"), owner.publicKey.toBuffer(), nameBytes(name2)],
+      program.programId
+    )[0];
+    const vault2 = PublicKey.findProgramAddressSync(
+      [Buffer.from("vault"), pouch2.toBuffer()],
+      program.programId
+    )[0];
+    await expectError(
+      program.methods
+        .createPouch(Array.from(nameBytes(name2)), agent.publicKey, new BN(100_000), new BN(250_000), [
+          merchant.publicKey,
+          agent.publicKey,
+        ])
+        .accounts({
+          owner: owner.publicKey,
+          mint,
+          pouch: pouch2,
+          vault: vault2,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc(),
+      "AgentIsMerchant"
+    );
+  });
+
+  it("owner closes the pouch even with dust left in the vault", async () => {
     const left = (await getAccount(provider.connection, vault)).amount;
     await program.methods
       .withdraw(new BN(left.toString()))
       .accounts({ owner: owner.publicKey, pouch, vault, ownerToken, tokenProgram: TOKEN_PROGRAM_ID })
       .rpc();
+    // anyone can send dust to the vault; close must still succeed and sweep it to the owner
+    await transfer(provider.connection, owner, ownerToken, vault, owner, 5);
+    const before = (await getAccount(provider.connection, ownerToken)).amount;
     await program.methods
       .closePouch()
-      .accounts({ owner: owner.publicKey, pouch, vault, tokenProgram: TOKEN_PROGRAM_ID })
+      .accounts({ owner: owner.publicKey, pouch, vault, ownerToken, tokenProgram: TOKEN_PROGRAM_ID })
       .rpc();
     assert.isNull(await provider.connection.getAccountInfo(pouch));
+    assert.isNull(await provider.connection.getAccountInfo(vault));
+    const after = (await getAccount(provider.connection, ownerToken)).amount;
+    assert.equal((after - before).toString(), "5");
   });
 });

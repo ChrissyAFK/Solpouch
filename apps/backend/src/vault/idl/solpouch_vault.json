@@ -812,6 +812,21 @@
       "code": 6008,
       "name": "VaultNotEmpty",
       "msg": "Vault must be empty to close the pouch"
+    },
+    {
+      "code": 6009,
+      "name": "ZeroAmount",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6010,
+      "name": "AgentIsMerchant",
+      "msg": "The agent key cannot be an allowed merchant"
+    },
+    {
+      "code": 6011,
+      "name": "DuplicateMerchant",
+      "msg": "Duplicate merchant in the allowlist"
     }
   ],
   "types": [

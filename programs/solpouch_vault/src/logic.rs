@@ -23,6 +23,9 @@ pub fn check_pay(
     if s.frozen {
         return Err(VaultError::PouchFrozen);
     }
+    if amount == 0 {
+        return Err(VaultError::ZeroAmount);
+    }
     if !s.allowed_merchants.contains(merchant) {
         return Err(VaultError::MerchantNotAllowed);
     }
@@ -44,9 +47,39 @@ pub fn check_pay(
     Ok((new_spent, day_start))
 }
 
+/// The agent must not be an allowed merchant and the list must have no duplicates.
+pub fn check_merchants(agent: &Pubkey, merchants: &[Pubkey]) -> Result<(), VaultError> {
+    for (i, m) in merchants.iter().enumerate() {
+        if m == agent {
+            return Err(VaultError::AgentIsMerchant);
+        }
+        if merchants[..i].contains(m) {
+            return Err(VaultError::DuplicateMerchant);
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zero_amount_rejected() {
+        let a = [m()];
+        assert_eq!(check_pay(&state(&a), &m(), 0, 1_000, 1_100), Err(VaultError::ZeroAmount));
+    }
+
+    #[test]
+    fn merchants_validation() {
+        let agent = Pubkey::new_from_array([1; 32]);
+        let x = Pubkey::new_from_array([2; 32]);
+        let y = Pubkey::new_from_array([3; 32]);
+        assert_eq!(check_merchants(&agent, &[]), Ok(()));
+        assert_eq!(check_merchants(&agent, &[x, y]), Ok(()));
+        assert_eq!(check_merchants(&agent, &[x, agent]), Err(VaultError::AgentIsMerchant));
+        assert_eq!(check_merchants(&agent, &[x, y, x]), Err(VaultError::DuplicateMerchant));
+    }
 
     fn m() -> Pubkey {
         Pubkey::new_from_array([7; 32])
