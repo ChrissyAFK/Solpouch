@@ -555,38 +555,156 @@ h1 {
 .sp-progress > .progress-high {
   background: var(--warn);
 }
-.wallet-metrics {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 40px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--line);
+/* Stat tiles: one stat pattern (label / figure / sub-line), two sizes. */
+.wallet-metrics,
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+@media (min-width: 600px) {
+  .wallet-metrics,
+  .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 900px) {
+  .wallet-metrics,
+  .stat-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 .wallet-metric {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 10px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 20px 22px;
 }
-.wallet-metric p {
+.stat-label {
   margin: 0;
   font-size: var(--text-sm);
   color: var(--muted);
 }
-.wallet-metric > strong {
+.stat-figure {
+  margin: 0;
   font-family: var(--font-mono);
-  font-size: var(--text-lg);
+  font-size: var(--text-3xl);
+  line-height: 1.1;
   font-weight: 600;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  overflow-wrap: anywhere;
 }
-.wallet-metric > strong > span {
+.stat-sub {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+.stat-bar {
+  height: 4px;
+  width: 100%;
+  margin-top: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--track);
+}
+.stat-bar > div {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--solana-purple);
+}
+.stat-bar.is-high > div {
+  background: var(--warn);
+}
+/* Smaller size of the same pattern, used inside the spending card. */
+.stat-grid-sm {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+}
+@media (min-width: 700px) {
+  .stat-grid-sm {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 24px;
+  }
+}
+.stat-grid-sm .stat-figure {
+  font-size: var(--text-2xl);
+}
+.stat-grid-sm .stat-figure small {
+  font-size: var(--text-sm);
   font-weight: 400;
   color: var(--muted);
 }
-.wallet-metric > span {
+.stat-grid-sm > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.sp-insights .section-heading {
+  margin-bottom: 18px;
+}
+.sp-insights-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sp-insights-rows > li {
+  padding: 16px 0;
+}
+.sp-insights-rows > li + li {
+  border-top: 1px solid var(--line);
+}
+.sp-insights-rows > li:last-child {
+  padding-bottom: 0;
+}
+.sp-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 16px;
+}
+.sp-row-pairs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+  margin: 12px 0 0;
   font-size: var(--text-sm);
+}
+@media (min-width: 700px) {
+  .sp-row-pairs {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.sp-row-pairs dt {
   color: var(--muted);
+}
+.sp-row-pairs dd {
+  margin: 2px 0 0;
+}
+.sp-footnote {
+  margin: 16px 0 0;
+  max-width: 80ch;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--muted);
+}
+@media (max-width: 479px) {
+  .page-heading {
+    flex-wrap: wrap;
+  }
+  .page-heading > a {
+    width: 100%;
+  }
 }
 .wallet-section {
   margin-top: 28px;

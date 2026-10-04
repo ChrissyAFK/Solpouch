@@ -18,6 +18,9 @@ import idlJson from "./vault/idl/solpouch_vault.json" with { type: "json" };
 export const INDEXER_CURSOR = "solpouch_vault";
 const COMMITMENT: Finality = "confirmed";
 const PAGE = 1000;
+/** Polls to wait for a signature's transaction/meta before giving up on it. */
+/** How long a transaction may keep returning incomplete RPC data before it is skipped. */
+export const INCOMPLETE_GIVE_UP_MS = 10 * 60_000;
 
 /** The RPC surface the indexer uses (a web3.js Connection satisfies it). */
 export type IndexerConnection = Pick<Connection, "getSignaturesForAddress" | "getTransaction" | "onLogs" | "removeOnLogsListener">;
@@ -188,6 +191,8 @@ export class VaultIndexer {
   private again = false;
   private started = false;
   private stopped = false;
+  /** When each signature first returned incomplete RPC data (in memory). */
+  private incompleteSince = new Map<string, number>();
   private listener?: number;
   private timer?: ReturnType<typeof setInterval>;
 
@@ -259,11 +264,21 @@ export class VaultIndexer {
       if (this.stopped) break;
       if (!sig.err) {
         const tx = await connection.getTransaction(sig.signature, { commitment: COMMITMENT, maxSupportedTransactionVersion: 0 });
-        // Not yet served by this RPC node: stop and retry later without moving the cursor.
-        if (!tx) throw new Error(`transaction ${sig.signature} is not available yet`);
-        if (!tx.meta?.err) {
-          const rows = await toRows({ signature: sig.signature, slot: tx.slot, blockTime: tx.blockTime ?? sig.blockTime }, this.decode(tx.meta?.logMessages ?? []), lookup, this.log);
-          if (rows.events.length) inserted += await store.recordVaultEvents(rows.events, rows.payments);
+        // Missing transaction or metadata is an incomplete response: stop and retry later without moving the cursor.
+        if (!tx || !tx.meta || (!tx.meta.err && !tx.meta.logMessages)) {
+          const since = this.incompleteSince.get(sig.signature) ?? Date.now();
+          if (Date.now() - since < INCOMPLETE_GIVE_UP_MS) {
+            this.incompleteSince.set(sig.signature, since);
+            throw new Error(`transaction ${sig.signature} is not available yet`);
+          }
+          this.incompleteSince.delete(sig.signature);
+          this.log(`[indexer] WARNING: giving up on transaction ${sig.signature} after ${Math.round((Date.now() - since) / 60_000)} minutes of incomplete RPC data (${!tx ? "no transaction" : "no meta/logs"}); its events are NOT indexed.`);
+        } else {
+          this.incompleteSince.delete(sig.signature);
+          if (!tx.meta.err) {
+            const rows = await toRows({ signature: sig.signature, slot: tx.slot, blockTime: tx.blockTime ?? sig.blockTime }, this.decode(tx.meta.logMessages ?? []), lookup, this.log);
+            if (rows.events.length) inserted += await store.recordVaultEvents(rows.events, rows.payments);
+          }
         }
       }
       await store.saveIndexerCursor(INDEXER_CURSOR, { signature: sig.signature, slot: sig.slot });

@@ -18,8 +18,9 @@ export default function TermsPage() {
       </p>
       <h2>Approval</h2>
       <p>
-        The assistant never pays without your approval. An order is paid only
-        after the owner approves it.
+        An order is paid only after the owner approves it, unless the owner
+        set a pouch to pay small exact matches automatically. Voice and chat
+        orders always wait for approval. Pouch limits always apply.
       </p>
       <h2>Your wallet</h2>
       <p>

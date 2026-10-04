@@ -8,6 +8,7 @@ import { useSearchParams } from "next/navigation";
 import type { Merchant, Order, Pouch } from "@solpouch/shared";
 import { isCheckoutReference, orderCurrency, toUsdc } from "@solpouch/shared";
 import { api, ApiRequestError, errMsg } from "@/lib/api";
+import { explorerTxUrl } from "@/lib/explorer";
 import { useAuth } from "@/components/AuthProvider";
 import { getToken } from "@/lib/session";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
@@ -554,12 +555,11 @@ function OrderWorkspace() {
                       </div>
                     )}
                     <div className={s.receiptFoot}>
-                      {order.txSignature &&
-                      !order.txSignature.startsWith("mock") ? (
+                      {explorerTxUrl(order.txSignature) ? (
                         <a
                           target="_blank"
                           rel="noopener noreferrer"
-                          href={`https://explorer.solana.com/tx/${encodeURIComponent(order.txSignature)}?cluster=devnet`}
+                          href={explorerTxUrl(order.txSignature)!}
                         >
                           View on Solana Explorer
                         </a>

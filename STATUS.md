@@ -1,6 +1,6 @@
 # Status
 
-Current local integration: `codex/integrate-audit` combines shopping/funding work with `fix/audit-2`. See [AUDIT_INTEGRATION.md](docs/AUDIT_INTEGRATION.md) for corrections and current verification. Nothing from this integration has been pushed or deployed.
+**Current state (2026-10-03 night):** every branch is merged into `scaffold`, and `main` is fast-forwarded to it. The merged code is deployed at solpouch.tech with the vault program upgraded on devnet; see the last section of this file for the release facts and what is still unverified. `GET /health` on the API returns the running commit as `release`. Sections in between are history and may describe earlier states.
 
 US/Canada wallet funding has a gated staging integration on `codex/bank-funding`. See [BANK_FUNDING.md](docs/BANK_FUNDING.md) for setup, verification boundaries and the remaining mainnet work. No live bank transfers or automatic pouch credits are enabled.
 
@@ -70,7 +70,7 @@ Second pass (branch `fix/audit-2`, built in the `Solpouch-fix` worktree; backend
 - `spentToday` follows the chain's rolling 24 hours (`pouches.spent_since`, additive column).
 - `confirmAbove`: 0 asks before every order; above 0, orders at or under it skip the 4-second voice wait (still a separate confirm call, nothing auto-pays). The pouch form has an "Ask before paying" field. `voice/prompt.md` gained one sentence; the live ElevenLabs agent prompt has not been re-synced.
 
-Still open from the audit: `apps/web/test/auth-voice.browser.mjs` still drives the old wallet-login flow. The production backend runs `tsx watch` from this checkout, so saving a backend file reloads the live API.
+Still open from the audit: `apps/web/test/auth-voice.browser.mjs` still drives the old wallet-login flow.
 
 ## Not done yet
 
@@ -147,5 +147,20 @@ The public product page lives at `/`. The existing demo overview moved to `/dash
 - Vault program upgraded in place on devnet (slot 507237576). Use `anchor upgrade --program-id <id> --provider.cluster devnet target/deploy/solpouch_vault.so`: `solana program deploy` rejects the SBPF v3 build, and `target/deploy` in a fresh worktree holds a new keypair, so plain `anchor deploy` would create a second program. The program account was extended by 16384 bytes first.
 - Startup rule re-sync (push stored rules on chain when they differ) only runs with `RESYNC_RULES_ON_START=1`.
 - Profile has a Preferences card: appearance (auto, light, dark), motion, text size, saved per browser under `solpouch.prefs`. The landing page stays dark (`.force-dark`).
-- Production: backend `tsx watch` on 8787 and `next start` on 3019 from this checkout on `scaffold`; logs in `backend-run.log` and `web-run.log`.
-- Not verified: the Preferences card and light theme on signed-in pages (no browser session), and a real payment to the new checkout wallet after the upgrade. `ENABLE_INDEXER` is still off. `main` is still behind `scaffold`.
+- Production: backend `tsx src/index.ts` (no watch) on 8787 and `next start` on 3019 from this checkout on `scaffold`; logs in `backend-run.log` and `web-run.log`.
+- Not verified: a real payment to the new checkout wallet after the upgrade. `ENABLE_INDEXER` is still off.
+
+## 2026-10-03 late: review fixes, supervisor, `main` fast-forwarded
+
+- `main`, `scaffold` and `integrate/all` are the same commit. PR #1 is already contained in `main`.
+- Auto-pay never runs when the request text mentions a price limit or any money word (`services/request-constraints.ts`). A parsed cap that the draft total exceeds is written on the first order line as a note. Per-item caps ("under $2 each") block auto-pay but get no note.
+- Withdrawal transactions carry a `solpouch:withdraw:<operationId>` memo, like top-ups.
+- The indexer does not move its cursor past a transaction whose RPC response is incomplete. It retries for 10 minutes, then skips it with a `[indexer] WARNING: giving up` log line.
+- `GET /withdrawals/config` returns `{ holdSeconds, simulated }`. The pouch page words the hold from it and labels mock-mode withdrawals as demo. Explorer links only show for real signatures (`apps/web/src/lib/explorer.ts`).
+- Closing the chat with the X ends voice, the text agent and any pending request.
+- `GET /health` returns `release` (short commit of the running process).
+- The Postgres integration fixture splits `schema.sql` with a splitter that understands `$$` blocks (`test/sql-statements.ts`). The suite itself was not run here: it needs `POSTGRES_INTEGRATION_URL`.
+- Dependencies: `jayson` 5 and `toml` 4 through pnpm overrides clear the `uuid`, `toml` and `stream-json` advisories. `bigint-buffer` has no patched release; its native build is disabled in `allowBuilds`, so the pure JS path runs and the vulnerable binding is never loaded. `pnpm audit --prod` still lists it.
+- Landing, About, Terms and footer copy now say what the product does: you approve each order, and auto-pay is an opt-in limit per pouch.
+- Overview top area is three stat tiles plus one spending card.
+- Supervisor: the Windows scheduled task "Solpouch Tunnel" runs `~/.cf-solpouch/.cloudflared/tunnel-check.ps1` every minute. It starts cloudflared, the API (8787) and the web server (3019) when they are not running. Create `.deploying` in this checkout during a deploy so it leaves the API and web server alone, and delete it after.

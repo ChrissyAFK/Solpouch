@@ -286,7 +286,7 @@ export function HeroSequence() {
       </div>
 
       <div className={styles.foot}>
-        <p>An example, not a live order. Nothing is paid until you approve.</p>
+        <p>An example, not a live order. In this example nothing is paid until you approve.</p>
         <button
           type="button"
           className={styles.replay}

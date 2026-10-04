@@ -5,8 +5,7 @@ import { toUsdc } from "@solpouch/shared";
 import { usd } from "@/components/ui";
 import { Icon } from "@/components/Icons";
 
-const explorerTx = (sig: string) =>
-  `https://explorer.solana.com/tx/${encodeURIComponent(sig)}?cluster=devnet`;
+import { explorerTxUrl } from "@/lib/explorer";
 
 export function sortOrders(orders: Order[]): Order[] {
   return [...orders].sort(
@@ -59,11 +58,11 @@ export function OrderList({
           <strong className="order-amount">{usd(toUsdc(o.total))}</strong>
           <Icon name="arrow" size={15} />
         </Link>
-        {o.txSignature && (
+        {explorerTxUrl(o.txSignature) && (
           <a
             target="_blank"
             rel="noopener noreferrer"
-            href={explorerTx(o.txSignature)}
+            href={explorerTxUrl(o.txSignature)!}
             aria-label={`View ${merchants.find((m) => m.id === o.merchantId)?.name ?? o.store?.name ?? "order"} receipt on Solana Explorer (opens in a new tab)`}
             // In normal flow under the row, so it never covers the amount or status on phones.
             style={{

@@ -146,6 +146,28 @@ describe("auto-confirm through the order and voice routes", () => {
     expect(refused.autoPayError).toMatchObject({ code: "OverDailyLimit" });
   });
 
+  it("never auto-pays a request with a price cap, and flags a total over the cap", async () => {
+    const capped = await (await postOrder("large eggs under $1")).json();
+    expect(capped.status).toBe("draft");
+    expect(capped.autoPaid).toBe(false);
+    expect(capped.lines[0].note).toContain("Over your limit of $1.00");
+    expect((await store.getPouch("groceries"))!.balance).toBe($(300));
+    expect((await (await postOrder("large eggs")).json()).status).toBe("paid");
+  });
+
+  it("keeps an unparseable constraint as a draft", async () => {
+    const r = await (await postOrder("cheapest eggs")).json();
+    expect(r.status).toBe("draft");
+    expect((await store.getPouch("groceries"))!.balance).toBe($(300));
+  });
+
+  it("the lock re-check applies the same rule to the stored request", async () => {
+    const deps = { store, vault };
+    const draft = await createDraft(deps, TEST_USER, "large eggs under $1", "groceries");
+    expect(autoConfirmEligible((await store.getPouch("groceries"))!, draft)).toBe(false);
+    expect((await confirmOrder(deps, TEST_USER, draft.id, undefined, { auto: true })).status).toBe("draft");
+  });
+
   it("leaves the explicit confirm path unchanged for drafts", async () => {
     const p = (await store.getPouch("groceries"))!;
     await store.savePouch({ ...p, confirmAbove: 0 });

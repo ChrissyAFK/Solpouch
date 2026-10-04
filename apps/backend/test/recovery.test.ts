@@ -110,6 +110,35 @@ describe("durable signed transaction recovery", () => {
     expect(await store.getOperation("topup:distinct-a")).toEqual(journal);
   });
 
+  it("signs distinct withdrawal IDs uniquely under one blockhash with the ID in a memo", async () => {
+    const owner = Keypair.generate();
+    const blockhash = Keypair.generate().publicKey.toBase58();
+    const sent: Buffer[] = [];
+    const fake = Object.assign(Object.create(ChainVaultClient.prototype), {
+      owner, mint: Keypair.generate().publicKey, programId: Keypair.generate().publicKey, store,
+      connection: {
+        getGenesisHash: async () => "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+        getLatestBlockhash: async () => ({ blockhash, lastValidBlockHeight: 100 }),
+        getBlockHeight: async () => 50,
+        getSignatureStatuses: async () => ({ value: [null] }),
+        sendRawTransaction: async (bytes: Buffer) => { sent.push(Buffer.from(bytes)); return "sig"; },
+        confirmTransaction: async () => ({ value: { err: null } }),
+      },
+      pouchPda: () => Keypair.generate().publicKey, vaultPda: () => Keypair.generate().publicKey,
+      program: { methods: { withdraw: () => ({ accountsPartial: () => ({ instruction: async () => SystemProgram.transfer({ fromPubkey: owner.publicKey, toPubkey: owner.publicKey, lamports: 1 }) }) }) } },
+    }) as ChainVaultClient;
+    const dest = owner.publicKey.toBase58();
+    const a = await fake.withdraw("uber-eats", 100, dest, "wd-a");
+    const b = await fake.withdraw("uber-eats", 100, dest, "wd-b");
+    expect(a.txSignature).not.toBe(b.txSignature);
+    const [txA, txB] = sent.map((bytes) => Transaction.from(bytes));
+    expect(txA!.serializeMessage().equals(txB!.serializeMessage())).toBe(false);
+    for (const [tx, id] of [[txA!, "wd-a"], [txB!, "wd-b"]] as const) {
+      const memo = tx.instructions.find((i) => i.programId.toBase58() === "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+      expect(memo?.data.toString("utf8")).toContain(id);
+    }
+  });
+
   it("persists before broadcast and reuses identical bytes after a lost response", async () => {
     const rpc = transport();
     const prepare = vi.fn().mockResolvedValue(operation);

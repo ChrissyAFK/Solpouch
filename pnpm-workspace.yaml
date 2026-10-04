@@ -3,8 +3,14 @@ packages:
   - "packages/*"
 allowBuilds:
   '@google/genai': true
-  bigint-buffer: true
+  # Native build off on purpose: the advisory (buffer overflow in toBigIntLE) is in the C binding; without it the package uses its JS path.
+  bigint-buffer: false
   bufferutil: true
   esbuild: true
   protobufjs: true
   utf-8-validate: true
+
+# Patched transitive packages (pnpm audit): jayson 5 drops the vulnerable uuid and stream-json, toml 4.2 fixes recursion and prototype pollution.
+overrides:
+  jayson: ^5.0.0
+  toml: ^4.2.0

@@ -14,9 +14,22 @@ const startBody = z.object({
   reason: z.string().trim().max(300).optional(),
 }).strict();
 
+/** WITHDRAW_HOLD_SECONDS (default 7 days, valid 0 to 30 days). Throws a 503 when misconfigured. */
+export function withdrawHoldSeconds(): number {
+  const configured = process.env.WITHDRAW_HOLD_SECONDS ?? "604800";
+  const hold = Number(configured);
+  if (!configured.trim() || !Number.isSafeInteger(hold) || hold < 0 || hold > 2_592_000) {
+    throw new HttpError(503, "Withdrawals are temporarily unavailable. Please try again later.");
+  }
+  return hold;
+}
+
 /** Withdrawals are held, then paid by the server sweeper. There is deliberately no client complete route. */
 export function withdrawalRoutes(_baseDeps: Deps) {
   const app = new Hono();
+
+  // Registered before "/:id" so "config" is never captured as an id.
+  app.get("/config", (c) => c.json({ holdSeconds: withdrawHoldSeconds(), simulated: process.env.VAULT_MODE !== "chain" }));
 
   app.get("/", async (c) => {
     const pouchId = c.req.query("pouchId");
@@ -34,11 +47,7 @@ export function withdrawalRoutes(_baseDeps: Deps) {
     if (!(await deps.store.getPouch(body.pouchId))) throw new HttpError(404, "Pouch not found");
     const user = await deps.store.getUser(c.get("email"));
     if (!user?.wallet) throw new HttpError(403, "Link a wallet to withdraw", "WalletRequired");
-    const configured = process.env.WITHDRAW_HOLD_SECONDS ?? "604800";
-    const hold = Number(configured);
-    if (!configured.trim() || !Number.isSafeInteger(hold) || hold < 0 || hold > 2_592_000) {
-      throw new HttpError(503, "Withdrawals are temporarily unavailable. Please try again later.");
-    }
+    const hold = withdrawHoldSeconds();
     const wallet = user.wallet;
     return deps.store.withPouchLock(body.pouchId, async () => {
       const pouch = await deps.store.getPouch(body.pouchId);

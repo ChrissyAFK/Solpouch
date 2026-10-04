@@ -25,6 +25,12 @@ import { profileRoutes } from "./routes/profile.js";
 import { authRoutes } from "./routes/auth.js";
 import { AuthUnavailableError, requireUser } from "./auth/session.js";
 import { RateLimitError, RateLimitUnavailableError, rateLimit } from "./security/rateLimit.js";
+import { execSync } from "node:child_process";
+
+// The commit this process was started from, so /health shows which revision is live.
+const RELEASE = process.env.RELEASE ?? (() => {
+  try { return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return "unknown"; }
+})();
 
 const DEFAULT_ORIGINS = ["http://localhost:3000", "https://solpouch.tech", "https://www.solpouch.tech"];
 const MIN = 60_000;
@@ -58,7 +64,7 @@ export function createApp(deps: Deps) {
   app.on("POST", "/withdrawals/*", rateLimit({ store: deps.store, windowMs: MIN, max: 5, key: "withdrawal" }));
   app.use("/voice/*", rateLimit({ store: deps.store, windowMs: MIN, max: 60, key: "voice" }));
 
-  app.get("/health", (c) => c.json({ ok: true }));
+  app.get("/health", (c) => c.json({ ok: true, release: RELEASE }));
   for (const base of ["/shopping-lists", "/pouches", "/orders", "/topups", "/stats", "/profile", "/funding"]) app.use(`${base}/*`, requireUser(deps.store));
   // Withdrawals run against a store scoped to the signed-in user: other accounts' pouches look missing (404).
   app.use("/withdrawals/*", requireUser(deps.store));

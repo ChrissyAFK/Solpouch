@@ -97,7 +97,8 @@ export default function OverviewPage() {
   const spent = pouches?.reduce((s, p) => s + p.spentToday, 0) ?? 0;
   const limit = pouches?.reduce((s, p) => s + p.dailyLimit, 0) ?? 0;
   const active = pouches?.filter((p) => !p.frozen).length ?? 0;
-  const recent = sortOrders(orders ?? []).slice(0, 5);
+  const spentPct = limit > 0 ? Math.min(100, Math.max(0, (spent / limit) * 100)) : 0;
+  const recent =sortOrders(orders ?? []).slice(0, 5);
   return (
     <div className="overview">
       <div className="page-heading">
@@ -126,26 +127,36 @@ export default function OverviewPage() {
       ) : (
         <section className="wallet-metrics" aria-label="Spending overview">
           <div className="wallet-metric">
-            <p>Balance</p>
-            <strong>{pouches ? usd(toUsdc(balance)) : "—"}</strong>
-            <span>USDC across {pouches?.length ?? "—"} pouches</span>
+            <p className="stat-label">Balance</p>
+            <p className="stat-figure">{pouches ? usd(toUsdc(balance)) : "—"}</p>
+            <p className="stat-sub">USDC across {pouches?.length ?? "—"} pouches</p>
           </div>
           <div className="wallet-metric">
-            <p>Spent today</p>
-            <strong>
-              {pouches ? usd(toUsdc(spent)) : "—"}
-              <span> / {pouches ? usd(toUsdc(limit)) : "—"}</span>
-            </strong>
-          </div>
-          <div className="wallet-metric">
-            <p>Active</p>
-            <strong>
-              {pouches ? active : "—"}
-              <span> / {pouches?.length ?? "—"}</span>
-            </strong>
-            {pouches && pouches.length - active > 0 && (
-              <span>{pouches.length - active} frozen</span>
+            <p className="stat-label">Spent today</p>
+            <p className="stat-figure">{pouches ? usd(toUsdc(spent)) : "—"}</p>
+            <p className="stat-sub">of {pouches ? usd(toUsdc(limit)) : "—"} daily limit</p>
+            {pouches && limit > 0 && (
+              <div
+                className={`stat-bar${spentPct >= 80 ? " is-high" : ""}`}
+                role="progressbar"
+                aria-label="Share of today's daily limit spent"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(spentPct)}
+              >
+                <div style={{ width: `${spentPct}%` }} />
+              </div>
             )}
+          </div>
+          <div className="wallet-metric">
+            <p className="stat-label">Active pouches</p>
+            <p className="stat-figure">{pouches ? active : "—"}</p>
+            <p className="stat-sub">
+              of {pouches?.length ?? "—"} pouches
+              {pouches && pouches.length - active > 0
+                ? ` · ${pouches.length - active} frozen`
+                : ""}
+            </p>
           </div>
         </section>
       )}

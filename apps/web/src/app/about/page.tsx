@@ -11,7 +11,7 @@ export default function AboutPage() {
   return (
     <InfoPage
       title="About Solpouch"
-      intro="Budget pouches that an assistant can shop from, with you approving every order."
+      intro="Budget pouches that an assistant can shop from, with you approving orders and limits always applying."
     >
       <h2>Pouches</h2>
       <p>
@@ -23,10 +23,12 @@ export default function AboutPage() {
         Tell the assistant what you need by voice or text. It finds matching
         items and builds a cart from the stores available to your pouch.
       </p>
-      <h2>Every order waits for you</h2>
+      <h2>You approve orders</h2>
       <p>
-        The assistant never pays on its own. Each order stays a draft until the
-        owner reviews and approves it.
+        Each order stays a draft until the owner reviews and approves it. The
+        exception is a pouch you set to pay small exact matches typed into the
+        order form on its own. Voice and chat orders always wait, and the
+        limits always apply.
       </p>
       <h2>Payments in USDC on Solana</h2>
       <p>

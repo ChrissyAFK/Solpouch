@@ -15,6 +15,7 @@ import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import pg from "pg";
+import { relationalStatements } from "./sql-statements.js";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { MockVaultClient } from "../src/vault/mock.js";
 import { getMerchant } from "../src/merchants/index.js";
@@ -74,7 +75,7 @@ describe.skipIf(!url)("isolated real PostgreSQL (relational schema; fixture RPC)
     admin = new pg.Pool(postgresPoolConfig(url!));
     await admin.query(`CREATE SCHEMA ${schema}`);
     const fullSchema = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8");
-    relational = fullSchema.split(";").filter(sql => !/CREATE EXTENSION IF NOT EXISTS timescaledb|SELECT create_hypertable|CREATE MATERIALIZED VIEW|SELECT add_continuous_aggregate_policy|ALTER TABLE payments SET|ALTER MATERIALIZED VIEW|SELECT add_compression_policy/i.test(sql)).join(";");
+    relational = relationalStatements(fullSchema).join(";\n");
     await admin.query(`SET search_path TO ${schema}; ${relational}`);
     await admin.query(`CREATE TABLE ${schema}.failure_fixture (kind text PRIMARY KEY);
       CREATE FUNCTION ${schema}.reject_fixture_write() RETURNS trigger LANGUAGE plpgsql AS $$

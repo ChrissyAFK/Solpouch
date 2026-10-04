@@ -171,6 +171,48 @@ describe("VaultIndexer backfill, cursor and idempotency", () => {
     expect(await indexer.sync()).toBe(1);
   });
 
+  it("does not advance or insert when meta or logMessages are missing, then indexes complete data", async () => {
+    const chain = [{ signature: "a", logs: programLogs(payment(1, "a".repeat(32))) }];
+    const { store, rpc, indexer } = setup(chain);
+    const complete = rpc.connection.getTransaction.getMockImplementation()!;
+    for (const meta of [null, { err: null, logMessages: null }, { err: null }]) {
+      rpc.connection.getTransaction.mockImplementationOnce((async () => ({ slot: 100, blockTime: 1_767_225_600, meta })) as never);
+      await expect(indexer.sync()).rejects.toThrow("not available yet");
+      expect(await store.getIndexerCursor(INDEXER_CURSOR)).toBeUndefined();
+      expect((await store.indexedSpend(["uber-eats"], "day")) ?? []).toEqual([]);
+    }
+    rpc.connection.getTransaction.mockImplementation(complete);
+    expect(await indexer.sync()).toBe(1);
+    expect((await store.getIndexerCursor(INDEXER_CURSOR))!.signature).toBe("a");
+  });
+
+  it("treats a failed transaction as complete and advances", async () => {
+    const chain = [{ signature: "a", logs: [] as string[] }];
+    const { store, rpc, indexer } = setup(chain);
+    // Signature listing says ok, but the transaction meta carries an error and no logs.
+    rpc.connection.getTransaction.mockImplementation((async () => ({ slot: 100, blockTime: 1, meta: { err: { InstructionError: [0, "x"] }, logMessages: null } })) as never);
+    expect(await indexer.sync()).toBe(0);
+    expect((await store.getIndexerCursor(INDEXER_CURSOR))!.signature).toBe("a");
+  });
+
+  it("gives up on a permanently unavailable transaction after the retry cap, with a warning", async () => {
+    const chain = [{ signature: "a", logs: programLogs(payment(1, "a".repeat(32))), missing: true }, { signature: "b", logs: programLogs(payment(2, "b".repeat(32))) }];
+    const store = new MemoryStore(ownedSeed().map((p) => (p.id === "uber-eats" ? { ...p, address: pouchKey.toBase58() } : p)));
+    const log = vi.fn();
+    const indexer = new VaultIndexer({ connection: fakeConnection(chain).connection, programId, store, pollMs: 60_000, log });
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+    // A burst of syncs inside the window never gives up.
+    for (let i = 0; i < 50; i++) {
+      await expect(indexer.sync()).rejects.toThrow("not available yet");
+      expect(await store.getIndexerCursor(INDEXER_CURSOR)).toBeUndefined();
+    }
+    now.mockReturnValue(1_000_000 + 10 * 60_000);
+    expect(await indexer.sync()).toBe(1);
+    now.mockRestore();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("giving up on transaction a"));
+    expect((await store.getIndexerCursor(INDEXER_CURSOR))!.signature).toBe("b");
+  });
+
   it("pages through more than one signature page", async () => {
     const chain = Array.from({ length: 1001 }, (_, i) => ({ signature: `s${i}`, logs: programLogs(payment(1, i.toString(16).padStart(32, "0"))) }));
     const { store, rpc, indexer } = setup(chain);

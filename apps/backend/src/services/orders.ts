@@ -6,6 +6,7 @@ import { WEB_PREFIX, isAnyStore, isCheckoutReference, toMicros, type Merchant, t
 import { findOnline } from "../ai/findOnline.js";
 import { catalogFit, fallbackMatch, matchItems, parseRequest, type ParsedItem } from "../ai/gemini.js";
 import { getCatalog, getMerchant, merchants, registerWebMerchant } from "../merchants/index.js";
+import { parseRequestConstraints } from "./request-constraints.js";
 import { buildFulfillment, checkoutPayTo } from "./fulfillment.js";
 import { recordPaidOrder } from "./metrics.js";
 import type { GoogleUser } from "../auth/google.js";
@@ -79,6 +80,8 @@ export function autoConfirmEligible(pouch: Pouch, order: Order): boolean {
   if (!(order.total > 0) || order.total > pouch.confirmAbove) return false;
   if (pouch.frozen || order.total > pouch.maxPerOrder || order.total > pouch.balance || pouch.spentToday + order.total > pouch.dailyLimit) return false;
   if (!order.lines.length) return false;
+  // A price limit in the request is enforced by code: such an order always waits for the user's yes.
+  if (parseRequestConstraints(order.request ?? "").hasConstraint) return false;
   return order.lines.every((l) =>
     !!l.product && l.product.inStock && !l.product.estimated && l.product.merchantId === order.merchantId &&
     !l.substitution && !l.note && l.matchScore >= AUTO_CONFIRM_MATCH && l.qty === l.requestedQty && l.qty > 0);
@@ -94,7 +97,13 @@ export interface CreatedOrder {
 
 /** createDraft, then pay it immediately only when autoConfirmEligible allows it. */
 export async function createOrder(deps: Deps, ownerEmail: string, request: string, pouchId?: string, opts: { autoPay?: boolean } = {}): Promise<CreatedOrder> {
-  const draft = await createDraft(deps, ownerEmail, request, pouchId);
+  let draft = await createDraft(deps, ownerEmail, request, pouchId);
+  const { maxPrice, perItem } = parseRequestConstraints(request);
+  if (maxPrice !== undefined && !perItem && draft.total > maxPrice && draft.lines.length) {
+    const note = `Over your limit of $${(maxPrice / 1_000_000).toFixed(2)}: this order totals $${(draft.total / 1_000_000).toFixed(2)}`;
+    const lines = draft.lines.map((l, i) => (i === 0 ? { ...l, note: l.note ? `${l.note}; ${note}` : note } : l));
+    draft = await deps.store.saveOrder({ ...draft, lines });
+  }
   if (opts.autoPay === false) return { order: draft, autoPaid: false }; // voice always needs the spoken yes
   const pouch = await deps.store.getPouch(draft.pouchId);
   if (!pouch || pouch.ownerEmail !== ownerEmail || !autoConfirmEligible(pouch, draft)) return { order: draft, autoPaid: false };

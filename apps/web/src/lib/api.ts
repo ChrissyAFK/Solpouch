@@ -204,6 +204,8 @@ export const api = {
     post<Withdrawal>("/withdrawals", b),
   listWithdrawals: (pouchId: string) =>
     req<Withdrawal[]>(`/withdrawals?pouchId=${encodeURIComponent(pouchId)}`),
+  withdrawalConfig: () =>
+    req<{ holdSeconds: number; simulated: boolean }>("/withdrawals/config"),
   cancelWithdrawal: (id: string) =>
     post<Withdrawal>(`/withdrawals/${encodeURIComponent(id)}/cancel`),
   spend: (pouchId: string, bucket: "day" | "hour" = "day") =>

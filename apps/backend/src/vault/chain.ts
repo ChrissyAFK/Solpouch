@@ -285,7 +285,12 @@ export class ChainVaultClient implements VaultClient {
     const ownerAta = getAssociatedTokenAddressSync(this.mint, this.owner.publicKey);
     const destAta = getAssociatedTokenAddressSync(this.mint, dest, true);
     return this.submit(`withdraw:${operationId}`, "withdraw", pouchId, async () => {
-      const tx = new Transaction().add(createAssociatedTokenAccountIdempotentInstruction(this.owner.publicKey, ownerAta, this.owner.publicKey, this.mint));
+      // The journal ID must also be signed: otherwise identical withdrawals within one blockhash window
+      // would produce the same signature and the second could be marked completed without a transfer.
+      const tx = new Transaction().add(new TransactionInstruction({
+        programId: new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"),
+        keys: [], data: Buffer.from(`solpouch:withdraw:${operationId}`, "utf8"),
+      })).add(createAssociatedTokenAccountIdempotentInstruction(this.owner.publicKey, ownerAta, this.owner.publicKey, this.mint));
       tx.add(await this.program.methods.withdraw(new BN(amount)).accountsPartial({ owner: this.owner.publicKey, pouch, vault: this.vaultPda(pouch), ownerToken: ownerAta, tokenProgram: TOKEN_PROGRAM_ID }).instruction());
       if (!dest.equals(this.owner.publicKey)) {
         tx.add(createAssociatedTokenAccountIdempotentInstruction(this.owner.publicKey, destAta, dest, this.mint));

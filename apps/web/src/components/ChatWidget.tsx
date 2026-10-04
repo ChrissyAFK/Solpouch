@@ -220,7 +220,18 @@ function ChatPanel({ landing }: { landing: boolean }) {
     void endAgent.current().catch(() => {});
   }
   function close() {
-    if (session === "voice" || voiceSetup.current) stopVoice();
+    // × ends everything: voice, setup, text agent and any pending request.
+    // stopVoice bumps the sequence, so a late reply no longer updates state.
+    const unanswered = pending && messages[messages.length - 1]?.role === "user";
+    stopVoice();
+    if (unanswered) {
+      setError("The chat was closed before a reply arrived.");
+      setRetryMessages(messages);
+    }
+    request.current?.abort();
+    request.current = null;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
     setOpen(false);
     launcher.current?.focus();
   }

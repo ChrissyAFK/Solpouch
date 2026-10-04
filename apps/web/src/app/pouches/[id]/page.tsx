@@ -25,6 +25,7 @@ import type {
 } from "@solpouch/shared";
 import { toMicros, toUsdc } from "@solpouch/shared";
 import { api, ApiRequestError, errMsg } from "@/lib/api";
+import { explorerTxUrl } from "@/lib/explorer";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import { PouchForm, storesText } from "@/components/PouchForm";
 import { PouchGlyph } from "@/components/PouchGlyph";
@@ -262,10 +263,10 @@ function TopUpSection({
         {added && (
           <Notice>
             {added}
-            {addedTx && (
+            {explorerTxUrl(addedTx) && (
               <>
                 {" · "}
-                <a target="_blank" rel="noopener noreferrer" className="underline" href={explorerUrl("tx", addedTx)}>
+                <a target="_blank" rel="noopener noreferrer" className="underline" href={explorerTxUrl(addedTx)!}>
                   View transaction ↗
                 </a>
               </>
@@ -402,6 +403,14 @@ const timeLeft = (ms: number) => {
   return `${hours} h ${Math.floor((ms % 3_600_000) / 60_000)} min left`;
 };
 
+const holdText = (seconds: number) => {
+  const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`;
+  if (seconds >= 86_400 && seconds % 86_400 === 0) return plural(seconds / 86_400, "day");
+  if (seconds >= 3_600) return plural(Math.round(seconds / 3_600), "hour");
+  if (seconds >= 60) return plural(Math.round(seconds / 60), "minute");
+  return plural(Math.max(1, Math.round(seconds)), "second");
+};
+
 function WithdrawSection({
   pouch,
   onDone,
@@ -421,6 +430,13 @@ function WithdrawSection({
   const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // null while loading or if the request failed (older backend, network).
+  const [cfg, setCfg] = useState<{ holdSeconds: number; simulated: boolean } | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.withdrawalConfig().then((c) => { if (live) setCfg(c); }).catch(() => {});
+    return () => { live = false; };
+  }, [sessionKey]);
 
   const refresh = useCallback(async () => {
     const l = await api.listWithdrawals(pouch.id);
@@ -575,15 +591,19 @@ function WithdrawSection({
         <div className="space-y-4">
           {last?.status === "completed" && (
             <Notice>
-              {usd(toUsdc(last.amount))} USDC was sent to your wallet.
-              {last.txSignature && (
+              {!cfg
+                ? `Withdrawal of ${usd(toUsdc(last.amount))} completed.`
+                : cfg.simulated
+                  ? `Demo withdrawal of ${usd(toUsdc(last.amount))}, no USDC moved.`
+                  : `${usd(toUsdc(last.amount))} USDC was sent to your wallet.`}
+              {cfg && !cfg.simulated && explorerTxUrl(last.txSignature) && (
                 <>
                   {" "}
                   <a
                     target="_blank"
                     rel="noopener noreferrer"
                     className="underline"
-                    href={explorerUrl("tx", last.txSignature)}
+                    href={explorerTxUrl(last.txSignature)!}
                   >
                     View transaction ↗
                   </a>
@@ -617,8 +637,12 @@ function WithdrawSection({
               />
             </div>
             <p className="text-sm text-[var(--muted)]">
-              Withdrawals are held for 7 days for fraud checks. You can cancel any
-              time before then. Held money can&apos;t be spent.
+              {cfg
+                ? cfg.holdSeconds > 0
+                  ? `Withdrawals are held for ${holdText(cfg.holdSeconds)} for fraud checks. You can cancel any time before then.`
+                  : "Withdrawals are sent right away, so they can't be cancelled."
+                : "Withdrawals are held for a waiting period before they are sent. You can cancel any time before then."}
+              {!cfg || cfg.holdSeconds > 0 ? " Held money can’t be spent." : ""}
             </p>
             <button
               className={`${btnPrimary} w-full`}
@@ -959,12 +983,12 @@ export default function PouchDetail() {
                       >
                         {o.status === "draft" ? "Awaiting approval" : o.status}
                       </span>
-                      {o.txSignature && (
+                      {explorerTxUrl(o.txSignature) && (
                         <a
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs text-[var(--muted)] underline"
-                          href={explorerUrl("tx", o.txSignature)}
+                          href={explorerTxUrl(o.txSignature)!}
                           aria-label="View receipt on Solana Explorer (opens in a new tab)"
                         >
                           receipt ↗

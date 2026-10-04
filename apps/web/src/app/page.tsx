@@ -71,7 +71,7 @@ const FAQ = [
   },
   {
     q: "Can the AI spend for me?",
-    a: "No. Chat can explain your pouch information and help you start a request. You review the cart and approve every order yourself.",
+    a: "No. Chat can explain your pouch information and help you start a request. You approve orders yourself, unless you let a pouch pay small exact matches on its own. Voice and chat orders always wait for you.",
   },
   {
     q: "What happens when an order exceeds a limit?",
@@ -102,7 +102,7 @@ export default function LandingPage() {
             <p className={styles.intro}>
               Say what you need out loud. Solpouch finds the items and builds the
               order. Each pouch has its own wallet on Solana that enforces your
-              limits, and nothing is paid until you approve.
+              limits, and orders wait for your approval unless you let a pouch pay small exact matches.
             </p>
             <div className={styles.actions}>
               <Link href="/dashboard" className={styles.primary}>
@@ -113,8 +113,8 @@ export default function LandingPage() {
               </a>
             </div>
             <p className={styles.demoNote}>
-              Payments settle in USDC on Solana. Every order waits for your
-              approval.
+              Payments settle in USDC on Solana. You approve orders, and limits
+              always apply.
             </p>
           </div>
           <HeroSequence />
@@ -189,8 +189,8 @@ export default function LandingPage() {
             <li>
               <h3>Approve</h3>
               <p>
-                You approve the exact order. Only then does the pouch pay, in
-                USDC on Solana.
+                You approve the exact order, then the pouch pays in USDC on
+                Solana. Pouches you set to pay small exact matches skip this step.
               </p>
             </li>
           </ol>
