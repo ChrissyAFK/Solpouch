@@ -24,7 +24,7 @@ const keywords = here("./keywords.txt").split(/\r?\n/).map((s) => s.trim()).filt
 const promptText = here("./prompt.md");
 const url = `https://api.elevenlabs.io/v1/convai/agents/${id}`;
 if (process.argv.includes("--dry-run")) {
-  console.log(`would GET then PATCH ${url}: ${keywords.length} keywords, speculative_turn=false, turn_eagerness=patient, prompt ${promptText.length} chars`);
+  console.log(`would GET then PATCH ${url}: ${keywords.length} keywords, speculative_turn=true, turn_eagerness=normal, speed=1.1, prompt ${promptText.length} chars`);
 } else {
   // Nested objects may be replaced rather than merged, so start from the agent's current settings.
   const cur = await fetch(url, { headers: { "xi-api-key": key } }).catch((e) => ({ ok: false, status: e.message }));
@@ -39,9 +39,10 @@ if (process.argv.includes("--dry-run")) {
   const body = {
     conversation_config: {
       asr: { ...cc.asr, keywords },
-      turn: { ...cc.turn, speculative_turn: false, turn_eagerness: "patient" },
+      // "patient" left 0.2-0.8 s of dead air after every sentence; speculative_turn starts the LLM before the turn ends.
+      turn: { ...cc.turn, speculative_turn: true, turn_eagerness: "normal" },
       // Expressive mode makes the LLM invent bracketed audio tags ("[Understood]") that get spoken and shown.
-      tts: { ...cc.tts, expressive_mode: false },
+      tts: { ...cc.tts, expressive_mode: false, speed: 1.1 },
       agent: { prompt: { ...curPrompt, ...(curPrompt.tool_ids ? {} : tools ? { tools } : {}), prompt: promptText } },
     },
   };
@@ -49,5 +50,5 @@ if (process.argv.includes("--dry-run")) {
   const text = await res.text();
   if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${text.slice(0, 500)}`);
   const c = JSON.parse(text).conversation_config;
-  console.log(`applied: ${c?.asr?.keywords?.length ?? "?"} keywords, speculative_turn=${c?.turn?.speculative_turn}, turn_eagerness=${c?.turn?.turn_eagerness}, expressive_mode=${c?.tts?.expressive_mode}, tools ${toolsBefore} -> ${c?.agent?.prompt?.tool_ids?.length ?? c?.agent?.prompt?.tools?.length ?? 0}, prompt ${c?.agent?.prompt?.prompt?.length} chars`);
+  console.log(`applied: ${c?.asr?.keywords?.length ?? "?"} keywords, speculative_turn=${c?.turn?.speculative_turn}, turn_eagerness=${c?.turn?.turn_eagerness}, expressive_mode=${c?.tts?.expressive_mode}, speed=${c?.tts?.speed}, tools ${toolsBefore} -> ${c?.agent?.prompt?.tool_ids?.length ?? c?.agent?.prompt?.tools?.length ?? 0}, prompt ${c?.agent?.prompt?.prompt?.length} chars`);
 }

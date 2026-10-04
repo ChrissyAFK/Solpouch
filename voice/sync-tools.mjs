@@ -1,5 +1,6 @@
 // Brings the live ElevenLabs agent's tools in line with voice/tools.json:
-// confirm_order gets a `version` argument and prepare_demo_checkout is created and attached.
+// confirm_order gets a `version` argument, prepare_demo_checkout is created and attached,
+// and the slow tools play a typing sound while they run.
 // Run only when the owner says so: node voice/sync-tools.mjs [--dry-run]
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -79,5 +80,12 @@ if (!byName.has("prepare_demo_checkout")) {
     if (!ids.includes(newId)) ids.push(newId);
     await call("PATCH", `/agents/${id}`, { conversation_config: { agent: { prompt: { ...curPrompt, tool_ids: ids } } } });
   }
+}
+// The cart search takes up to ~9 s; a typing sound fills that silence. Only slow tools get it.
+for (const name of ["create_order", "prepare_demo_checkout", "confirm_order"]) {
+  const t = byName.get(name);
+  if (!t || t.config.tool_call_sound === "typing") continue;
+  actions.push(`${name}: typing sound`);
+  if (!dry) await call("PATCH", `/tools/${t.id}`, { tool_config: { ...t.config, tool_call_sound: "typing", tool_call_sound_behavior: "auto" } });
 }
 console.log(actions.length ? `${dry ? "would apply" : "applied"}: ${actions.join("; ")}` : "already in sync: nothing to do");
