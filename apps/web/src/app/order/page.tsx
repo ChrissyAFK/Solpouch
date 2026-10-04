@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import type { Merchant, Order, Pouch } from "@solpouch/shared";
 import { toUsdc } from "@solpouch/shared";
 import { api, ApiRequestError, errMsg } from "@/lib/api";
+import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import { PouchGlyph } from "@/components/PouchGlyph";
 import s from "./order.module.css";
 import {
@@ -117,8 +118,29 @@ function OrderWorkspace() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [missingOrder, setMissingOrder] = useState(false);
   const loadVersion = useRef(0);
+  // Mirrors of state so the URL-driven load and the live refresh can see what is on screen.
+  const orderRef = useRef<Order | null>(null);
+  const loadedOnce = useRef(false);
+  const busyRef = useRef(false);
+  const requestRef = useRef("");
+  const loadingRef = useRef(true);
+  const openedAt = useRef(Date.now());
+  const showOrder = useCallback((next: Order | null) => {
+    orderRef.current = next;
+    setOrder(next);
+  }, []);
+  useEffect(() => {
+    requestRef.current = request;
+    loadingRef.current = loading;
+  }, [request, loading]);
 
   const load = useCallback(async () => {
+    // The URL only changed because this page replaced it for the order already shown: no reload.
+    const urlId = new URLSearchParams(query).get("order");
+    if (loadedOnce.current) {
+      if (urlId && urlId === orderRef.current?.id) return;
+      if (!urlId && query === "" && !orderRef.current) return;
+    }
     const version = ++loadVersion.current;
     setLoading(true);
     setLoadError(null);
@@ -152,13 +174,14 @@ function OrderWorkspace() {
           : "",
       );
       setRequest(params.get("request") ?? "");
-      setOrder(loadedOrder);
+      showOrder(loadedOrder);
+      loadedOnce.current = true;
     } catch (e) {
       if (version === loadVersion.current) setLoadError(errMsg(e));
     } finally {
       if (version === loadVersion.current) setLoading(false);
     }
-  }, [query]);
+  }, [query, showOrder]);
   useEffect(() => {
     void load();
     return () => {
@@ -166,16 +189,54 @@ function OrderWorkspace() {
     };
   }, [load]);
 
+  // Quiet refresh: follows the shown order's status, or picks up a voice-created draft.
+  const liveRefresh = useCallback(async () => {
+    if (busyRef.current || loadingRef.current || !loadedOnce.current) return;
+    const current = orderRef.current;
+    try {
+      if (current) {
+        if (!["draft", "confirmed", "paying"].includes(current.status)) return;
+        const latest = await api.order(current.id);
+        if (busyRef.current || orderRef.current?.id !== current.id) return;
+        if (latest.status === current.status) return;
+        showOrder(latest);
+        if (latest.status === "paid" || latest.status === "rejected")
+          void api.pouches().then(setPouches).catch(() => {});
+        return;
+      }
+      if (requestRef.current.trim()) return;
+      const all = await api.orders();
+      if (busyRef.current || orderRef.current || requestRef.current.trim()) return;
+      const fresh = all
+        .filter(
+          (o) =>
+            o.status === "draft" && new Date(o.createdAt).getTime() > openedAt.current,
+        )
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+      if (!fresh) return;
+      showOrder(fresh);
+      window.history.replaceState(
+        null,
+        "",
+        `/order?order=${encodeURIComponent(fresh.id)}`,
+      );
+    } catch {
+      /* background refresh stays silent */
+    }
+  }, [showOrder]);
+  useLiveRefresh(liveRefresh);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
+    busyRef.current = true;
     setError(null);
     try {
       const created = await api.createOrder({
         request: request.trim(),
         pouchId: pouchId || undefined,
       });
-      setOrder(created);
+      showOrder(created);
       window.history.replaceState(
         null,
         "",
@@ -184,25 +245,32 @@ function OrderWorkspace() {
     } catch (e) {
       setError(errMsg(e));
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
   async function act(action: "confirm" | "cancel") {
     if (!order) return;
     setBusy(true);
+    busyRef.current = true;
     setError(null);
     try {
-      setOrder(await api[action](order.id));
-      setPouches(await api.pouches());
+      showOrder(await api[action](order.id));
+      try {
+        setPouches(await api.pouches());
+      } catch {
+        /* the receipt is already final; a failed balance refresh is not an error here */
+      }
     } catch (e) {
       setError(errMsg(e));
       // A declined payment changes server state; show that result rather than a stale draft.
       try {
-        setOrder(await api.order(order.id));
+        showOrder(await api.order(order.id));
       } catch {
         /* retain the actionable error */
       }
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
@@ -575,7 +643,7 @@ function OrderWorkspace() {
                     <button
                       className={btnPrimary}
                       onClick={() => {
-                        setOrder(null);
+                        showOrder(null);
                         setError(null);
                         window.history.replaceState(null, "", "/order");
                         void api

@@ -67,6 +67,7 @@ function TopUpSection({
   const [busy, setBusy] = useState(false);
   const [autoFailed, setAutoFailed] = useState(false);
   const completing = useRef(false);
+  const retriedCooldown = useRef(false);
 
   // Resume the newest pending top-up so a reload does not lose it.
   useEffect(() => {
@@ -150,7 +151,8 @@ function TopUpSection({
 
   const readyAt = topup ? new Date(topup.readyAt).getTime() : 0;
   const remaining = topup ? Math.max(0, readyAt - now) : 0;
-  const ready = topup != null && remaining === 0;
+  // 2 s of slack so a fast client clock does not auto-complete before the server's cooldown ends.
+  const ready = topup != null && Math.max(0, readyAt + 2000 - now) === 0;
   const seconds = Math.ceil(remaining / 1000);
   const total = topup
     ? Math.max(1000, readyAt - new Date(topup.createdAt).getTime())
@@ -183,6 +185,18 @@ function TopUpSection({
         setAutoFailed(false);
         await onDone();
       } catch (err) {
+        if (
+          auto &&
+          !retriedCooldown.current &&
+          err instanceof ApiRequestError &&
+          err.code === "CooldownActive"
+        ) {
+          // The server clock is slightly behind ours: wait and try once more before giving up.
+          retriedCooldown.current = true;
+          // `submitted` stays true meanwhile so the auto-complete effect waits.
+          window.setTimeout(() => setSubmitted(false), 3000);
+          return;
+        }
         setAutoFailed(true);
         const msg =
           err instanceof ApiRequestError
@@ -754,6 +768,7 @@ export default function PouchDetail() {
                 setSaved(false);
                 const { name: _name, ...rules } = v;
                 void _name;
+                loadVersion.current++;
                 const updated = await api.updateRules(pouch.id, rules);
                 setPouch(updated);
                 setSaved(true);
@@ -777,6 +792,7 @@ export default function PouchDetail() {
                   if (freezing) return;
                   setFreezing(true);
                   setError(null);
+                  loadVersion.current++;
                   try {
                     const updated = await (pouch.frozen
                       ? api.unfreeze(pouch.id)

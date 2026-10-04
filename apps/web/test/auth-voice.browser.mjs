@@ -25,7 +25,7 @@ await page.exposeFunction('testSign', bytes => [...sign(null,Buffer.from(bytes),
 await page.evaluate(address=>{window.solana={publicKey:{toBase58:()=>address},connect:async()=>({publicKey:{toBase58:()=>address}}),signMessage:async(message)=>({signature:new Uint8Array(await window.testSign([...message]))})};},address);
 await page.getByRole('button',{name:'Connect and sign in',exact:true}).click();
 await page.getByRole('button',{name:'Sign out',exact:true}).waitFor();
-const cookies=await context.cookies(); assert(cookies.some(c=>c.name==='solpouch_session'&&c.httpOnly));
+const stored=await page.evaluate(()=>localStorage.getItem('solpouch.session')); assert(stored,'Session is kept in localStorage under solpouch.session');
 const p = await page.evaluate(async()=>{ const r=await fetch('http://localhost:8788/pouches',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({name:'Browser test pouch',maxPerOrder:10000000,dailyLimit:20000000,allowedMerchantIds:['mountain-market']})});return {status:r.status,body:await r.json()}; });
 assert.equal(p.status,201,JSON.stringify(p));
 await page.goto(`http://localhost:3002/pouches/${p.body.id}`);

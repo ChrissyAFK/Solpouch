@@ -109,11 +109,14 @@ function Check({ p }: { p: number }) {
 export function HeroSequence() {
   const [index, setIndex] = useState(0);
   const [run, setRun] = useState(0);
-  const [t, setT] = useState(DONE);
+  // Starts at the animation's first frame, hidden until mounted, so there is no flash of the finished receipt.
+  const [t, setT] = useState(0);
+  const [mounted, setMounted] = useState(false);
   const s = SCENARIOS[index];
 
   useEffect(() => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setMounted(true);
     if (reduce) {
       setT(DONE);
       return;
@@ -161,7 +164,7 @@ export function HeroSequence() {
   }
 
   return (
-    <div className={styles.stage}>
+    <div className={mounted ? styles.stage : `${styles.stage} ${styles.pending}`}>
       <div className={styles.tabs} role="tablist" aria-label="Example scenario">
         {SCENARIOS.map((sc, i) => (
           <button
