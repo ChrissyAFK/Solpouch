@@ -220,6 +220,9 @@
   font-weight: 600;
   flex-shrink: 0;
 }
+/* Connecting: dimmed, with a slow flat pulse so it doesn't read as listening. */
+.callBarWaiting { opacity: 0.7; }
+.callBarWaiting .wave i { animation-duration: 2.4s; }
 .wave {
   display: inline-flex;
   align-items: center;

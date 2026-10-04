@@ -69,6 +69,8 @@ function ChatPanel({ landing }: { landing: boolean }) {
   const history = useRef<HTMLDivElement>(null);
   const request = useRef<AbortController | null>(null);
   const voiceRequest = useRef<AbortController | null>(null);
+  // True only once the agent connection is up and the mic is live; until then the call bar says it is connecting.
+  const [voiceLive, setVoiceLive] = useState(false);
   const voiceExpiry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceSetup = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -108,6 +110,7 @@ function ChatPanel({ landing }: { landing: boolean }) {
         return;
       }
       connected.current = true;
+      setVoiceLive(true);
       const text = queued.current;
       queued.current = null;
       queuedNext.current = null;
@@ -116,6 +119,7 @@ function ChatPanel({ landing }: { landing: boolean }) {
     onDisconnect: () => {
       if (!isCurrent() || agentSequence.current !== sequence.current) return;
       connected.current = false;
+      setVoiceLive(false);
       setSession(null);
       settle();
     },
@@ -466,6 +470,7 @@ function ChatPanel({ landing }: { landing: boolean }) {
       if (session) await agent.endSession();
       if (!isSetupCurrent()) return;
       setMode("agent");
+      setVoiceLive(false);
       setSession("voice");
       await startAgent(false, credentials);
     } catch (cause) {
@@ -490,9 +495,11 @@ function ChatPanel({ landing }: { landing: boolean }) {
   const modeText =
     mode === "agent"
       ? session === "voice"
-        ? agent.isSpeaking
-          ? "Speaking…"
-          : "Listening…"
+        ? !voiceLive
+          ? "Connecting…"
+          : agent.isSpeaking
+            ? "Speaking…"
+            : "Listening…"
         : "Voice and text agent"
       : mode === "checking"
         ? "Connecting…"
@@ -599,9 +606,9 @@ function ChatPanel({ landing }: { landing: boolean }) {
             </button>
           </div>
           {session === "voice" && (
-            <div className={styles.callBar} role="status">
+            <div className={`${styles.callBar} ${voiceLive ? "" : styles.callBarWaiting}`} role="status">
               <span className={styles.wave} aria-hidden="true"><i /><i /><i /><i /></span>
-              <span>{agent.isSpeaking ? "Solpouch is speaking" : "Listening, go ahead"}</span>
+              <span>{!voiceLive ? "Connecting to Solpouch, one moment…" : agent.isSpeaking ? "Solpouch is speaking" : "Listening, go ahead"}</span>
             </div>
           )}
           <div
