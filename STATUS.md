@@ -211,12 +211,12 @@ Checked on an emulator (Android, Chrome 124):
 - The three launcher shortcuts are registered.
 - The offline page appears when a page is opened with no connection (tested against a local
   production build of this branch).
+- After the deploy (release `15a9ec1`): Android reports solpouch.tech as verified for the app, and
+  the app opens full screen with no address bar.
 - Backend: 352 tests pass, 32 skipped. Backend and web typecheck clean.
 
 Not checked:
 
-- **Full screen mode.** The app shows a browser address bar until `assetlinks.json` is live on
-  solpouch.tech, and this branch is not deployed. After the deploy it needs one more look.
 - Anything behind sign-in, including deleting an account from the app. No test Google account
   existed.
 - The Postgres account deletion test (`test/postgres.integration.test.ts`); it needs a database
@@ -226,4 +226,6 @@ Not checked:
 Known gaps: `POST /topups` takes no lock, so a top-up started in the same instant as an account
 deletion can fail with a 500. Screenshots are signed-out screens only.
 
-Left for the owner: deploy this branch, then the nine steps in `docs/android/PUBLISHING.md`.
+Deployed to production on 2026-10-03 (`scaffold` fast-forwarded to this branch).
+
+Left for the owner: the nine steps in `docs/android/PUBLISHING.md`.
