@@ -44,6 +44,6 @@ pub fn handler(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
         ),
         amount,
     )?;
-    emit!(Withdrawn { pouch: p.key(), amount });
+    emit!(Withdrawn { pouch: p.key(), amount, time: Clock::get()?.unix_timestamp });
     Ok(())
 }

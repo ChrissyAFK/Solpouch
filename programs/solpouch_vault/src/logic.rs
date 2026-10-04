@@ -1,7 +1,48 @@
+//! Pure rule checks, kept free of account plumbing so they can be unit tested.
+//!
+//! Daily limit semantics: the limit applies to a rolling 24-hour window, not a calendar day.
+//! A window opens at `day_start` (pouch creation, or the first payment after the previous
+//! window expired) and lasts `DAY_SECONDS`. Payments inside the window accumulate in
+//! `spent_today`; the first payment at or after `day_start + DAY_SECONDS` resets the counter
+//! and opens a new window at that payment's time.
+//!
+//! `set_rules` may lower `daily_limit` below the current `spent_today`. That is allowed on
+//! purpose: the owner can tighten a pouch at any time, and `check_pay` simply refuses further
+//! payments until the window resets.
+
 use crate::errors::VaultError;
+use crate::state::MAX_MERCHANTS;
 use anchor_lang::prelude::Pubkey;
 
 pub const DAY_SECONDS: i64 = 86_400;
+
+/// Validates pouch rules for `create_pouch` and (after merging updates) `set_rules`.
+pub fn check_rules(
+    owner: &Pubkey,
+    agent: &Pubkey,
+    max_per_order: u64,
+    daily_limit: u64,
+    merchants: &[Pubkey],
+) -> Result<(), VaultError> {
+    if merchants.len() > MAX_MERCHANTS {
+        return Err(VaultError::TooManyMerchants);
+    }
+    if max_per_order == 0 || daily_limit == 0 {
+        return Err(VaultError::ZeroLimit);
+    }
+    if max_per_order > daily_limit {
+        return Err(VaultError::PerOrderOverDaily);
+    }
+    if agent == owner {
+        return Err(VaultError::AgentIsOwner);
+    }
+    for (i, m) in merchants.iter().enumerate() {
+        if merchants[..i].contains(m) {
+            return Err(VaultError::DuplicateMerchant);
+        }
+    }
+    Ok(())
+}
 
 pub struct PayState<'a> {
     pub frozen: bool,
@@ -20,6 +61,9 @@ pub fn check_pay(
     vault_balance: u64,
     now: i64,
 ) -> Result<(u64, i64), VaultError> {
+    if amount == 0 {
+        return Err(VaultError::ZeroAmount);
+    }
     if s.frozen {
         return Err(VaultError::PouchFrozen);
     }
@@ -131,5 +175,53 @@ mod tests {
         s.daily_limit = u64::MAX;
         s.spent_today = u64::MAX;
         assert_eq!(check_pay(&s, &m(), 1, u64::MAX, 1_100), Err(VaultError::OverDailyLimit));
+    }
+
+    #[test]
+    fn zero_amount_rejected() {
+        let a = [m()];
+        assert_eq!(check_pay(&state(&a), &m(), 0, 1_000, 1_100), Err(VaultError::ZeroAmount));
+    }
+
+    fn k(b: u8) -> Pubkey {
+        Pubkey::new_from_array([b; 32])
+    }
+
+    #[test]
+    fn rules_valid() {
+        assert_eq!(check_rules(&k(1), &k(2), 100, 100, &[k(3), k(4)]), Ok(()));
+        assert_eq!(check_rules(&k(1), &k(2), 1, 250, &[]), Ok(()));
+    }
+
+    #[test]
+    fn rules_zero_limits() {
+        assert_eq!(check_rules(&k(1), &k(2), 0, 100, &[]), Err(VaultError::ZeroLimit));
+        assert_eq!(check_rules(&k(1), &k(2), 0, 0, &[]), Err(VaultError::ZeroLimit));
+    }
+
+    #[test]
+    fn rules_per_order_over_daily() {
+        assert_eq!(check_rules(&k(1), &k(2), 101, 100, &[]), Err(VaultError::PerOrderOverDaily));
+    }
+
+    #[test]
+    fn rules_agent_is_owner() {
+        assert_eq!(check_rules(&k(1), &k(1), 10, 100, &[]), Err(VaultError::AgentIsOwner));
+    }
+
+    #[test]
+    fn rules_duplicate_merchant() {
+        assert_eq!(
+            check_rules(&k(1), &k(2), 10, 100, &[k(3), k(4), k(3)]),
+            Err(VaultError::DuplicateMerchant)
+        );
+    }
+
+    #[test]
+    fn rules_merchant_count_boundary() {
+        let ten: Vec<Pubkey> = (10..10 + MAX_MERCHANTS as u8).map(k).collect();
+        assert_eq!(check_rules(&k(1), &k(2), 10, 100, &ten), Ok(()));
+        let eleven: Vec<Pubkey> = (10..11 + MAX_MERCHANTS as u8).map(k).collect();
+        assert_eq!(check_rules(&k(1), &k(2), 10, 100, &eleven), Err(VaultError::TooManyMerchants));
     }
 }

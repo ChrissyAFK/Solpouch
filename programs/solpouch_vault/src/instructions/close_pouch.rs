@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{close_account, CloseAccount, Token, TokenAccount};
 
 use crate::errors::VaultError;
+use crate::events::PouchClosed;
 use crate::state::*;
 
 #[derive(Accounts)]
@@ -38,5 +39,7 @@ pub fn handler(ctx: Context<ClosePouch>) -> Result<()> {
             authority: ctx.accounts.pouch.to_account_info(),
         },
         &[seeds],
-    ))
+    ))?;
+    emit!(PouchClosed { pouch: ctx.accounts.pouch.key(), time: Clock::get()?.unix_timestamp });
+    Ok(())
 }
