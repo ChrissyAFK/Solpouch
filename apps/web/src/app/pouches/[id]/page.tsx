@@ -311,8 +311,8 @@ export default function PouchDetail() {
       <header className="flex flex-wrap items-center gap-6">
         <PouchGlyph
           name={pouch.name}
-          remaining={available}
-          limit={pouch.dailyLimit}
+          remaining={toUsdc(available)}
+          limit={toUsdc(pouch.dailyLimit)}
           size="lg"
           frozen={pouch.frozen}
         />

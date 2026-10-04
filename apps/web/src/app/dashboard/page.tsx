@@ -180,8 +180,8 @@ export default function PouchesPage() {
                   <div className="pouch-glyph">
                     <PouchGlyph
                       name={p.name}
-                      remaining={left}
-                      limit={p.dailyLimit}
+                      remaining={toUsdc(left)}
+                      limit={toUsdc(p.dailyLimit)}
                       size="sm"
                       frozen={p.frozen}
                     />

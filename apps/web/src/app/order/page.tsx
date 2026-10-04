@@ -137,13 +137,11 @@ function OrderWorkspace() {
   const isDraft = order?.status === "draft";
   const step = !order ? 1 : isDraft ? 2 : 3;
   const merchant = merchants.find((m) => m.id === order?.merchantId);
-  const [paidDate] = useState(() =>
-    new Date().toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    }),
-  );
+  const paidDate = new Date(order?.createdAt ?? Date.now()).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 
   return (
     <div className="mx-auto max-w-6xl">
