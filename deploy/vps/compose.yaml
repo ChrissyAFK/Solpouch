@@ -1,8 +1,8 @@
-# Backend API on one VM: Caddy terminates TLS for $API_HOST and proxies to the ghcr image.
+# Solpouch on one server: Caddy terminates TLS and proxies to the web and API images from ghcr.
 # Run from this folder: docker compose up -d   (see docs/DEPLOY.md)
 services:
   api:
-    image: ghcr.io/chrissyafk/solpouch-api:${API_TAG:-latest}
+    image: ghcr.io/chrissyafk/solpouch-api:${TAG:-latest}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -16,17 +16,25 @@ services:
       edge:
         ipv4_address: 172.30.0.3
 
+  web:
+    image: ghcr.io/chrissyafk/solpouch-web:${TAG:-latest}
+    restart: unless-stopped
+    networks:
+      edge:
+        ipv4_address: 172.30.0.4
+
   caddy:
     image: caddy:2
     restart: unless-stopped
     ports: ["80:80", "443:443"]
     environment:
       API_HOST: ${API_HOST:-api.solpouch.tech}
+      WEB_HOST: ${WEB_HOST:-solpouch.tech}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on: [api]
+    depends_on: [api, web]
     networks:
       edge:
         ipv4_address: 172.30.0.2

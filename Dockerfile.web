@@ -1,0 +1,37 @@
+FROM node:24-slim
+LABEL org.opencontainers.image.source="https://github.com/ChrissyAFK/Solpouch" \
+      org.opencontainers.image.description="Solpouch web app"
+RUN corepack enable && corepack prepare pnpm@12.4.1 --activate
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/web/package.json apps/web/
+COPY packages/shared/package.json packages/shared/
+# Native modules without arm64 prebuilds compile with node-gyp; the tools go away in the same layer.
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
+ && pnpm install --frozen-lockfile --filter "@solpouch/web..." \
+ && apt-get purge -y python3 make g++ && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+COPY tsconfig.base.json tsconfig.json ./
+COPY packages/shared packages/shared
+COPY apps/web apps/web
+
+# NEXT_PUBLIC_* values are baked into the client bundle at build time. All are public IDs, not secrets.
+ARG NEXT_PUBLIC_BACKEND_URL=https://api.solpouch.tech
+ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID
+ARG NEXT_PUBLIC_PRIVY_APP_ID
+ARG NEXT_PUBLIC_SOLANA_CLUSTER
+ARG NEXT_PUBLIC_SOLANA_RPC_URL
+ENV NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL \
+    NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID \
+    NEXT_PUBLIC_PRIVY_APP_ID=$NEXT_PUBLIC_PRIVY_APP_ID \
+    NEXT_PUBLIC_SOLANA_CLUSTER=$NEXT_PUBLIC_SOLANA_CLUSTER \
+    NEXT_PUBLIC_SOLANA_RPC_URL=$NEXT_PUBLIC_SOLANA_RPC_URL \
+    NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production
+# Drop the build cache (large, unused by next start). next start writes only to .next; the rest stays root-owned.
+RUN pnpm --filter @solpouch/web build && rm -rf apps/web/.next/cache && chown -R node:node apps/web/.next
+USER node
+WORKDIR /app/apps/web
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+# Not `pnpm start`: pnpm re-checks node_modules on start and can't (and shouldn't) rewrite them as `node`.
+CMD ["node_modules/.bin/next", "start", "-p", "3000"]

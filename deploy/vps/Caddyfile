@@ -1,0 +1,10 @@
+# Caddy gets and renews certificates itself once DNS for these hosts points at this server.
+{$API_HOST} {
+	encode gzip
+	reverse_proxy api:8787
+}
+
+{$WEB_HOST}, www.{$WEB_HOST} {
+	encode gzip
+	reverse_proxy web:3000
+}
