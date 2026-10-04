@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="surface">#101014</color>
+    <!-- The site follows the system theme; this is its light page colour. -->
+    <color name="surface_light">#F4F1EA</color>
     <color name="mint">#14F195</color>
     <color name="violet">#A78BFA</color>
 </resources>

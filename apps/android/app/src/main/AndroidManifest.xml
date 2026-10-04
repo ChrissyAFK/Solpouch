@@ -28,19 +28,19 @@
                 android:value="https://solpouch.tech/dashboard" />
             <meta-data
                 android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR"
-                android:resource="@color/surface" />
+                android:resource="@color/surface_light" />
             <meta-data
                 android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR_DARK"
                 android:resource="@color/surface" />
             <meta-data
                 android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR"
-                android:resource="@color/surface" />
+                android:resource="@color/surface_light" />
             <meta-data
                 android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR_DARK"
                 android:resource="@color/surface" />
             <meta-data
                 android:name="android.support.customtabs.trusted.NAVIGATION_BAR_DIVIDER_COLOR"
-                android:resource="@color/surface" />
+                android:resource="@color/surface_light" />
             <meta-data
                 android:name="android.support.customtabs.trusted.NAVIGATION_BAR_DIVIDER_COLOR_DARK"
                 android:resource="@color/surface" />
