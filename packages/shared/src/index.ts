@@ -268,3 +268,19 @@ export type VaultError = (typeof VAULT_ERRORS)[number];
 export interface ShoppingListItem { name: string; qty: number }
 export interface ShoppingList { id: string; version?: number; name: string; items: ShoppingListItem[]; createdAt: string; updatedAt: string }
 export interface EditOrderBody { version: number; lines: { index: number; qty: number; productId?: string }[] }
+
+/** A wallet-to-pouch allocation: the user's wallet pays test-USDC to the vault owner, then the pouch is credited. */
+export interface Allocation {
+  id: string;
+  pouchId: string;
+  /** Micros of test-USDC. */
+  amount: number;
+  wallet: string;
+  status: "prepared" | "completed";
+  createdAt: string;
+  /** The user's signed wallet transfer. */
+  txSignature?: string;
+  /** The vault top-up that credited the pouch. */
+  topUpSignature?: string;
+  completedAt?: string;
+}

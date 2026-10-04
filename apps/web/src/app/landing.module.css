@@ -20,75 +20,87 @@
 /* Hero */
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 520px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 540px);
   align-items: center;
-  gap: 64px;
-  padding-top: 80px;
-  padding-bottom: 96px;
+  gap: 72px;
+  padding-top: 96px;
+  padding-bottom: 112px;
 }
 .hero h1 {
-  margin: 0 0 28px;
+  margin: 0 0 var(--space-5);
   font-size: var(--text-display);
   font-weight: 800;
-  font-stretch: 125%;
-  line-height: 0.98;
-  letter-spacing: -0.03em;
+  line-height: 0.96;
+  letter-spacing: -0.035em;
   text-wrap: balance;
 }
 .hero h1 > span {
-  color: var(--solana-green);
+  color: var(--brand);
 }
 .intro {
-  color: var(--muted);
-  font-size: 18px;
+  color: var(--ink-soft);
+  font-size: var(--text-lg);
   line-height: 1.6;
-  max-width: 52ch;
-  margin: 0 0 32px;
+  max-width: 48ch;
+  margin: 0 0 var(--space-6);
 }
 .actions {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: var(--space-5);
   flex-wrap: wrap;
 }
 .page .primary {
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
-  gap: 32px;
-  padding: 14px 20px;
+  gap: var(--space-5);
+  padding: 0 22px;
   min-height: 52px;
-  border-radius: 12px;
-  color: #fff;
-  background: var(--solana-purple);
-  font-size: 16px;
+  border-radius: var(--r-md);
+  color: var(--brand-ink, #fff);
+  background: var(--brand);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.18) inset, 0 1px 2px rgb(14 16 21 / 0.18);
+  font-size: var(--text-base);
   font-weight: 600;
   text-decoration: none;
-  transition: background-color 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    background-color var(--dur-hover, 160ms) var(--ease-out),
+    transform var(--dur-press, 140ms) var(--ease-out);
 }
-.page .primary:hover {
-  background: #8735e8;
+.page .primary:active {
+  transform: scale(0.97);
 }
 .page .textLink {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   min-height: 44px;
-  font-size: 16px;
+  font-size: var(--text-base);
+  font-weight: 500;
   color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 6px;
+  transition: text-decoration-color var(--dur-hover, 160ms) var(--ease-out);
 }
-.page .textLink:hover {
-  color: var(--solana-green);
+@media (hover: hover) and (pointer: fine) {
+  .page .primary:hover {
+    background: var(--brand-hover);
+  }
+  .page .textLink:hover {
+    text-decoration-color: var(--brand);
+  }
 }
 .page .primary:focus-visible,
 .page .textLink:focus-visible {
-  outline: 2px solid var(--solana-green);
+  outline: 2px solid var(--brand);
   outline-offset: 3px;
 }
 .demoNote {
-  margin: 24px 0 0;
+  margin: var(--space-5) 0 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--text-sm);
   line-height: 1.6;
   max-width: 52ch;
 }
@@ -98,9 +110,8 @@
   margin: 0;
   font-size: var(--text-4xl);
   font-weight: 800;
-  font-stretch: 112%;
-  line-height: 1.05;
-  letter-spacing: -0.03em;
+  line-height: 1.04;
+  letter-spacing: -0.035em;
   text-wrap: balance;
 }
 .lede {
@@ -111,10 +122,10 @@
   line-height: 1.6;
 }
 
-/* Pouches */
+/* Pouches: each one a fare card */
 .pouches {
-  padding-top: 96px;
-  padding-bottom: 96px;
+  padding-top: 112px;
+  padding-bottom: 112px;
   border-top: 1px solid var(--line);
 }
 .pouchRow {
@@ -123,38 +134,77 @@
   padding: 0;
   display: grid;
   grid-template-columns: 1fr 1.15fr 1.3fr;
-  gap: 48px;
-  align-items: end;
+  gap: 24px;
+  align-items: start;
 }
 .pouchItem {
   display: grid;
-  gap: 12px;
-  justify-items: start;
-  align-content: end;
+  gap: 16px;
+  align-content: start;
+  padding: 8px 8px 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: 0 1px 2px rgb(14 16 21 / 0.06), 0 12px 32px -20px rgb(14 16 21 / 0.25);
 }
-.pouchItem h3 {
-  margin: 12px 0 0;
-  font-size: 28px;
+.cardFace {
+  --tone: var(--card-violet);
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 176px;
+  padding: 20px 20px 16px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--tone) 16%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 22%, transparent);
+}
+.tone0 {
+  --tone: var(--card-violet);
+}
+.tone1 {
+  --tone: var(--card-mint);
+}
+.tone2 {
+  --tone: var(--card-amber);
+}
+.chip {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  width: 34px;
+  height: 26px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--tone) 45%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 55%, transparent);
+}
+.cardFace h3 {
+  margin: 0;
+  font-size: var(--text-2xl);
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   line-height: 1.1;
+}
+.cardFace svg {
+  margin: -8px -4px -4px 0;
 }
 .purpose {
   margin: 0;
+  padding: 0 12px;
   color: var(--muted);
-  font-size: 16px;
+  font-size: var(--text-base);
   line-height: 1.55;
-  max-width: 34ch;
+  max-width: 38ch;
 }
 .rules {
-  margin: 8px 0 0;
+  margin: 0 12px;
   padding-top: 12px;
-  width: 100%;
   border-top: 1px solid var(--line);
   display: grid;
-  gap: 6px;
+  gap: 8px;
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 .rules div {
@@ -168,28 +218,28 @@
 .rules dd {
   margin: 0;
   text-align: right;
+  font-weight: 500;
 }
 
-/* How it works: a rail with three stops */
+/* How it works: a line with three gates */
 .how {
-  padding-top: 96px;
-  padding-bottom: 96px;
+  padding-top: 112px;
+  padding-bottom: 112px;
   border-top: 1px solid var(--line);
 }
 .rail {
   list-style: none;
   margin: 56px 0 0;
-  padding: 40px 0 0;
+  padding: 44px 0 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 48px;
   position: relative;
-  counter-reset: none;
 }
 .rail::before {
   content: "";
   position: absolute;
-  top: 8px;
+  top: 10px;
   left: 0;
   right: 0;
   height: 2px;
@@ -201,57 +251,74 @@
 .rail li::before {
   content: "";
   position: absolute;
-  top: -40px;
+  top: -44px;
   left: 0;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
   background: var(--canvas);
-  border: 2px solid var(--solana-purple);
+  border: 2px solid var(--brand);
   box-sizing: border-box;
 }
 .rail li:last-child::before {
-  background: var(--solana-green);
-  border-color: var(--solana-green);
+  background: var(--signal);
+  border-color: var(--signal);
 }
 .rail h3 {
-  margin: 0 0 8px;
-  font-size: 28px;
-  font-weight: 800;
-  font-stretch: 112%;
-  letter-spacing: -0.02em;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.025em;
 }
 .rail p {
   margin: 0;
   color: var(--muted);
-  font-size: 16px;
+  font-size: var(--text-base);
   line-height: 1.6;
   max-width: 36ch;
 }
 
-/* Boundary */
+/* Boundary: a readout panel */
 .boundary {
-  padding-top: 96px;
-  padding-bottom: 96px;
-  border-top: 1px solid var(--line);
+  margin-top: 16px;
+  margin-bottom: 16px;
+  padding-top: 88px;
+  padding-bottom: 88px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 64px;
   align-items: start;
+  background: var(--readout);
+  color: var(--readout-ink);
+  border-radius: var(--r-lg);
+}
+.boundary .display {
+  color: #fff;
 }
 .boundaryBody p {
-  margin: 0 0 16px;
-  color: var(--muted);
-  font-size: 18px;
+  margin: 0 0 var(--space-4);
+  color: var(--readout-muted);
+  font-size: var(--text-lg);
   line-height: 1.6;
   max-width: 52ch;
+}
+.page .boundary .textLink {
+  color: var(--readout-ink);
+  text-decoration-color: color-mix(in srgb, var(--readout-ok) 55%, transparent);
+}
+.page .boundary .textLink:focus-visible {
+  outline-color: var(--readout-ok);
+}
+@media (hover: hover) and (pointer: fine) {
+  .page .boundary .textLink:hover {
+    text-decoration-color: var(--readout-ok);
+  }
 }
 
 /* FAQ */
 .faq {
-  padding-top: 96px;
-  padding-bottom: 96px;
-  border-top: 1px solid var(--line);
+  padding-top: 112px;
+  padding-bottom: 112px;
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
   gap: 64px;
@@ -273,57 +340,68 @@
   justify-content: space-between;
   align-items: center;
   gap: 24px;
-  min-height: 64px;
-  padding: 16px 0;
-  font-size: 18px;
+  min-height: 68px;
+  padding: 18px 0;
+  font-size: var(--text-lg);
   font-weight: 600;
+  letter-spacing: -0.01em;
   cursor: pointer;
 }
 .questions summary::-webkit-details-marker {
   display: none;
 }
 .questions summary span {
-  font-size: 24px;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  font-size: 20px;
   font-weight: 400;
-  color: var(--muted);
-  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  line-height: 1;
+  color: var(--ink);
+  transition: transform var(--dur-panel, 220ms) var(--ease-out);
 }
 .questions details[open] summary span {
   transform: rotate(45deg);
 }
 .questions summary:focus-visible {
-  outline: 2px solid var(--solana-green);
+  outline: 2px solid var(--brand);
   outline-offset: 2px;
 }
 .questions details p {
-  margin: 0 0 20px;
+  margin: 0 0 var(--space-5);
   max-width: 62ch;
   color: var(--muted);
-  font-size: 16px;
+  font-size: var(--text-base);
   line-height: 1.6;
 }
 
-/* Closing */
+/* Closing: the brand field */
 .closing {
+  margin-bottom: 96px;
   padding-top: 96px;
-  padding-bottom: 112px;
-  border-top: 1px solid var(--line);
+  padding-bottom: 96px;
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
   gap: 48px;
   flex-wrap: wrap;
+  background: var(--card-violet);
+  color: #fff;
+  border-radius: var(--r-lg);
 }
 .closing h2 {
   margin: 0;
   font-size: var(--text-display);
   font-weight: 800;
-  font-stretch: 125%;
-  line-height: 0.98;
-  letter-spacing: -0.03em;
+  line-height: 0.96;
+  letter-spacing: -0.035em;
 }
 .closing h2 span {
-  color: var(--solana-green);
+  color: var(--readout-ok);
 }
 .closingAction {
   display: grid;
@@ -332,14 +410,27 @@
 }
 .closingAction p {
   margin: 0;
-  color: var(--muted);
-  font-size: 14px;
+  color: #dcd6ff;
+  font-size: var(--text-sm);
+}
+.page .closing .primary {
+  background: #fff;
+  color: #2a178f;
+}
+.page .closing .primary:focus-visible {
+  outline-color: #fff;
+}
+@media (hover: hover) and (pointer: fine) {
+  .page .closing .primary:hover {
+    background: #ece8ff;
+  }
 }
 
 /* Footer */
 .footer {
   border-top: 1px solid var(--line);
-  padding: 64px 0 32px;
+  padding: 72px 0 32px;
+  background: var(--surface);
 }
 .footerTop {
   display: grid;
@@ -353,6 +444,7 @@
   gap: 10px;
   font-size: 22px;
   font-weight: 700;
+  letter-spacing: -0.03em;
   text-decoration: none;
 }
 .footerAbout p {
@@ -368,7 +460,7 @@
 }
 .footer nav h2 {
   margin: 0 0 8px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--muted);
 }
@@ -377,11 +469,15 @@
   align-items: center;
   gap: 6px;
   min-height: 44px;
-  font-size: 16px;
+  font-size: var(--text-base);
+  color: var(--ink-soft);
   text-decoration: none;
+  transition: color var(--dur-hover, 160ms) var(--ease-out);
 }
-.footer nav a:hover {
-  color: var(--solana-green);
+@media (hover: hover) and (pointer: fine) {
+  .footer nav a:hover {
+    color: var(--brand);
+  }
 }
 .footerBottom {
   display: flex;
@@ -392,7 +488,7 @@
   padding-top: 24px;
   border-top: 1px solid var(--line);
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
 }
 .footerBottom p {
   margin: 0;
@@ -414,7 +510,7 @@
     max-width: 560px;
   }
   .pouchRow {
-    gap: 32px;
+    gap: 16px;
   }
 }
 @media (max-width: 900px) {
@@ -429,6 +525,11 @@
   }
   .faq h2 {
     position: static;
+  }
+  .boundary,
+  .closing {
+    margin-left: 16px;
+    margin-right: 16px;
   }
   .pouches,
   .how,
@@ -449,14 +550,14 @@
     display: flex;
     overflow-x: auto;
     scroll-snap-type: x mandatory;
-    gap: 32px;
+    gap: 16px;
     margin-left: -24px;
     margin-right: -24px;
     padding: 0 24px 16px;
     scroll-padding-inline: 24px;
   }
   .pouchItem {
-    flex: 0 0 min(78vw, 300px);
+    flex: 0 0 min(82vw, 320px);
     scroll-snap-align: start;
   }
   .rail {

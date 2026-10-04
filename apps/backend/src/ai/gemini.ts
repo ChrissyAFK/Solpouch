@@ -289,7 +289,7 @@ export function fallbackParse(text: string): ParsedRequest {
     src = src.replace(sm[0], " ");
   }
   let t = src.toLowerCase().trim();
-  t = t.replace(/\b(?:under|below|up to|for less than|less than|max)\s+\$?\d+(?:\.\d+)?\b/g, " ");
+  t = t.replace(/\b(?:under|below|up to|for less than|less than|max)\s+\$?\d+(?:\.\d+)?\b(?:\s*(?:dollars?|bucks|usd|cad)\b)?/g, " ");
   t = t.replace(PREFIX, "");
   const parts = t.split(/,|\band\b|\bplus\b/).map((s) => s.trim()).filter(Boolean);
   const items: ParsedItem[] = [];
@@ -314,9 +314,9 @@ export function fallbackParse(text: string): ParsedRequest {
     if (part && !(store && GENERIC_ITEM.test(part))) items.push({ requested: part, qty: validQuantity(qty) });
   }
   const hints: Array<[RegExp, string]> = [
-    [/uber|takeout|delivery|dinner|lunch/, "uber eats"],
-    [/grocer|milk|eggs|bread/, "groceries"],
-    [/kim|job|material|lumber|stud|screw/, "kim job: materials"],
+    [/\b(?:uber|takeout|delivery|dinner|lunch)\b/, "uber eats"],
+    [/\b(?:grocer(?:y|ies)|milk|eggs?|bread)\b/, "groceries"],
+    [/\b(?:kim|job|materials?|lumber|studs?|screws?)\b/, "kim job: materials"],
   ];
   const pouchHint = hints.find(([re]) => re.test(src.toLowerCase()))?.[1];
   return { pouchHint, ...(store ? { store } : {}), ...(service ? { service } : {}), items };

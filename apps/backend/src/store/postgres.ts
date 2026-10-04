@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import type { Order, Pouch, SpendPoint, TopUp, Withdrawal } from "@solpouch/shared";
-import { StoreConflictError, WalletAlreadyLinkedError, spendWindowStart, windowedSpend, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredShoppingList, type StoredPouch, type UserProfile, type UserPatch, type PaymentIndex, type VaultEventRecord, type PaymentRecord, type PriceRecord, type IndexerCursor } from "./types.js";
+import { StoreConflictError, WalletAlreadyLinkedError, spendWindowStart, windowedSpend, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredShoppingList, type StoredAllocation, type StoredPouch, type UserProfile, type UserPatch, type PaymentIndex, type VaultEventRecord, type PaymentRecord, type PriceRecord, type IndexerCursor } from "./types.js";
 
 const iso = (v: Date | string) => (v instanceof Date ? v.toISOString() : new Date(v).toISOString());
 type Row = Record<string, any>;
@@ -18,6 +18,9 @@ function toOrder(r: Row): Order {
 }
 function toTopUp(r: Row): TopUp {
   return { id: r.id, pouchId: r.pouch_id, amount: Number(r.amount), reason: r.reason, status: r.status, ...(r.fail_reason ? {failReason:r.fail_reason}:{}), ...(r.completed_at ? {completedAt:iso(r.completed_at)}:{}), ...(r.from_wallet ? { fromWallet: r.from_wallet } : {}), readyAt: iso(r.ready_at), createdAt: iso(r.created_at), version: Number(r.version), ...(r.tx_signature ? { txSignature: r.tx_signature } : {}) };
+}
+function toAllocation(r: Row): StoredAllocation {
+  return { id: r.id, ownerEmail: r.owner_email, pouchId: r.pouch_id, amount: Number(r.amount), wallet: r.wallet, status: r.status, createdAt: iso(r.created_at), ...(r.tx_signature ? { txSignature: r.tx_signature } : {}), ...(r.top_up_signature ? { topUpSignature: r.top_up_signature } : {}), ...(r.completed_at ? { completedAt: iso(r.completed_at) } : {}) };
 }
 function toWithdrawal(r: Row): Withdrawal {
   return { id: r.id, pouchId: r.pouch_id, amount: Number(r.amount), reason: r.reason, toWallet: r.to_wallet, status: r.status, readyAt: iso(r.ready_at), createdAt: iso(r.created_at), version: Number(r.version), ...(r.fail_reason ? { failReason: r.fail_reason } : {}), ...(r.tx_signature ? { txSignature: r.tx_signature } : {}) };
@@ -241,10 +244,23 @@ export class PostgresStore implements Store, PaymentIndex {
         await this.query(`DELETE FROM order_lines WHERE order_id IN (SELECT id FROM orders WHERE pouch_id IN (${mine}))`, [email]);
         for (const t of ["orders", "topups", "withdrawals", "vault_operations"]) await this.query(`DELETE FROM ${t} WHERE pouch_id IN (${mine})`, [email]);
         await this.query("DELETE FROM pouches WHERE owner_email=$1", [email]);
-        for (const t of ["shopping_lists WHERE owner_email", "web_sessions WHERE email", "auth_challenges WHERE email", "users WHERE email"]) await this.query(`DELETE FROM ${t}=$1`, [email]);
+        for (const t of ["shopping_lists WHERE owner_email", "allocations WHERE owner_email","web_sessions WHERE email", "auth_challenges WHERE email", "users WHERE email"]) await this.query(`DELETE FROM ${t}=$1`, [email]);
         await this.query("COMMIT");
       } catch (error) { await this.query("ROLLBACK").catch(() => {}); throw error; }
     });
+  }
+  async getAllocation(id: string) { const { rows } = await this.query("SELECT * FROM allocations WHERE id=$1", [id]); return rows[0] ? toAllocation(rows[0]) : undefined; }
+  async findAllocationByTxSignature(signature: string) { const { rows } = await this.query("SELECT * FROM allocations WHERE tx_signature=$1", [signature]); return rows[0] ? toAllocation(rows[0]) : undefined; }
+  async saveAllocation(a: StoredAllocation) {
+    try {
+      const { rows } = await this.query(
+        "INSERT INTO allocations (id, owner_email, pouch_id, amount, wallet, status, created_at, tx_signature, top_up_signature, completed_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, tx_signature=EXCLUDED.tx_signature, top_up_signature=EXCLUDED.top_up_signature, completed_at=EXCLUDED.completed_at RETURNING *",
+        [a.id, a.ownerEmail, a.pouchId, a.amount, a.wallet, a.status, a.createdAt, a.txSignature ?? null, a.topUpSignature ?? null, a.completedAt ?? null]);
+      return toAllocation(rows[0]);
+    } catch (e) {
+      if ((e as { code?: string }).code === "23505") throw new StoreConflictError("Signature already used");
+      throw e;
+    }
   }
   async listTopUps(pouchId: string) { return (await this.query("SELECT * FROM topups WHERE pouch_id=$1 ORDER BY created_at DESC",[pouchId])).rows.map(toTopUp); }
   async getWithdrawal(id: string) { const { rows } = await this.query("SELECT * FROM withdrawals WHERE id=$1 ORDER BY created_at DESC LIMIT 1", [id]); return rows[0] ? toWithdrawal(rows[0]) : undefined; }

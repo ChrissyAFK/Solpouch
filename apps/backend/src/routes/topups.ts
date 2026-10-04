@@ -14,6 +14,26 @@ const startBody = z.object({
   reason: z.string().trim().max(300).optional(),
 });
 
+/** TOPUP_COOLDOWN_SECONDS (default 60). Throws a 503 when misconfigured. */
+export function topupCooldownSeconds(): number {
+  const configured = process.env.TOPUP_COOLDOWN_SECONDS ?? "60";
+  const v = Number(configured);
+  if (!configured.trim() || !Number.isSafeInteger(v) || v < 0) {
+    throw new HttpError(503, "Top-ups are temporarily unavailable. Please try again later.");
+  }
+  return v;
+}
+
+/** TOPUP_DAILY_LIMIT_USDC (default 500) in micros. Throws a 503 when misconfigured. */
+export function topupDailyLimitMicros(): number {
+  const configured = process.env.TOPUP_DAILY_LIMIT_USDC ?? "500";
+  const v = Number(configured);
+  if (!configured.trim() || !Number.isFinite(v) || v <= 0 || v > 1_000_000_000) {
+    throw new HttpError(503, "Top-ups are temporarily unavailable. Please try again later.");
+  }
+  return Math.round(v * 1_000_000);
+}
+
 /**
  * Top-ups are the ONLY way money enters a pouch, and are deliberately slow (friction).
  * This is owner/dashboard-only: it is NOT reachable from the voice tools or any agent path,
@@ -61,8 +81,18 @@ export function topupRoutes(deps: Deps) {
     // debits the backend owner key; fromWallet records the linked wallet for audit.
     const wallet = (await deps.store.getUser(email))?.wallet;
     if (!wallet) throw new HttpError(403, "Link a wallet to add money", "WalletRequired");
-    const cooldown = Number(process.env.TOPUP_COOLDOWN_SECONDS ?? 60);
+    const cooldown = topupCooldownSeconds();
+    const cap = topupDailyLimitMicros();
     const now = Date.now();
+    const since = now - 24 * 3600_000;
+    const owned = await deps.store.listPouches(email);
+    const recent = (await Promise.all(owned.map((p) => deps.store.listTopUps(p.id)))).flat()
+      .filter((x) => x.status !== "cancelled" && x.status !== "failed" && Date.parse(x.createdAt) > since);
+    const used = recent.reduce((s, x) => s + x.amount, 0);
+    if (used + b.amount > cap) {
+      const left = Math.max(0, cap - used);
+      throw new HttpError(429, `Top-ups are limited to $${cap / 1_000_000} per 24 hours. You can add $${(left / 1_000_000).toFixed(2)} more right now.`, "TopUpLimit");
+    }
     const t: TopUp = {
       id: randomUUID(),
       pouchId: b.pouchId,

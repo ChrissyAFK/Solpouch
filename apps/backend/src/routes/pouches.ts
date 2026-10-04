@@ -9,9 +9,9 @@ import type { AuthEnv } from "../auth/session.js";
 import { getOwnedPouch, HttpError, type Deps } from "../services/orders.js";
 
 const rules = {
-  maxPerOrder: z.number().int().nonnegative().max(10_000_000_000),
-  dailyLimit: z.number().int().nonnegative().max(10_000_000_000),
-  confirmAbove: z.number().int().nonnegative().max(10_000_000_000),
+  maxPerOrder: z.number().int().nonnegative().max(10_000_000_000, "Limits can be at most $10,000."),
+  dailyLimit: z.number().int().nonnegative().max(10_000_000_000, "Limits can be at most $10,000."),
+  confirmAbove: z.number().int().nonnegative().max(10_000_000_000, "Limits can be at most $10,000."),
   allowedMerchantIds: z.array(z.string().max(100)).max(100),
 };
 const RULE_MESSAGES = {

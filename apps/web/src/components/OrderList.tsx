@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import type { Merchant, Order, Pouch } from "@solpouch/shared";
-import { toUsdc } from "@solpouch/shared";
+import { isCheckoutReference, orderCurrency, toUsdc } from "@solpouch/shared";
 import { usd } from "@/components/ui";
 import { Icon } from "@/components/Icons";
 
@@ -55,7 +55,7 @@ export function OrderList({
           <span className={`order-status status-${o.status}`}>
             {o.status === "draft" ? "Awaiting review" : o.status === "paying" ? "Checking payment" : o.status}
           </span>
-          <strong className="order-amount">{usd(toUsdc(o.total))}</strong>
+          <strong className="order-amount">{usd(toUsdc(o.total)).replace(/^US?\$/, "")}{" "}{orderCurrency(o)}{isCheckoutReference(o) ? " estimate" : ""}</strong>
           <Icon name="arrow" size={15} />
         </Link>
         {explorerTxUrl(o.txSignature) && (

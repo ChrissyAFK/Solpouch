@@ -12,6 +12,7 @@ import type {
   Withdrawal,
   StartWithdrawalBody,
   ApiError,
+  Allocation,
 } from "@solpouch/shared";
 import { clearSession, getToken } from "./session";
 
@@ -211,6 +212,13 @@ export const api = {
   topUp: (id: string) => req<TopUp>(`/topups/${encodeURIComponent(id)}`),
   completeTopUp: (id: string) => post<TopUp>(`/topups/${id}/complete`),
   cancelTopUp: (id: string) => post<TopUp>(`/topups/${id}/cancel`),
+  prepareAllocation: (pouchId: string, amount: number) =>
+    post<{ allocationId: string; transaction: string; lastValidBlockHeight: number }>(
+      "/allocations/prepare",
+      { pouchId, amount },
+    ),
+  completeAllocation: (id: string, signature: string) =>
+    post<Allocation>(`/allocations/${encodeURIComponent(id)}/complete`, { signature }),
   listPendingTopUps: (pouchId?: string) =>
     req<TopUp[]>(`/topups${pouchId ? `?pouchId=${encodeURIComponent(pouchId)}` : ""}`),
   startWithdrawal: (b: StartWithdrawalBody) =>

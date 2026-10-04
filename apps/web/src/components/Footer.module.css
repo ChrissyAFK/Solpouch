@@ -7,13 +7,13 @@
   width: 100%;
   max-width: 1440px;
   margin: 0 auto;
-  padding: 30px 36px calc(84px + env(safe-area-inset-bottom));
+  padding: 48px 36px calc(84px + env(safe-area-inset-bottom));
 }
 .columns {
   display: grid;
   grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(110px, 1fr));
   gap: 36px;
-  padding-bottom: 30px;
+  padding-bottom: 40px;
 }
 .brand {
   display: inline-flex;
@@ -21,9 +21,9 @@
   gap: 10px;
   color: var(--ink);
   font-size: 21px;
-  font-weight: 800;
-  font-stretch: 115%;
+  font-weight: 700;
   letter-spacing: -0.03em;
+  text-decoration: none;
 }
 .about p {
   max-width: 300px;
@@ -40,8 +40,8 @@
 }
 .group h2 {
   margin: 0 0 8px;
-  color: var(--ink);
-  font-size: 14px;
+  color: var(--muted);
+  font-size: 13px;
   line-height: 1.5;
   font-weight: 600;
 }
@@ -49,15 +49,17 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  min-height: 29px;
-  color: var(--muted);
+  min-height: 36px;
+  color: var(--ink-soft);
   font-size: 14px;
   line-height: 1.5;
+  text-decoration: none;
+  transition: color var(--dur-hover, 160ms) var(--ease-out);
 }
-.group a:hover {
-  color: var(--accent-ink);
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
+@media (hover: hover) and (pointer: fine) {
+  .group a:hover {
+    color: var(--brand);
+  }
 }
 .group a > span[aria-hidden] {
   color: var(--faint);
@@ -68,9 +70,9 @@
   align-items: center;
   gap: 16px;
   border-top: 1px solid var(--line);
-  padding-top: 18px;
+  padding-top: 20px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.6;
 }
 .bottom > span {
@@ -127,7 +129,7 @@
     max-width: 320px;
   }
   .group a {
-    min-height: 34px;
+    min-height: 44px;
   }
   .bottom {
     flex-direction: column;

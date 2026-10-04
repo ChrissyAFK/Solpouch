@@ -10,7 +10,7 @@ export async function verifyMainnetUsdcReceipt(connection:Pick<Connection,'getGe
   new PublicKey(wallet);
   if(!/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(signature)) return false;
   const expected=usdcMicros(amount); if(expected<=0n) return false;
-  if(await connection.getGenesisHash()!=='5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp') throw new Error('Mainnet receipt verification requires a mainnet RPC');
+  if(await connection.getGenesisHash()!=='5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d') throw new Error('Mainnet receipt verification requires a mainnet RPC');
   const tx=await connection.getParsedTransaction(signature,{commitment:'finalized',maxSupportedTransactionVersion:0});
   if(!tx?.meta || tx.meta.err) return false;
   const before=new Map((tx.meta.preTokenBalances??[]).filter(b=>b.owner===wallet && b.mint===MAINNET_USDC_MINT && b.uiTokenAmount.decimals===6).map(b=>[b.accountIndex,BigInt(b.uiTokenAmount.amount)]));

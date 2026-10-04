@@ -1,4 +1,4 @@
-import type { Order, Pouch, SpendPoint, TopUp, ShoppingList, Withdrawal } from "@solpouch/shared";
+import type { Allocation, Order, Pouch, SpendPoint, TopUp, ShoppingList, Withdrawal } from "@solpouch/shared";
 
 /** Profile edit. A wallet here is store-internal only: routes link wallets through setWallet. */
 export type UserPatch = { displayName?: string | null; avatar?: string | null; wallet?: string | null };
@@ -29,6 +29,7 @@ export interface AuthSession { id: string; email: string; name: string; picture:
 /** A pending "link this wallet to the signed-in account" proof, bound to one session and web origin. Single use. */
 export interface AuthChallenge { id: string; wallet: string; email: string; sessionId: string; origin: string; message: string; expiresAt: string }
 
+export type StoredAllocation = Allocation & { ownerEmail: string };
 /** All reads and saves return detached values. Use the version returned by a save. */
 export type StoredShoppingList = ShoppingList & { ownerEmail: string };
 export interface Store {
@@ -67,6 +68,10 @@ export interface Store {
   /** Erases the account: sessions, challenges, shopping lists, the user row (and wallet link), and its pouches with their orders, top-ups, withdrawals and operation journal. Leaves the public-chain mirrors (payments, prices, vault_events). */
   deleteAccount(email: string): Promise<void>;
   listTopUps(pouchId: string): Promise<TopUp[]>;
+  getAllocation(id: string): Promise<StoredAllocation | undefined>;
+  /** Upsert by id. A txSignature is unique across allocations (StoreConflictError otherwise). */
+  saveAllocation(a: StoredAllocation): Promise<StoredAllocation>;
+  findAllocationByTxSignature(signature: string): Promise<StoredAllocation | undefined>;
   getUser(email: string): Promise<UserProfile | undefined>;
   /** Partial profile edit (undefined leaves a field alone, null clears it). Routes never pass a wallet. */
   updateUser(email: string, patch: UserPatch, now: string): Promise<UserProfile>;

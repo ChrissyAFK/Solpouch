@@ -25,6 +25,8 @@ export interface Deps {
   fundingRepository?: FundingRepository;
   store: Store;
   vault: VaultClient;
+  /** Wallet-transfer chain access for /allocations. Defaults to the real RPC in chain mode; tests inject a fake. */
+  allocationChain?: import('../vault/allocationChain.js').AllocationChain;
   /** Override Google ID token verification (tests). */
   verifyGoogle?: (credential: string) => Promise<GoogleUser>;
 }
@@ -185,7 +187,7 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
   }
 
   const pickCatalogPouch = (id: string) =>
-    pouches.find((p) => p.allowedMerchantIds.includes(id)) ?? pouches.find((p) => isAnyStore(p) && !p.frozen);
+    pouches.find((p) => !p.frozen && p.allowedMerchantIds.includes(id)) ?? pouches.find((p) => isAnyStore(p) && !p.frozen);
   const newId = () => randomBytes(16).toString("hex");
 
   if (best && catalogLines && covered) {
@@ -227,7 +229,7 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
       url: store.url,
     });
     pouch ??=
-      pouches.find((p) => isAnyStore(p) && !p.frozen) ?? pouches.find((p) => p.allowedMerchantIds.includes(merchant.id));
+      pouches.find((p) => isAnyStore(p) && !p.frozen) ?? pouches.find((p) => !p.frozen && p.allowedMerchantIds.includes(merchant.id));
     if (!pouch) throw new HttpError(400, `No pouch is allowed to pay ${merchant.name}`);
     const wanted: ParsedItem[] = chooseItems ? items.map((i) => ({ requested: i.requested, qty: 1 })) : parsed.items;
     const lines: OrderLine[] = wanted.map((it) => {

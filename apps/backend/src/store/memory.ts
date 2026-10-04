@@ -1,6 +1,6 @@
 import { toMicros, type Order, type Pouch, type SpendPoint, type TopUp, type Withdrawal } from "@solpouch/shared";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { StoreConflictError, WalletAlreadyLinkedError, sameOperation, spendBucket, spendWindowStart, validateRateLimit, windowedSpend, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredShoppingList, type StoredPouch, type UserProfile, type UserPatch, type PaymentIndex, type VaultEventRecord, type PaymentRecord, type PriceRecord, type IndexerCursor } from "./types.js";
+import { StoreConflictError, WalletAlreadyLinkedError, sameOperation, spendBucket, spendWindowStart, validateRateLimit, windowedSpend, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredShoppingList, type StoredAllocation, type StoredPouch, type UserProfile, type UserPatch, type PaymentIndex, type VaultEventRecord, type PaymentRecord, type PriceRecord, type IndexerCursor } from "./types.js";
 
 // TODO: PostgresStore backed by Tiger Data (see db/schema.sql). Swap in src/index.ts.
 
@@ -55,6 +55,7 @@ export class MemoryStore implements Store, PaymentIndex {
   private pouches = new Map<string, StoredPouch>();
   private orders = new Map<string, Order>();
   private topups = new Map<string, TopUp>();
+  private allocations = new Map<string, StoredAllocation>();
   private withdrawals = new Map<string, Withdrawal>();
   private operations = new Map<string, VaultOperation>();
   private users = new Map<string, UserProfile>();
@@ -199,6 +200,7 @@ export class MemoryStore implements Store, PaymentIndex {
     // payments/prices/vault events mirror the public chain and hold no personal data: kept.
     const ids = new Set([...this.pouches.values()].filter(p => p.ownerEmail === email).map(p => p.id));
     for (const m of [this.orders, this.topups, this.withdrawals] as Map<string, { pouchId: string }>[]) for (const [id, r] of m) if (ids.has(r.pouchId)) m.delete(id);
+    for (const [id, a] of this.allocations) if (a.ownerEmail === email) this.allocations.delete(id);
     for (const [id, o] of this.operations) if (ids.has(o.pouchId)) this.operations.delete(id);
     for (const id of ids) this.pouches.delete(id);
     for (const [id, l] of this.shoppingLists) if (l.ownerEmail === email) this.shoppingLists.delete(id);
@@ -206,6 +208,13 @@ export class MemoryStore implements Store, PaymentIndex {
     await this.deleteSessions(email);
     this.users.delete(email);
   }
+  async getAllocation(id: string) { return structuredClone(this.allocations.get(id)); }
+  async saveAllocation(a: StoredAllocation) {
+    if (a.txSignature) for (const o of this.allocations.values()) if (o.id !== a.id && o.txSignature === a.txSignature) throw new StoreConflictError("Signature already used");
+    this.allocations.set(a.id, structuredClone(a));
+    return structuredClone(a);
+  }
+  async findAllocationByTxSignature(signature: string) { return structuredClone([...this.allocations.values()].find((a) => a.txSignature === signature)); }
   async listTopUps(pouchId: string) { return structuredClone([...this.topups.values()].filter(t=>t.pouchId===pouchId).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))); }
   async getUser(email: string) { return structuredClone(this.users.get(email)); }
   async saveUser(user: UserProfile) {

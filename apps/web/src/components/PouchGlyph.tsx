@@ -2,8 +2,8 @@ import { useId } from "react";
 import styles from "./PouchGlyph.module.css";
 
 const TONES = [
-  "#9945ff", // purple
-  "#14c8a4", // teal
+  "#4b2bef", // transit violet
+  "#13c27e", // mint
   "#f2a33a", // marigold
   "#4f8cff", // blue
   "#ee6a8c", // rose

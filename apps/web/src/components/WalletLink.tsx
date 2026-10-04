@@ -6,9 +6,11 @@ import { getToken } from "@/lib/session";
 import { useAuth } from "./AuthProvider";
 import styles from "./WalletLink.module.css";
 
-type Wallet = {
+export type Wallet = {
   publicKey?: { toBase58(): string } | null;
   connect(): Promise<{ publicKey: { toBase58(): string } }>;
+  signAndSendTransaction?(tx: unknown): Promise<{ signature: string }>;
+  signTransaction?(tx: unknown): Promise<unknown>;
   signMessage?(
     message: Uint8Array,
     encoding?: string,
@@ -16,7 +18,7 @@ type Wallet = {
   on?(event: string, listener: () => void): void;
   removeListener?(event: string, listener: () => void): void;
 };
-function injectedWallet(): Wallet | undefined {
+export function injectedWallet(): Wallet | undefined {
   const browser = window as unknown as {
     solana?: Wallet;
     phantom?: { solana?: Wallet };
