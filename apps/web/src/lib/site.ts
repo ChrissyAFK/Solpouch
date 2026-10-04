@@ -57,7 +57,8 @@ export function pageMetadata(
     alt: "Solpouch — Pouches, spending limits, and orders",
   };
   return {
-    title: fullTitle,
+    // Tabs stay short; link previews below keep the page name.
+    title: "Solpouch",
     description,
     robots:
       privatePage || !allowIndexing

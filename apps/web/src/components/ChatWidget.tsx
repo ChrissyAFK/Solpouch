@@ -67,7 +67,12 @@ function ChatPanel() {
     onMessage: ({ message, role }) => {
       if (!mounted.current || !active.current) return;
       if (role === "user" && message === lastTyped.current) { lastTyped.current = null; return; }
-      setMessages(m => [...m, { role: role === "user" ? "user" : "assistant", content: message }]);
+      // Retried sessions repeat the agent's greeting; show it once.
+      setMessages(m => {
+        const last = m[m.length - 1];
+        if (role === "agent" && last?.role === "assistant" && last.content === message) return m;
+        return [...m, { role: role === "user" ? "user" : "assistant", content: message }];
+      });
       if (role === "agent") { if (agentTimer.current) clearTimeout(agentTimer.current); busy.current = false; setPending(false); }
     },
     onDisconnect: () => {

@@ -21,8 +21,6 @@ const jetbrains = JetBrains_Mono({
 
 export const metadata: Metadata = {
   ...pageMetadata("Spending with limits", siteDescription, false),
-  // Short tab title; link previews keep the tagline from pageMetadata.
-  title: "Solpouch",
   // Local fallback is only for development previews; canonical URLs require config.
   metadataBase: siteUrl ?? new URL("http://localhost:3000"),
   applicationName: "Solpouch",
