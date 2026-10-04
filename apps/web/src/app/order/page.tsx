@@ -665,7 +665,7 @@ function OrderWorkspace() {
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                               <path d="M3 8.5l3.2 3L13 4.5" />
                             </svg>
-                            {line.product?.url ? "Price confirmed on the store's page" : "Exact"}
+                            {line.product?.url && line.product.estimated === false ? "Price confirmed on the store's page" : "Exact"}
                           </span>
                         ) : (
                           <div className={s.checkBox}>

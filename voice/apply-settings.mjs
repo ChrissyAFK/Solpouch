@@ -36,5 +36,5 @@ if (process.argv.includes("--dry-run")) {
   const text = await res.text();
   if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${text.slice(0, 500)}`);
   const c = JSON.parse(text).conversation_config;
-  console.log(`applied: ${c.asr.keywords.length} keywords, speculative_turn=${c.turn.speculative_turn}, turn_eagerness=${c.turn.turn_eagerness}`);
+  console.log(`applied: ${c?.asr?.keywords?.length ?? "?"} keywords, speculative_turn=${c?.turn?.speculative_turn}, turn_eagerness=${c?.turn?.turn_eagerness}`);
 }

@@ -77,3 +77,15 @@ describe("findCart", () => {
     expect(r!.items.every((i) => i.verified === false)).toBe(true);
   });
 });
+
+describe("findCart cache hit", () => {
+  it("returns this request's spelling of each item", async () => {
+    clearFindCache();
+    const find = vi.fn(async () => ({ store: { name: "S", domain: "s.example", url: "https://s.example" }, onInstacart: false, fallback: false, items: [{ requested: "deck screws", name: "Deck Screws 100 pack", unitPrice: 12.99 }] }));
+    const verify = vi.fn(async () => ({ status: "estimate" as const, reason: "none" }));
+    await findCart([{ requested: "deck screws", qty: 1 }], {}, { find, verify });
+    const again = await findCart([{ requested: "Deck  Screws", qty: 1 }], {}, { find, verify });
+    expect(find).toHaveBeenCalledTimes(1);
+    expect(again?.items[0].requested).toBe("Deck  Screws");
+  });
+});

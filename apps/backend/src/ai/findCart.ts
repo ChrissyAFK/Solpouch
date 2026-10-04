@@ -25,7 +25,12 @@ export async function findCart(items: ParsedItem[], opts: FindOpts = {}, deps: F
   const now = deps.now ?? Date.now;
   const key = cacheKey(items, opts);
   const hit = cache.get(key);
-  if (hit && now() - hit.at < hit.ttl) return copy(hit.find);
+  if (hit && now() - hit.at < hit.ttl) {
+    // The caller matches lines to its own items by `requested`, so a hit takes this request's spelling.
+    const find = copy(hit.find);
+    for (const i of find.items) i.requested = items.find((it) => norm(it.requested) === norm(i.requested))?.requested ?? i.requested;
+    return find;
+  }
   cache.delete(key);
 
   const found = await (deps.find ?? findOnline)(items, opts);
@@ -43,6 +48,6 @@ export async function findCart(items: ParsedItem[], opts: FindOpts = {}, deps: F
     }),
   };
   if (cache.size >= MAX_ENTRIES) cache.delete(cache.keys().next().value!);
-  cache.set(key, { at: now(), ttl: out.items.every((i) => i.verified) ? 24 * HOUR : HOUR, find: copy(out) });
+  cache.set(key, { at: now(), ttl: out.items.length > 0 && out.items.every((i) => i.verified) ? 24 * HOUR : HOUR, find: copy(out) });
   return out;
 }
