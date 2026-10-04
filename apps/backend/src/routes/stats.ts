@@ -4,7 +4,7 @@ import type { AuthEnv } from "../auth/session.js";
 import { getOwnedPouch, listOwnedOrders, type Deps } from "../services/orders.js";
 import { isPaymentIndex, spendBucket } from "../store/types.js";
 
-// Indexed on-chain payments (spend_daily / payments, written by src/indexer.ts) plus paid orders
+// Indexed on-chain payments (the payments table, written by src/indexer.ts) plus paid orders
 // the indexer has not reached yet (matched by orderId = orders.id), so indexer lag never hides spend.
 // With no payment index, spend comes from paid orders alone.
 export function statsRoutes(deps: Deps) {

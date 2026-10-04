@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Order, Pouch, TopUp } from "@solpouch/shared";
+import pg from "pg";
 import { PostgresStore } from "../src/store/postgres.js";
+import { spendBucket } from "../src/store/types.js";
 
 describe.skipIf(!process.env.TEST_DATABASE_URL)("PostgresStore", () => {
   it("round-trips pouch, order with lines, topup", async () => {
@@ -58,6 +60,18 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("PostgresStore", () => {
     expect((await store.indexedSpend([id], "hour"))![0]).toMatchObject({ spent: 250, orders: 1 });
     expect(await store.indexedOrderIds([id], ["0".repeat(32), "f".repeat(32)])).toEqual(new Set(["0".repeat(32)]));
     expect(await store.indexedOrderIds(["other"], ["0".repeat(32)])).toEqual(new Set());
+    // A payment indexed after its day was materialized still counts (spend_daily refreshes only its last 3 days).
+    const late = new Date(Date.now() - 20 * 86_400_000).toISOString();
+    const recent = new Date(Date.now() - 2 * 86_400_000).toISOString();
+    for (const [n, time] of [["late", late], ["recent", recent]] as const) {
+      await store.recordVaultEvents([{ ...events[0]!, signature: `${id}-${n}`, time }], [{ ...payments[0]!, txSignature: `${id}-${n}`, orderId: n === "late" ? "1".repeat(32) : "2".repeat(32), time }]);
+    }
+    const admin = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
+    await admin.connect();
+    try { await admin.query("CALL refresh_continuous_aggregate('spend_daily', now() - interval '3 days', now() - interval '1 hour')"); } finally { await admin.end(); }
+    const withLate = await store.indexedSpend([id], "day");
+    expect(withLate).toHaveLength(3);
+    expect(withLate![0]).toMatchObject({ bucket: spendBucket(late, "day"), spent: 250, orders: 1 });
     await store.saveIndexerCursor(`test-${id}`, { signature: id, slot: 5 });
     expect(await store.getIndexerCursor(`test-${id}`)).toEqual({ signature: id, slot: 5 });
     await store.close();
