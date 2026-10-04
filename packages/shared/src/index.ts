@@ -114,6 +114,8 @@ export interface TopUp {
   pouchId: string;
   amount: Micros;
   reason: string;
+  /** The linked wallet (base58) this top-up is funded from. */
+  fromWallet?: string;
   status: TopUpStatus;
   /** When the cooldown ends and the top-up can be completed. */
   readyAt: string;

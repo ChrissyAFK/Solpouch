@@ -3,11 +3,12 @@ import { toMicros } from "@solpouch/shared";
 import { createApp } from "../src/app.js";
 import { getMerchant } from "../src/merchants/index.js";
 import { MemoryStore } from "../src/store/memory.js";
-import { authHeaders, ownedSeed, voiceToken } from "./helpers.js";
+import { authHeaders, linkTestWallet, ownedSeed, voiceToken } from "./helpers.js";
 import { MockVaultClient } from "../src/vault/mock.js";
 import { VaultRejected } from "../src/vault/types.js";
 
 delete process.env.GEMINI_API_KEY;
+delete process.env.ANTHROPIC_API_KEY;
 delete process.env.ELEVENLABS_TOOL_SECRET;
 
 const thai = getMerchant("thai-express")!.payTo;
@@ -17,9 +18,10 @@ const $ = toMicros;
 let clock = 1_000_000;
 let store: MemoryStore;
 let vault: MockVaultClient;
-beforeEach(() => {
+beforeEach(async () => {
   clock = 1_000_000;
   store = new MemoryStore(ownedSeed());
+  await linkTestWallet(store);
   vault = new MockVaultClient(store, (id) => getMerchant(id)?.payTo, () => clock);
 });
 

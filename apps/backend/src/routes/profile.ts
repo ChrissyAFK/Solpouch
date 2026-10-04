@@ -24,16 +24,16 @@ const patchBody = z.object({
 });
 
 /** Session user with name/picture overridden by the stored profile (read-only, creates nothing). */
-export async function mergedUser(store: Store, u: SessionUser): Promise<SessionUser> {
+export async function mergedUser(store: Store, u: SessionUser): Promise<SessionUser & { wallet?: string }> {
   const p = await store.getUser(u.email);
-  return { ...u, name: p?.displayName ?? u.name, picture: p?.avatar ?? u.picture };
+  return { ...u, name: p?.displayName ?? u.name, picture: p?.avatar ?? u.picture, ...(p?.wallet ? { wallet: p.wallet } : {}) };
 }
 
 export function profileRoutes(deps: Deps) {
   const app = new Hono<AuthEnv>();
   const { store } = deps;
 
-  const shape = (g: SessionUser, p: { displayName?: string; avatar?: string; createdAt: string }) => ({
+  const shape = (g: SessionUser, p: { displayName?: string; avatar?: string; wallet?: string; createdAt: string }) => ({
     email: g.email,
     name: p.displayName ?? g.name,
     picture: p.avatar ?? g.picture,
@@ -41,6 +41,7 @@ export function profileRoutes(deps: Deps) {
     avatar: p.avatar ?? null,
     googleName: g.name,
     googlePicture: g.picture,
+    wallet: p.wallet ?? null,
     createdAt: p.createdAt,
   });
 

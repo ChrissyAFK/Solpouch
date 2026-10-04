@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import type { ParsedItem } from "./gemini.js";
+import { aiProvider, claude, claudeModel } from "./provider.js";
 
 export interface WebFindItem {
   requested: string;
@@ -77,13 +78,14 @@ export function validateFind(raw: any, items: ParsedItem[], allowedDomains?: str
   return { store: { name, domain, url }, onInstacart: raw.onInstacart === true, items: out, fallback: false };
 }
 
-/** Search the web (Gemini + Google Search grounding) for one retailer that sells the items. */
+/** Search the web (Claude web search, else Gemini + Google Search grounding) for one retailer that sells the items. */
 export async function findOnline(
   items: ParsedItem[],
   opts: { allowedDomains?: string[]; region?: string } = {},
 ): Promise<WebFind | null> {
-  const g = ai();
-  if (!g) return null;
+  const provider = aiProvider();
+  const g = provider === "gemini" ? ai() : undefined;
+  if (provider !== "claude" && !g) return null;
   const region = opts.region ?? "Vancouver, BC, Canada";
   const list = items.map((i) => `- ${i.requested} (qty ${i.qty})`).join("\n");
   const restrict = opts.allowedDomains?.length
@@ -92,12 +94,36 @@ export async function findOnline(
   const prompt = `Find ONE real online retailer that sells all (or most) of these items, preferring stores in Canada / ${region}:
 ${list}
 ${restrict}
-Use Google Search to find real current prices. Reply with ONLY a JSON object, no prose, in this shape:
+Use web search to find real current prices. Reply with ONLY a JSON object, no prose, in this shape:
 {"storeName": string, "domain": string, "storeUrl": string, "onInstacart": boolean,
  "items": [{"requested": string (exactly as listed above), "name": string, "brand": string|null, "size": string|null, "unitPrice": number (CAD, per unit), "url": string (product page)}]}
 "onInstacart" is true only if this store is available on Instacart.`;
   try {
-    const res = await g.models.generateContent({
+    if (provider === "claude") {
+      const tools = [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }] as any;
+      const system =
+        "You are a shopping lookup service. Your final message must be exactly one JSON object and nothing else. " +
+        "Never answer in prose. If no single store has everything, pick the store that covers the most items (big general retailers like Walmart, Costco or Canadian Tire are fine) and include only the items you priced. " +
+        "Use the closest price you saw if it is not exact.";
+      const ask = (messages: any[]) => claude()!.messages.create({ model: claudeModel(), max_tokens: 2048, system, messages, tools });
+      // Only text after the last search result is the answer; earlier text is narration.
+      const finalText = (content: any[]) => {
+        let last = -1;
+        content.forEach((b, i) => { if (b.type === "web_search_tool_result") last = i; });
+        return content.slice(last + 1).map((b) => (b.type === "text" ? b.text : "")).join("");
+      };
+      const first = await ask([{ role: "user", content: prompt }]);
+      const found = validateFind(parseJson(finalText(first.content)), items, opts.allowedDomains);
+      if (found) return found;
+      // One retry: hand back the searches it already did and ask for the JSON only.
+      const retry = await ask([
+        { role: "user", content: prompt },
+        { role: "assistant", content: first.content },
+        { role: "user", content: "Do not search again. Reply now with only the JSON object, using the best store and prices from your searches above." },
+      ]);
+      return validateFind(parseJson(finalText(retry.content)), items, opts.allowedDomains);
+    }
+    const res = await g!.models.generateContent({
       model: model(),
       contents: prompt,
       config: { tools: [{ googleSearch: {} }], httpOptions: { timeout: 15_000, retryOptions: { attempts: 1 } } },

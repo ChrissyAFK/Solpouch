@@ -16,6 +16,8 @@ export interface VaultOperation {
   createdAt: string;
 }
 export interface AuthSession { id: string; email: string; name: string; picture: string; createdAt: string; expiresAt: string }
+/** A pending "link this wallet to the signed-in account" proof, bound to one session and web origin. Single use. */
+export interface AuthChallenge { id: string; wallet: string; email: string; sessionId: string; origin: string; message: string; expiresAt: string }
 
 /** All reads and saves return detached values. Use the version returned by a save. */
 export interface Store {
@@ -38,7 +40,14 @@ export interface Store {
   deleteSessions(email: string): Promise<void>;
   listTopUps(pouchId: string): Promise<TopUp[]>;
   getUser(email: string): Promise<UserProfile | undefined>;
+  /** Saves profile fields. Never changes the linked wallet; use setWallet. */
   saveUser(user: UserProfile): Promise<UserProfile>;
+  findUserByWallet(wallet: string): Promise<UserProfile | undefined>;
+  /** Links (or with null unlinks) the account's wallet, creating the user row if needed. StoreConflictError when another account holds it. */
+  setWallet(email: string, wallet: string | null): Promise<UserProfile>;
+  saveChallenge(challenge: AuthChallenge): Promise<void>;
+  /** Deletes and returns the challenge if it exists and has not expired. */
+  consumeChallenge(id: string): Promise<AuthChallenge | undefined>;
   consumeRateLimit(key: string, windowMs: number, max: number): Promise<{ allowed: boolean; retryAfterSeconds: number }>;
 }
 
@@ -58,4 +67,4 @@ export function publicPouch(p: StoredPouch): Pouch {
   return rest;
 }
 
-export type UserProfile = { email: string; displayName?: string; avatar?: string; createdAt: string; updatedAt: string };
+export type UserProfile = { email: string; displayName?: string; avatar?: string; wallet?: string; createdAt: string; updatedAt: string };

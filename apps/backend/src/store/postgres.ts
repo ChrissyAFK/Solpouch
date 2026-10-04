@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import type { Order, Pouch, TopUp } from "@solpouch/shared";
-import { StoreConflictError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type StoredPouch, type UserProfile } from "./types.js";
+import { StoreConflictError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type AuthChallenge, type StoredPouch, type UserProfile } from "./types.js";
 
 const iso = (v: Date | string) => (v instanceof Date ? v.toISOString() : new Date(v).toISOString());
 type Row = Record<string, any>;
@@ -14,7 +14,14 @@ function toOrder(r: Row): Order {
   return { id: r.id, pouchId: r.pouch_id, merchantId: r.merchant_id, request: r.request, lines: structuredClone(r.lines), total: Number(r.total), status: r.status, createdAt: iso(r.created_at), version: Number(r.version), ...(r.reject_reason ? { rejectReason: r.reject_reason } : {}), ...(r.tx_signature ? { txSignature: r.tx_signature } : {}), ...(r.store ? {store:r.store}:{}), ...(r.fulfillment ? {fulfillment:r.fulfillment}:{}), ...(r.paid_at ? {paidAt:iso(r.paid_at)}:{}) };
 }
 function toTopUp(r: Row): TopUp {
-  return { id: r.id, pouchId: r.pouch_id, amount: Number(r.amount), reason: r.reason, status: r.status, ...(r.completed_at ? {completedAt:iso(r.completed_at)}:{}), readyAt: iso(r.ready_at), createdAt: iso(r.created_at), version: Number(r.version), ...(r.tx_signature ? { txSignature: r.tx_signature } : {}) };
+  return { id: r.id, pouchId: r.pouch_id, amount: Number(r.amount), reason: r.reason, status: r.status, ...(r.completed_at ? {completedAt:iso(r.completed_at)}:{}), readyAt: iso(r.ready_at), createdAt: iso(r.created_at), version: Number(r.version), ...(r.from_wallet ? { fromWallet: r.from_wallet } : {}), ...(r.tx_signature ? { txSignature: r.tx_signature } : {}) };
+}
+function toUser(r: Row): UserProfile {
+  const u: UserProfile = { email: r.email, createdAt: iso(r.created_at), updatedAt: iso(r.updated_at) };
+  if (r.display_name) u.displayName = r.display_name;
+  if (r.avatar) u.avatar = r.avatar;
+  if (r.wallet) u.wallet = r.wallet;
+  return u;
 }
 function toOperation(r: Row): VaultOperation {
   return { id: r.id, kind: r.kind, pouchId: r.pouch_id, txSignature: r.tx_signature, signedTransaction: r.signed_transaction, lastValidBlockHeight: Number(r.last_valid_block_height), createdAt: iso(r.created_at) };
@@ -39,7 +46,7 @@ export class PostgresStore implements Store {
     if (now < this.nextCleanupAt) return;
     this.nextCleanupAt = now + 60_000;
     // Limit each sweep so cleanup cannot monopolize a request or lock large tables.
-    for (const [table, key] of [["web_sessions", "id"], ["rate_limit_buckets", "key"]]) {
+    for (const [table, key] of [["web_sessions", "id"], ["auth_challenges", "id"], ["rate_limit_buckets", "key"]]) {
       await this.query(`DELETE FROM ${table} WHERE ${key} IN (SELECT ${key} FROM ${table} WHERE expires_at <= now() ORDER BY expires_at LIMIT 1000) AND expires_at <= now()`);
     }
   }
@@ -138,7 +145,7 @@ export class PostgresStore implements Store {
   async getOrder(id: string) { const { rows } = await this.query("SELECT * FROM orders WHERE id=$1 ORDER BY created_at DESC LIMIT 1", [id]); return rows[0] ? toOrder(rows[0]) : undefined; }
   async saveOrder(o: Order) { return toOrder(await this.save("orders", o, { created_at: o.createdAt, pouch_id: o.pouchId, merchant_id: o.merchantId, request: o.request, lines: JSON.stringify(o.lines), total: o.total, status: o.status, reject_reason: o.rejectReason ?? null, tx_signature: o.txSignature ?? null, store: o.store ? JSON.stringify(o.store) : null, fulfillment: o.fulfillment ? JSON.stringify(o.fulfillment) : null, paid_at: o.paidAt ?? null })); }
   async getTopUp(id: string) { const { rows } = await this.query("SELECT * FROM topups WHERE id=$1 ORDER BY created_at DESC LIMIT 1", [id]); return rows[0] ? toTopUp(rows[0]) : undefined; }
-  async saveTopUp(t: TopUp) { return toTopUp(await this.save("topups", t, { created_at: t.createdAt, pouch_id: t.pouchId, amount: t.amount, reason: t.reason, status: t.status, ready_at: t.readyAt, tx_signature: t.txSignature ?? null, completed_at: t.completedAt ?? null })); }
+  async saveTopUp(t: TopUp) { return toTopUp(await this.save("topups", t, { created_at: t.createdAt, pouch_id: t.pouchId, amount: t.amount, reason: t.reason, status: t.status, ready_at: t.readyAt, tx_signature: t.txSignature ?? null, from_wallet: t.fromWallet ?? null, completed_at: t.completedAt ?? null })); }
 
   async applyMockOperation(pouch: StoredPouch, operation: VaultOperation) {
     await this.withPouchLock(pouch.id,async()=> {
@@ -175,20 +182,38 @@ export class PostgresStore implements Store {
   async listTopUps(pouchId: string) { return (await this.query("SELECT * FROM topups WHERE pouch_id=$1 ORDER BY created_at DESC",[pouchId])).rows.map(toTopUp); }
   async getUser(email: string) {
     const { rows } = await this.query("SELECT * FROM users WHERE email = $1", [email]);
-    const r = rows[0];
-    if (!r) return undefined;
-    const u: UserProfile = { email: r.email, createdAt: iso(r.created_at), updatedAt: iso(r.updated_at) };
-    if (r.display_name) u.displayName = r.display_name;
-    if (r.avatar) u.avatar = r.avatar;
-    return u;
+    return rows[0] ? toUser(rows[0]) : undefined;
   }
   async saveUser(u: UserProfile) {
-    await this.query(
+    // The wallet column is written only by setWallet, so a profile edit cannot undo a concurrent link.
+    const { rows } = await this.query(
       `INSERT INTO users (email, display_name, avatar, created_at, updated_at) VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (email) DO UPDATE SET display_name=$2, avatar=$3, updated_at=$5`,
+       ON CONFLICT (email) DO UPDATE SET display_name=$2, avatar=$3, updated_at=$5 RETURNING *`,
       [u.email, u.displayName ?? null, u.avatar ?? null, u.createdAt, u.updatedAt],
     );
-    return u;
+    return toUser(rows[0]);
+  }
+  async findUserByWallet(wallet: string) { const { rows } = await this.query("SELECT * FROM users WHERE wallet=$1", [wallet]); return rows[0] ? toUser(rows[0]) : undefined; }
+  async setWallet(email: string, wallet: string | null) {
+    try {
+      const { rows } = await this.query(
+        `INSERT INTO users (email, wallet, created_at, updated_at) VALUES ($1,$2,now(),now())
+         ON CONFLICT (email) DO UPDATE SET wallet=$2, updated_at=now() RETURNING *`, [email, wallet]);
+      return toUser(rows[0]);
+    } catch (error) {
+      if ((error as { code?: string }).code === "23505") throw new StoreConflictError("This wallet is linked to another account");
+      throw error;
+    }
+  }
+  async saveChallenge(c: AuthChallenge) {
+    await this.cleanupExpired();
+    const { rowCount } = await this.query("INSERT INTO auth_challenges (id,wallet,email,session_id,origin,message,expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING", [c.id, c.wallet, c.email, c.sessionId, c.origin, c.message, c.expiresAt]);
+    if (!rowCount) throw new StoreConflictError("Challenge already exists");
+  }
+  async consumeChallenge(id: string) {
+    const { rows } = await this.query("DELETE FROM auth_challenges WHERE id=$1 RETURNING *", [id]);
+    const r = rows[0];
+    return r && Date.parse(iso(r.expires_at)) > Date.now() ? { id: r.id, wallet: r.wallet, email: r.email, sessionId: r.session_id, origin: r.origin, message: r.message, expiresAt: iso(r.expires_at) } : undefined;
   }
 
   async consumeRateLimit(key: string, windowMs: number, max: number) {

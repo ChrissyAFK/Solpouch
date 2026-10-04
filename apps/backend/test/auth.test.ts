@@ -5,9 +5,10 @@ import { createApp } from "../src/app.js";
 import { getMerchant } from "../src/merchants/index.js";
 import { MemoryStore } from "../src/store/memory.js";
 import { MockVaultClient } from "../src/vault/mock.js";
-import { authHeaders, ownedSeed, sessionToken, voiceToken } from "./helpers.js";
+import { authHeaders, linkTestWallet, ownedSeed, sessionToken, voiceToken } from "./helpers.js";
 
 delete process.env.GEMINI_API_KEY;
+delete process.env.ANTHROPIC_API_KEY;
 delete process.env.ELEVENLABS_TOOL_SECRET;
 
 const A = "a@example.com";
@@ -106,8 +107,12 @@ describe("per-user ownership", () => {
     expect(await (await req("GET", "/orders", A)).json()).toEqual([]);
     expect((await req("GET", `/orders?pouchId=${order.pouchId}`, A)).status).toBe(404);
     expect(((await (await req("GET", "/orders", B)).json()) as unknown[]).length).toBe(1);
-    const t = await (await req("POST", "/topups", B, { pouchId: order.pouchId, amount: 5, reason: "dinner money" })).json();
+    await linkTestWallet(store, B);
+    const started = await req("POST", "/topups", B, { pouchId: order.pouchId, amount: 5, reason: "dinner money" });
+    expect(started.status).toBe(201);
+    const t = await started.json();
     expect((await req("POST", `/topups/${t.id}/complete`, A)).status).toBe(404);
+    expect((await req("POST", `/topups/${t.id}/cancel`, A)).status).toBe(404);
   });
 
   it("new pouches are owned by the creator", async () => {

@@ -56,7 +56,7 @@ export function createApp(deps: Deps) {
   for (const base of ["/pouches", "/orders", "/topups", "/stats", "/profile"]) app.use(`${base}/*`, requireUser(deps.store));
   // GET /chat/status is public (mode only); everything else under /chat needs a user.
   app.use("/chat/*", async (c, next) => (c.req.method === "GET" && c.req.path === "/chat/status" ? next() : requireUser(deps.store)(c as never, next)));
-  app.route("/auth", authRoutes(deps));
+  app.route("/auth", authRoutes(deps, origins));
   app.route("/profile", profileRoutes(deps));
   app.route("/pouches", pouchRoutes(deps));
   app.route("/orders", orderRoutes(deps));
