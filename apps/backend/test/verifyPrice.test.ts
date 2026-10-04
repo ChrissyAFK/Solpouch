@@ -10,7 +10,7 @@ const item = { name: "Deck Screws 3 inch 100 pack", unitPrice: 12.99, url: "http
 
 describe("isPrivateAddress", () => {
   it("flags private, loopback and link-local; passes public", () => {
-    for (const ip of ["10.0.0.1", "127.0.0.1", "192.168.1.5", "172.16.0.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "fd00::1", "fe80::1", "::ffff:127.0.0.1", "not-an-ip"]) expect(isPrivateAddress(ip), ip).toBe(true);
+    for (const ip of ["10.0.0.1", "127.0.0.1", "192.168.1.5", "172.16.0.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "fd00::1", "fe80::1", "::ffff:127.0.0.1", "::ffff:7f00:1", "64:ff9b::1", "2002::1", "fec0::1", "::127.0.0.1", "not-an-ip"]) expect(isPrivateAddress(ip), ip).toBe(true);
     for (const ip of ["93.184.216.34", "8.8.8.8", "2606:4700::1111"]) expect(isPrivateAddress(ip), ip).toBe(false);
   });
 });
@@ -22,10 +22,28 @@ describe("jsonLdProducts / textHasPrice", () => {
     expect(jsonLdProducts(graph)).toEqual([{ name: "Milk 2L", price: 5.49, currency: undefined }]);
     expect(jsonLdProducts("<script type=\"application/ld+json\">{broken</script>")).toEqual([]);
   });
+  it("skips lowPrice offers with a different highPrice", () => {
+    const priceRange = `<html><script type="application/ld+json">${JSON.stringify({ "@context": "https://schema.org", "@type": "Product", name: "Deck Screws 3 inch 100 pack", offers: { "@type": "Offer", lowPrice: 9.99, highPrice: 49.99 } })}</script></html>`;
+    expect(jsonLdProducts(priceRange)).toEqual([]);
+
+    const priceSame = `<html><script type="application/ld+json">${JSON.stringify({ "@context": "https://schema.org", "@type": "Product", name: "Deck Screws 3 inch 100 pack", offers: { "@type": "Offer", lowPrice: 9.99, highPrice: 9.99 } })}</script></html>`;
+    expect(jsonLdProducts(priceSame)).toEqual([{ name: "Deck Screws 3 inch 100 pack", price: 9.99, currency: undefined }]);
+  });
   it("needs the price near the product name", () => {
     expect(textHasPrice("Deck Screws 3 inch, 100 pack $12.99 each", "Deck Screws 3 inch", 12.99)).toBe(true);
     expect(textHasPrice("Deck Screws 3 inch " + "x".repeat(600) + " $12.99", "Deck Screws 3 inch", 12.99)).toBe(false);
     expect(textHasPrice("Garden hose $112.99", "Garden hose", 12.99)).toBe(false);
+  });
+  it("skips prices with currency markers before or after", () => {
+    // Before: US$, USD, US, €, £
+    expect(textHasPrice("Deck Screws 3 inch 100 pack US$12.99", "Deck Screws 3 inch", 12.99)).toBe(false);
+    expect(textHasPrice("Deck Screws 3 inch 100 pack USD 12.99", "Deck Screws 3 inch", 12.99)).toBe(false);
+    expect(textHasPrice("Deck Screws 3 inch 100 pack €12.99", "Deck Screws 3 inch", 12.99)).toBe(false);
+    // After: USD, US, EUR, €
+    expect(textHasPrice("Deck Screws 3 inch 100 pack 12.99 USD", "Deck Screws 3 inch", 12.99)).toBe(false);
+    // Still work with $ and CA$
+    expect(textHasPrice("Deck Screws 3 inch 100 pack $12.99", "Deck Screws 3 inch", 12.99)).toBe(true);
+    expect(textHasPrice("Deck Screws 3 inch 100 pack CA$12.99", "Deck Screws 3 inch", 12.99)).toBe(true);
   });
 });
 
@@ -47,6 +65,15 @@ describe("verifyPrice", () => {
   it("ignores a JSON-LD price in another currency", async () => {
     const fetch = vi.fn(async () => page(ld("Deck Screws 3 inch 100 pack", 9.49, "USD")));
     expect((await verifyPrice(item, "store.ca", { fetch, resolve: pub })).status).toBe("estimate");
+  });
+  it("uses JSON-LD price only if within 0.6x to 1.6x of searched price", async () => {
+    // 49.99 is outside 0.6*12.99 to 1.6*12.99 range (7.794 to 20.784)
+    const fetch = vi.fn(async () => page(ld("Deck Screws 1 inch 500 pack", 49.99, "CAD")));
+    expect((await verifyPrice(item, "store.ca", { fetch, resolve: pub })).status).toBe("estimate");
+
+    // 13.49 is within range
+    const fetch2 = vi.fn(async () => page(ld("Deck Screws 3 inch (100 pack)", 13.49, "CAD")));
+    expect(await verifyPrice(item, "store.ca", { fetch: fetch2, resolve: pub })).toEqual({ status: "verified", unitPrice: 13.49 });
   });
   it("never fetches a private address or another domain", async () => {
     const fetch = vi.fn(async () => page(ld("Deck Screws 3 inch 100 pack", 12.99)));

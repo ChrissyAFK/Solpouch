@@ -24,8 +24,22 @@ export function isPrivateAddress(ip: string): boolean {
   }
   if (v === 6) {
     const s = ip.toLowerCase();
-    if (s.startsWith("::ffff:")) return isPrivateAddress(s.slice(7));
-    return s === "::" || s === "::1" || /^f[cd]/.test(s) || /^fe[89ab]/.test(s) || s.startsWith("ff");
+    // Private by special case
+    if (s === "::" || s === "::1") return true;
+    // Handle ::ffff: (IPv4-mapped)
+    if (s.startsWith("::ffff:")) {
+      const remainder = s.slice(7);
+      if (!/^\d+\.\d+\.\d+\.\d+$/.test(remainder)) return true; // Not dotted IPv4 -> private
+      return isPrivateAddress(remainder);
+    }
+    // Private prefixes
+    if (s.startsWith("64:ff9b:") || s.startsWith("2002:") || s.startsWith("fec0:")) return true;
+    // Handle ::a.b.c.d (IPv4-compatible addresses)
+    if (s.startsWith("::") && /^\d+\.\d+\.\d+\.\d+$/.test(s.slice(2))) {
+      return isPrivateAddress(s.slice(2));
+    }
+    // Other ranges
+    return /^f[cd]/.test(s) || /^fe[89ab]/.test(s) || s.startsWith("ff");
   }
   return true;
 }
@@ -48,7 +62,20 @@ export function jsonLdProducts(html: string): Array<{ name: string; price: numbe
     const types = ([] as string[]).concat(n["@type"] ?? []);
     if ((types.includes("Product") || types.includes("MenuItem")) && typeof n.name === "string") {
       for (const o of ([] as any[]).concat(n.offers ?? [])) {
-        const price = parseSinglePrice(o?.price ?? o?.lowPrice ?? o?.priceSpecification?.price);
+        let price = parseSinglePrice(o?.price);
+        if (!Number.isFinite(price)) {
+          const lowPrice = parseSinglePrice(o?.lowPrice);
+          if (Number.isFinite(lowPrice)) {
+            const highPrice = parseSinglePrice(o?.highPrice);
+            // Use lowPrice only if highPrice doesn't exist or is the same
+            if (!Number.isFinite(highPrice) || highPrice === lowPrice) {
+              price = lowPrice;
+            }
+          }
+        }
+        if (!Number.isFinite(price)) {
+          price = parseSinglePrice(o?.priceSpecification?.price);
+        }
         const currency = o?.priceCurrency ?? o?.priceSpecification?.priceCurrency;
         if (Number.isFinite(price) && price > 0) out.push({ name: n.name, price, currency: typeof currency === "string" ? currency : undefined });
       }
@@ -77,6 +104,16 @@ export function textHasPrice(text: string, name: string, price: number): boolean
   const lower = text.toLowerCase();
   const re = new RegExp(`(?<![\\d.,])${price.toFixed(2).replace(".", "[.,]")}(?!\\d)`, "g");
   for (const m of lower.matchAll(re)) {
+    // Skip if price has currency marker before it (US$, USD, US, €, £)
+    const beforeText = lower.slice(Math.max(0, m.index - 20), m.index);
+    const beforeNonSpace = beforeText.replace(/\s+/g, "");
+    const last4Before = beforeNonSpace.slice(-4);
+    if (/(?:us\$|usd|us|€|£)$/.test(last4Before)) continue;
+    // Skip if price has currency marker after it (USD, US, EUR, €)
+    const afterText = lower.slice(m.index + m[0].length, m.index + m[0].length + 20);
+    const afterNonSpace = afterText.replace(/\s+/g, "");
+    if (/^(?:usd|us|eur|€)/.test(afterNonSpace)) continue;
+
     const near = new Set(tokens(lower.slice(Math.max(0, m.index - 300), m.index + 300)));
     if (want.filter((t) => near.has(t)).length / want.length >= 0.5) return true;
   }
@@ -98,6 +135,7 @@ async function readCapped(res: Response): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+// Known limit: fetch resolves the name again itself, so a DNS answer that changes between our check and the request is not caught. The body is only searched for a price and never returned to the caller.
 /** GET an https page on `domain` (or a subdomain). Every hop is re-checked; null on anything unsafe or unreadable. */
 async function fetchPage(url: string, domain: string, deps: VerifyDeps, signal: AbortSignal): Promise<string | null> {
   const doFetch = deps.fetch ?? fetch;
@@ -135,7 +173,7 @@ export async function verifyPrice(c: { name: string; unitPrice: number; url?: st
     html = null;
   }
   if (!html) return { status: "estimate", reason: "page could not be read" };
-  const ld = jsonLdProducts(html).find((p) => nameMatches(c.name, p.name) && (!p.currency || p.currency.toUpperCase() === "CAD"));
+  const ld = jsonLdProducts(html).find((p) => nameMatches(c.name, p.name) && (!p.currency || p.currency.toUpperCase() === "CAD") && p.price >= c.unitPrice * 0.6 && p.price <= c.unitPrice * 1.6);
   if (ld) return { status: "verified", unitPrice: ld.price };
   if (textHasPrice(pageText(html), c.name, c.unitPrice)) return { status: "verified", unitPrice: c.unitPrice };
   return { status: "estimate", reason: "price not found on the page" };
