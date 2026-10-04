@@ -44,7 +44,7 @@ describe("order payment boundaries", () => {
     expect(pay).not.toHaveBeenCalled();
     expect((await store.getPouch("groceries"))!.balance).toBe(balance);
     expect((await store.getOrder(order.id))!.status).toBe("draft");
-    expect(readback(order)).toContain("search estimate only");
+    expect(readback(order)).toContain("checkout with the retailer");
     expect(readback(order)).not.toContain("Should I place it");
   });
 

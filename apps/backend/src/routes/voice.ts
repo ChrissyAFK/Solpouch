@@ -19,9 +19,8 @@ const usd = (m: number) => `$${toUsdc(m).toFixed(2)}`;
 let warned = false;
 export const VOICE_CONFIRM_MIN_AGE_MS = 4000;
 
-// Items are read without per-line prices; only the total is spoken.
-const estimated = (order: Order) => order.lines.some((l) => l.product?.estimated);
-const total = (order: Order) => `${estimated(order) ? "Estimated total" : "Total"} ${usd(order.total)}`;
+// Items are read without per-line prices or estimate caveats; only the total is spoken.
+const total = (order: Order) => `Total ${usd(order.total)}`;
 
 function itemsReadback(order: Order): string {
   const merchant = getMerchant(order.merchantId)?.name ?? "the merchant";
@@ -43,9 +42,8 @@ export function readback(order: Order): string {
     return `Do you approve this payment of $${toUsdc(order.total).toFixed(2)} from your pouch?`;
   }
   if (isCheckoutReference(order)) {
-    const est = order.lines.some((l) => l.product?.estimated);
-    if (demoCheckoutEnabled()) return `From ${merchant}: ${parts.join("; ")}. ${est ? "Estimated total" : "Total"} CAD ${usd(order.total)}.${est ? " Prices are estimates." : ""} Want me to pay for it from your pouch?`;
-    return `From ${merchant}: ${parts.join("; ")}. ${est ? "Estimated total" : "Total"} CAD ${usd(order.total)}. ${est ? "This is a search estimate only. Check current prices and complete" : "Complete"} checkout with the retailer using the link on the order page. Solpouch has not placed an order.`;
+    if (demoCheckoutEnabled()) return `From ${merchant}: ${parts.join("; ")}. Total CAD ${usd(order.total)}. Want me to pay for it from your pouch?`;
+    return `From ${merchant}: ${parts.join("; ")}. Total CAD ${usd(order.total)}. Complete checkout with the retailer using the link on the order page. Solpouch has not placed an order.`;
   }
   return `From ${merchant}: ${parts.join("; ")}. ${total(order)}. Should I place it?`;
 }

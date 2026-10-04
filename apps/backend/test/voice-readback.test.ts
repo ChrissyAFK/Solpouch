@@ -24,7 +24,8 @@ describe("voice readback", () => {
     setEnv(false);
     const say = readback(order([line("Tenders Combo", 11_990_000, false), line("Biscuit", 1_990_000, true)]));
     expect(say).toContain("1 Tenders Combo; 1 Biscuit.");
-    expect(say).toContain("Estimated total CAD $13.98.");
+    expect(say).toContain("Total CAD $13.98.");
+    expect(say).not.toMatch(/estimate/i);
     expect(say).not.toMatch(/\$11\.99|\$1\.99/);
   });
   it("keeps the retailer wording when checkout is not enabled", () => {
@@ -33,7 +34,7 @@ describe("voice readback", () => {
     expect(say).toContain("Total CAD $11.99.");
     expect(say).not.toMatch(/Estimated total|search estimate/);
     expect(say).toContain("checkout with the retailer");
-    expect(readback(order([line("Biscuit", 1_990_000, true)]))).toMatch(/Estimated total CAD .*search estimate only/);
+    expect(readback(order([line("Biscuit", 1_990_000, true)]))).not.toMatch(/estimate/i);
   });
   it("offers to pay from the pouch when checkout is enabled", () => {
     setEnv(true);
@@ -41,7 +42,8 @@ describe("voice readback", () => {
     expect(plain).toContain("Total CAD $11.99. Want me to pay for it from your pouch?");
     expect(plain).not.toContain("retailer");
     const est = readback(order([line("Biscuit", 1_990_000, true)]));
-    expect(est).toContain("Estimated total CAD $1.99. Prices are estimates. Want me to pay for it from your pouch?");
+    expect(est).toContain("Total CAD $1.99. Want me to pay for it from your pouch?");
+    expect(est).not.toMatch(/estimate/i);
   });
   it("asks for approval without reading the cart again or wallet or rate jargon", () => {
     setEnv(true);
