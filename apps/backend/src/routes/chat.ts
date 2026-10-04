@@ -2,7 +2,9 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { chatMode, demoReply, geminiReply } from "../ai/chat.js";
-import type { Deps } from "../services/orders.js";
+import type { AuthEnv } from "../auth/session.js";
+import { listOwnedOrders, type Deps } from "../services/orders.js";
+import { publicPouch } from "../store/types.js";
 
 const chatBody = z.object({
   messages: z.array(z.object({
@@ -14,12 +16,14 @@ const chatBody = z.object({
 });
 
 export function chatRoutes(deps: Deps) {
-  const app = new Hono();
+  const app = new Hono<AuthEnv>();
   app.get("/status", (c) => c.json({ mode: chatMode() }));
   app.post("/", bodyLimit({ maxSize: 192_000, onError: (c) => c.json({ error: "Chat request is too large." }, 413) }), async (c) => {
     const { messages } = chatBody.parse(await c.req.json());
     const mode = chatMode();
-    const [pouches, orders] = await Promise.all([deps.store.listPouches(), deps.store.listOrders()]);
+    const email = c.get("user").email;
+    const [stored, orders] = await Promise.all([deps.store.listPouches(email), listOwnedOrders(deps, email)]);
+    const pouches = stored.map(publicPouch);
     const context = { pouches, orders: [...orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10) };
     if (mode === "demo") return c.json({ reply: demoReply(messages, context), mode });
     try {

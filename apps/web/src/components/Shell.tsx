@@ -6,6 +6,7 @@ import { Icon, type IconName } from "./Icons";
 import { Footer } from "./Footer";
 import { LandingNav } from "./LandingNav";
 import { ChatWidget } from "./ChatWidget";
+import { UserMenu } from "./AuthProvider";
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -13,14 +14,20 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const pouchRoute =
     pathname === "/pouches" || pathname.startsWith("/pouches/");
   const orderRoute = pathname === "/order";
+  const ordersRoute =
+    pathname === "/orders" || pathname.startsWith("/orders/");
   const pageLabel =
     pathname === "/dashboard"
       ? "Overview"
       : pouchRoute
         ? "Pouches"
-        : orderRoute
+        : ordersRoute
+          ? "Orders"
+          : orderRoute
           ? "New order"
-          : "Workspace";
+          : pathname === "/profile"
+            ? "Profile"
+            : "Workspace";
 
   function closeMenu(restoreFocus = false) {
     setMenuOpen(false);
@@ -62,12 +69,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
   }[] = [
     { href: "/dashboard", label: "Overview", icon: "grid", active: pathname === "/dashboard" },
     {
-      href: "/dashboard#pouches",
+      href: "/pouches",
       label: "Pouches",
       icon: "pouch",
       active: pouchRoute,
     },
-    { href: "/dashboard#activity", label: "Orders", icon: "receipt", active: false },
+    { href: "/orders", label: "Orders", icon: "receipt", active: ordersRoute },
     {
       href: "/order",
       label: "New order",
@@ -168,6 +175,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <strong>{pageLabel}</strong>
           </div>
           <span className="demo-label">Payments on Solana</span>
+          <UserMenu />
         </header>
         <main
           id="main-content"

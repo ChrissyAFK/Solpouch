@@ -18,6 +18,7 @@
     "@solpouch/shared": "workspace:*",
     "dotenv": "^16.4.5",
     "hono": "^4.6.0",
+    "jose": "^6.2.12",
     "pg": "^8.13.0",
     "zod": "^3.23.8"
   },

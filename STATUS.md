@@ -28,11 +28,17 @@ Dashboard redesign from `codex/dashboard-design` is merged into `scaffold` (not 
 - ElevenLabs agent: origin allowlist (localhost, solpouch.tech, www.solpouch.tech), Origin header required, 5 concurrent calls, 300 a day, 5-minute calls, hang up after 30s of silence.
 - The backend no longer seeds placeholder pouches on start (tests still use `seedPouches()`).
 
+## Google sign-in and solpouch.tech (2026-10-03)
+
+- Sign in with Google (Identity Services ID token). The backend verifies it against Google's keys (`GOOGLE_CLIENT_ID`, verified email only) and issues a 7-day session JWT (`SESSION_SECRET`). Pouches, orders, top-ups, stats and chat are scoped to the signed-in email; other users' items return 404. `LEGACY_OWNER_EMAIL` in `.env` owns pouches created before sign-in.
+- Voice: the web app fetches a 15-minute voice token (`POST /auth/voice-token`) and passes it to the ElevenLabs agent as the `user_token` dynamic variable; every voice tool requires it.
+- Production requires `SESSION_SECRET` and `ELEVENLABS_TOOL_SECRET`.
+- The site needs `Cross-Origin-Opener-Policy: same-origin-allow-popups`, or the Google popup hangs blank on `/gsi/transform`.
+- Live at https://solpouch.tech through the named Cloudflare tunnel `solpouch` (`api.solpouch.tech` -> :8787, site -> the production `next start` port). Voice tool URLs use `https://api.solpouch.tech/voice/tools/<name>`.
+
 ## Not done yet
 
-- No sign-in yet: anyone who can reach the backend directly can manage pouches. Wallet sign-in is the real fix.
-
-- A permanent tunnel on solpouch.tech (the quick tunnel URL changes on restart).
+- Wallet sign-in for owner actions (the backend still signs owner txs for the demo).
 - Indexer is a stub; `confirmAbove` is stored but not used for auto-confirm.
 - `scripts/chain-smoke.ts` and `scripts/db-check.ts` are manual checks; `test/postgres.test.ts` runs only with `TEST_DATABASE_URL`.
 

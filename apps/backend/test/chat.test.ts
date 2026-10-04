@@ -4,6 +4,7 @@ import { createApp } from "../src/app.js";
 import { getMerchant } from "../src/merchants/index.js";
 import { MemoryStore } from "../src/store/memory.js";
 import { MockVaultClient } from "../src/vault/mock.js";
+import { authHeaders, ownedSeed } from "./helpers.js";
 
 const sdk = vi.hoisted(() => ({ generateContent: vi.fn(), construct: vi.fn() }));
 vi.mock("@google/genai", async (importOriginal) => {
@@ -17,23 +18,25 @@ vi.mock("@google/genai", async (importOriginal) => {
 let store: MemoryStore;
 let vault: MockVaultClient;
 let app: ReturnType<typeof createApp>;
-beforeEach(() => {
+let auth: Record<string, string>;
+beforeEach(async () => {
+  auth = await authHeaders();
   vi.stubEnv("GEMINI_API_KEY", "");
   vi.stubEnv("GEMINI_MODEL", "");
   vi.clearAllMocks();
-  store = new MemoryStore();
+  store = new MemoryStore(ownedSeed());
   vault = new MockVaultClient(store, (id) => getMerchant(id)?.payTo);
   app = createApp({ store, vault });
 });
 afterEach(() => vi.unstubAllEnvs());
-const post = (body: unknown) => app.request("/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+const post = (body: unknown) => app.request("/chat", { method: "POST", headers: { "Content-Type": "application/json", ...auth }, body: JSON.stringify(body) });
 const ask = (content: string) => post({ messages: [{ role: "user", content }] });
 
 describe("read-only chat", () => {
   it("reports configured mode without calling the provider", async () => {
-    expect(await (await app.request("/chat/status")).json()).toEqual({ mode: "demo" });
+    expect(await (await app.request("/chat/status", { headers: auth })).json()).toEqual({ mode: "demo" });
     vi.stubEnv("GEMINI_API_KEY", "fake-test-key");
-    expect(await (await app.request("/chat/status")).json()).toEqual({ mode: "gemini" });
+    expect(await (await app.request("/chat/status", { headers: auth })).json()).toEqual({ mode: "gemini" });
     expect(sdk.generateContent).not.toHaveBeenCalled();
   });
 
@@ -83,7 +86,7 @@ describe("read-only chat", () => {
   });
 
   it("rejects malformed and oversized bodies", async () => {
-    expect((await app.request("/chat", { method: "POST", body: "{" })).status).toBe(400);
+    expect((await app.request("/chat", { method: "POST", headers: auth, body: "{" })).status).toBe(400);
     expect((await ask("x".repeat(193_000))).status).toBe(413);
   });
 

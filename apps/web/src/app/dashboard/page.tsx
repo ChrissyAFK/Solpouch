@@ -1,24 +1,20 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { StatePanel } from "@/components/StatePanel";
 import { MetricsSkeleton, RowsSkeleton } from "@/components/Skeletons";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Merchant, Order, Pouch } from "@solpouch/shared";
 import { toUsdc } from "@solpouch/shared";
 import { api, errMsg } from "@/lib/api";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
-import { PouchForm } from "@/components/PouchForm";
-import {
-  ErrorBanner,
-  Notice,
-  btnPrimary,
-  btnSecondary,
-  usd,
-} from "@/components/ui";
+import { ErrorBanner, Notice, btnPrimary, btnSecondary, usd } from "@/components/ui";
 import { Icon } from "@/components/Icons";
-import { PouchGlyph } from "@/components/PouchGlyph";
+import { PouchList, usePouchToggle } from "@/components/PouchList";
+import { OrderList, sortOrders } from "@/components/OrderList";
 
-export default function PouchesPage() {
+export default function OverviewPage() {
+  const router = useRouter();
   const [pouches, setPouches] = useState<Pouch[] | null>(null);
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [orders, setOrders] = useState<Order[] | null>(null);
@@ -27,10 +23,6 @@ export default function PouchesPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [activityLoading, setActivityLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const formRef = useRef<HTMLElement>(null);
   // quiet: background refresh, keeps what is on screen and skips loading states.
   const load = useCallback(async (quiet = false) => {
     if (!quiet) {
@@ -65,33 +57,21 @@ export default function PouchesPage() {
   useEffect(() => {
     void load();
   }, [load]);
-  useLiveRefresh(useCallback(() => load(true), [load]));
   useEffect(() => {
-    if (showForm) {
-      formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      formRef.current?.querySelector("input")?.focus({ preventScroll: true });
-    }
-  }, [showForm]);
-  async function toggle(p: Pouch) {
-    setBusy(p.id);
-    setNotice(null);
-    try {
-      await (p.frozen ? api.unfreeze(p.id) : api.freeze(p.id));
-      await load();
-      setNotice(`${p.name} ${p.frozen ? "unfrozen" : "frozen"}.`);
-    } catch (e) {
-      setError(errMsg(e));
-    } finally {
-      setBusy(null);
-    }
-  }
+    // Old in-page anchors now live on their own pages.
+    if (window.location.hash === "#pouches") router.replace("/pouches");
+    else if (window.location.hash === "#activity") router.replace("/orders");
+  }, [router]);
+  useLiveRefresh(useCallback(() => load(true), [load]));
+  const { busy, notice, toggle } = usePouchToggle(
+    useCallback(() => load(), [load]),
+    setError,
+  );
   const balance = pouches?.reduce((s, p) => s + p.balance, 0) ?? 0;
   const spent = pouches?.reduce((s, p) => s + p.spentToday, 0) ?? 0;
   const limit = pouches?.reduce((s, p) => s + p.dailyLimit, 0) ?? 0;
   const active = pouches?.filter((p) => !p.frozen).length ?? 0;
-  const recent = [...(orders ?? [])]
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-    .slice(0, 8);
+  const recent = sortOrders(orders ?? []).slice(0, 5);
   return (
     <div className="overview">
       <div className="page-heading">
@@ -143,141 +123,36 @@ export default function PouchesPage() {
           </div>
         </section>
       )}
-      <section id="pouches" className="wallet-section">
+      <section className="wallet-section">
         <div className="section-heading">
           <h2>
             Pouches{" "}
             <span className="section-count">{pouches?.length ?? "—"}</span>
           </h2>
-          <button
-            disabled={loading || loadError}
-            onClick={() => setShowForm(true)}
-            className={btnSecondary}
-          >
-            <Icon name="plus" size={15} /> Create pouch
-          </button>
+          <Link href="/pouches" className={btnSecondary}>
+            View all pouches <Icon name="arrow" size={15} />
+          </Link>
         </div>
         {loading && <RowsSkeleton />}
         {!loading && !loadError && pouches?.length === 0 && (
           <p className="table-empty">
-            No pouches. Create one to set a budget and add funds.
+            No pouches yet. Create a pouch first, then add funds to it.
           </p>
         )}
         {!loading && !loadError && pouches && pouches.length > 0 && (
-          <div className="pouch-table">
-            <div className="pouch-table-head" aria-hidden="true">
-              <span />
-              <span>Pouch</span>
-              <span>Balance</span>
-              <span>Left today</span>
-              <span>Status</span>
-              <span />
-            </div>
-            {pouches.map((p) => {
-              const left = Math.max(0, p.dailyLimit - p.spentToday);
-              return (
-                <article className="pouch-row" key={p.id}>
-                  <div className="pouch-glyph">
-                    <PouchGlyph
-                      name={p.name}
-                      remaining={toUsdc(left)}
-                      limit={toUsdc(p.dailyLimit)}
-                      size="sm"
-                      frozen={p.frozen}
-                    />
-                  </div>
-                  <div className="pouch-identity">
-                    <h3>
-                      <Link href={`/pouches/${p.id}`}>{p.name}</Link>
-                    </h3>
-                    <span>
-                      {p.allowedMerchantIds.length}{" "}
-                      {p.allowedMerchantIds.length === 1 ? "store" : "stores"} ·{" "}
-                      <span className="num">
-                        {usd(toUsdc(p.maxPerOrder))}
-                      </span>{" "}
-                      per order
-                    </span>
-                  </div>
-                  <div className="pouch-row-balance">
-                    <span className="mobile-label">Balance</span>
-                    <strong>{usd(toUsdc(p.balance))}</strong>
-                  </div>
-                  <div className="pouch-row-left">
-                    <span className="mobile-label">Left today</span>
-                    <strong>{usd(toUsdc(left))}</strong>
-                    <span>of {usd(toUsdc(p.dailyLimit))}</span>
-                  </div>
-                  <span
-                    className={`pouch-status ${p.frozen ? "is-frozen" : ""}`}
-                  >
-                    <span />
-                    {p.frozen ? "Frozen" : "Active"}
-                  </span>
-                  <div className="row-actions">
-                    <button
-                      disabled={busy === p.id}
-                      onClick={() => void toggle(p)}
-                      aria-label={`${p.frozen ? "Unfreeze" : "Freeze"} ${p.name}`}
-                    >
-                      {busy === p.id
-                        ? "Updating…"
-                        : p.frozen
-                          ? "Unfreeze"
-                          : "Freeze"}
-                    </button>
-                    <Link
-                      href={`/pouches/${p.id}`}
-                      aria-label={`Manage ${p.name}`}
-                    >
-                      Manage <Icon name="arrow" size={14} />
-                    </Link>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
-        {showForm && !loading && !loadError && (
-          <section
-            className="sp-card create-form-panel"
-            ref={formRef}
-            aria-label="Create a pouch"
-          >
-            <div className="section-heading">
-              <h2>Create pouch</h2>
-              <button
-                className={btnSecondary}
-                onClick={() => setShowForm(false)}
-              >
-                Close
-              </button>
-            </div>
-            <PouchForm
-              merchants={merchants}
-              withName
-              submitLabel="Create pouch"
-              onSubmit={async (v) => {
-                try {
-                  await api.createPouch(v);
-                  setShowForm(false);
-                  await load();
-                  setNotice("Pouch created. Open it to add funds.");
-                } catch (e) {
-                  setError(errMsg(e));
-                  throw e;
-                }
-              }}
-            />
-          </section>
+          <PouchList
+            pouches={pouches.slice(0, 3)}
+            busy={busy}
+            onToggle={(p) => void toggle(p)}
+          />
         )}
       </section>
-      <section id="activity" className="wallet-section orders-section">
+      <section className="wallet-section orders-section">
         <div className="section-heading">
-          <h2>Orders</h2>
-          <span className="section-note">
-            Most recent {recent.length > 0 ? recent.length : "orders"}
-          </span>
+          <h2>Recent orders</h2>
+          <Link href="/orders" className={btnSecondary}>
+            View all orders <Icon name="arrow" size={15} />
+          </Link>
         </div>
         {activityLoading ? (
           <RowsSkeleton kind="orders" />
@@ -296,43 +171,7 @@ export default function PouchesPage() {
             <span>Use New order to build a cart.</span>
           </div>
         ) : (
-          <div className="orders-table">
-            <div className="order-table-head" aria-hidden="true">
-              <span>Store / Pouch</span>
-              <span>Date</span>
-              <span>Status</span>
-              <span>Amount</span>
-              <span />
-            </div>
-            {recent.map((o) => (
-              <Link
-                key={o.id}
-                href={`/order?order=${encodeURIComponent(o.id)}`}
-                className="order-row"
-              >
-                <span className="order-identity">
-                  <strong>
-                    {merchants.find((m) => m.id === o.merchantId)?.name ??
-                      "Order"}
-                  </strong>
-                  <span>
-                    {pouches?.find((p) => p.id === o.pouchId)?.name ?? "Pouch"}
-                  </span>
-                </span>
-                <span className="order-date">
-                  {new Date(o.createdAt).toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                  })}
-                </span>
-                <span className={`order-status status-${o.status}`}>
-                  {o.status === "draft" ? "Awaiting review" : o.status}
-                </span>
-                <strong className="order-amount">{usd(toUsdc(o.total))}</strong>
-                <Icon name="arrow" size={15} />
-              </Link>
-            ))}
-          </div>
+          <OrderList orders={recent} merchants={merchants} pouches={pouches} />
         )}
       </section>
     </div>

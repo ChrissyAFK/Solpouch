@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS pouches (
 ALTER TABLE pouches ADD COLUMN IF NOT EXISTS balance     bigint NOT NULL DEFAULT 0;
 ALTER TABLE pouches ADD COLUMN IF NOT EXISTS spent_today bigint NOT NULL DEFAULT 0;
 ALTER TABLE pouches ADD COLUMN IF NOT EXISTS spent_day   date;
+ALTER TABLE pouches ADD COLUMN IF NOT EXISTS owner_email text;
+CREATE INDEX IF NOT EXISTS pouches_owner_email_idx ON pouches (owner_email);
 
 -- Order lines are stored as JSONB in orders.lines (simple upserts); order_lines below is unused by the app.
 CREATE TABLE IF NOT EXISTS orders (
@@ -118,3 +120,11 @@ ALTER TABLE payments SET (
   timescaledb.compress_orderby   = 'time DESC'
 );
 SELECT add_compression_policy('payments', INTERVAL '7 days', if_not_exists => TRUE);
+
+create table if not exists users (
+  email text primary key,
+  display_name text,
+  avatar text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);

@@ -2,10 +2,10 @@ import { RequireAuth } from "@/components/AuthProvider";
 import { pageMetadata } from "@/lib/site";
 
 export const metadata = {
-  ...pageMetadata("Overview", "Manage your pouch balances, spending limits, and orders."),
+  ...pageMetadata("Pouches", "Create pouches, add funds, and manage spending limits."),
   alternates: { canonical: null },
 };
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function PouchesLayout({ children }: { children: React.ReactNode }) {
   return <RequireAuth>{children}</RequireAuth>;
 }
