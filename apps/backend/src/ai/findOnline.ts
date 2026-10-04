@@ -75,7 +75,7 @@ function parseJson(text: string): any {
 export function parseSinglePrice(v: unknown): number {
   if (typeof v === "number") return v;
   if (typeof v !== "string") return NaN;
-  const s = v.replace(/[$€£¢]|\b(?:usdc?|cad|dollars?)\b/gi, "").trim();
+  const s = v.replace(/\b(?:CA|C|US)\$|[$€£¢~]|\b(?:usdc?|cad|dollars?)\b|\s*(?:\/\s*ea|each)\s*$/gi, "").trim();
   if (/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(s)) return Number(s.replace(/,/g, ""));
   if (/^\d+,\d{2}$/.test(s)) return Number(s.replace(",", "."));
   if (/^\d+(?:\.\d+)?$/.test(s)) return Number(s);

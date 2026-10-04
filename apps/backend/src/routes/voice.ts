@@ -53,6 +53,12 @@ const LOCK_MS = 10 * 60_000;
 /** Per-process lockouts: the store has no read-only budget check, so remember when a budget ran out. */
 const lockedUntil = new Map<string, number>();
 const fails = new Map<string, { n: number; reset: number }>();
+/** Drop expired entries so rotating client IPs can't grow the maps without bound. */
+function pruneLocks(now: number) {
+  if (lockedUntil.size + fails.size < 5000) return;
+  for (const [ip, until] of lockedUntil) if (until <= now) lockedUntil.delete(ip);
+  for (const [ip, f] of fails) if (f.reset <= now) fails.delete(ip);
+}
 function httpSay(e: HttpError) {
   const m = /^Order is (\w+), not draft$/.exec(e.message);
   const say = e.status === 404 ? (e.message && e.message !== "Not found" ? e.message : "I couldn't find that order.") : m ? `That order can't be cancelled because it is already ${m[1]}.` : e.message;
@@ -71,6 +77,7 @@ export function voiceRoutes(deps: Deps) {
     const secret = process.env.VOICE_WEBHOOK_SECRET || process.env.ELEVENLABS_TOOL_SECRET;
     if (secret) {
       const ip = clientIp(c);
+      pruneLocks(Date.now());
       const until = lockedUntil.get(ip) ?? 0;
       if (until > Date.now()) throw new RateLimitError(Math.max(1, Math.ceil((until - Date.now()) / 1000)));
       if (!safeEqual(c.req.header("X-Solpouch-Secret") ?? "", secret)) {

@@ -26,7 +26,8 @@ export function CartEditor({ order, disabled, onSaved, onDirty }: { order: Order
     return () => { active = false; };
   }, [order.merchantId]);
   const matched = (index: number) => !!order.lines[index]?.product;
-  const matchedLines = lines.filter(l => matched(l.index));
+  // An unmatched line is kept once the shopper picks a replacement product for it.
+  const matchedLines = lines.filter(l => matched(l.index) || !!l.productId);
   const hasUnmatched = order.lines.some(l => !l.product);
   const listItems = (() => {
     const found = order.lines.filter(l => l.product).map(l => ({ name: l.product!.name, qty: Math.min(10000, Math.max(1, l.qty)) }));
