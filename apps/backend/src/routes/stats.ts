@@ -1,14 +1,23 @@
 import { Hono } from "hono";
 import type { SpendPoint } from "@solpouch/shared";
 import type { AuthEnv } from "../auth/session.js";
-import { listOwnedOrders, type Deps } from "../services/orders.js";
+import { getOwnedPouch, listOwnedOrders, type Deps } from "../services/orders.js";
+import { isPaymentIndex } from "../store/types.js";
 
-// TODO: query the `spend_daily` continuous aggregate in Tiger Data once the Postgres store exists.
+// Prefer indexed on-chain payments (spend_daily / payments, written by src/indexer.ts);
+// fall back to summing paid orders when nothing is indexed for this account's pouches.
 export function statsRoutes(deps: Deps) {
   const app = new Hono<AuthEnv>();
   app.get("/spend", async (c) => {
     const bucket = c.req.query("bucket") === "hour" ? "hour" : "day";
-    const orders = (await listOwnedOrders(deps, c.get("user").email, c.req.query("pouchId"))).filter((o) => o.status === "paid" && o.paidAt && Number.isFinite(Date.parse(o.paidAt)));
+    const email = c.get("user").email;
+    const pouchId = c.req.query("pouchId");
+    if (isPaymentIndex(deps.store)) {
+      const ids = pouchId ? [(await getOwnedPouch(deps, pouchId, email)).id] : (await deps.store.listPouches(email)).map((p) => p.id);
+      const indexed = await deps.store.indexedSpend(ids, bucket);
+      if (indexed) return c.json(indexed);
+    }
+    const orders = (await listOwnedOrders(deps, email, pouchId)).filter((o) => o.status === "paid" && o.paidAt && Number.isFinite(Date.parse(o.paidAt)));
     const points = new Map<string, SpendPoint>();
     for (const o of orders) {
       const d = new Date(o.paidAt!);

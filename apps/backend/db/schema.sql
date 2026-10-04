@@ -170,3 +170,26 @@ CREATE INDEX IF NOT EXISTS auth_challenges_expiry_idx ON auth_challenges(expires
 -- Databases created from an older auth_challenges layout gain the binding columns; rows without them never verify.
 ALTER TABLE auth_challenges ADD COLUMN IF NOT EXISTS session_id text;
 ALTER TABLE auth_challenges ADD COLUMN IF NOT EXISTS origin text;
+-- Chain indexer (src/indexer.ts). Regular tables: every decoded vault event,
+-- keyed by (signature, event_index) so replays and backfills are idempotent.
+-- PaymentMade events are also written to the payments hypertable above.
+CREATE TABLE IF NOT EXISTS vault_events (
+  signature     text NOT NULL,
+  event_index   int NOT NULL,
+  name          text NOT NULL,
+  pouch_address text,
+  amount        bigint,
+  time          timestamptz NOT NULL,
+  slot          bigint NOT NULL,
+  data          jsonb NOT NULL DEFAULT '{}',
+  PRIMARY KEY (signature, event_index)
+);
+CREATE INDEX IF NOT EXISTS vault_events_pouch_idx ON vault_events (pouch_address, time);
+CREATE TABLE IF NOT EXISTS indexer_cursors (
+  name       text PRIMARY KEY,
+  signature  text NOT NULL,
+  slot       bigint NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+-- Include not-yet-materialized payments so /stats/spend is current.
+ALTER MATERIALIZED VIEW spend_daily SET (timescaledb.materialized_only = false);

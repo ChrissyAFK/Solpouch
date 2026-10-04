@@ -1,7 +1,7 @@
 "use client";
 import { useId, useState } from "react";
 import type { Merchant, Pouch, CreatePouchBody } from "@solpouch/shared";
-import { toMicros, toUsdc, WEB_PREFIX } from "@solpouch/shared";
+import { MAX_ALLOWED_MERCHANTS, toMicros, toUsdc, WEB_PREFIX } from "@solpouch/shared";
 import { errMsg } from "@/lib/api";
 import { ErrorBanner, btnPrimary, input, label } from "./ui";
 
@@ -78,6 +78,10 @@ export function PouchForm({
       return;
     }
     const web = WEB_PREFIX + d;
+    if (!allowed.includes(web) && allowed.length >= MAX_ALLOWED_MERCHANTS) {
+      setWebError(`A pouch can allow at most ${MAX_ALLOWED_MERCHANTS} stores. Remove one first, or choose Any store.`);
+      return;
+    }
     setAllowed((c) => (c.includes(web) ? c : [...c, web]));
     setWebInput("");
     setWebError(null);
@@ -108,6 +112,10 @@ export function PouchForm({
         }
         if (mode === "only" && allowed.length === 0) {
           setError("Pick at least one store, or choose Any store.");
+          return;
+        }
+        if (mode === "only" && allowed.length > MAX_ALLOWED_MERCHANTS) {
+          setError(`A pouch can allow at most ${MAX_ALLOWED_MERCHANTS} stores. Remove some, or choose Any store.`);
           return;
         }
         setBusy(true);
@@ -230,6 +238,7 @@ export function PouchForm({
                         type="checkbox"
                         className="h-4 w-4 accent-[var(--ok)]"
                         checked={checked}
+                        disabled={!checked && allowed.length >= MAX_ALLOWED_MERCHANTS}
                         onChange={() =>
                           setAllowed((current) =>
                             checked
@@ -309,6 +318,9 @@ export function PouchForm({
                     ))}
                 </ul>
               )}
+              <p className="mt-2 text-xs text-[var(--muted)]">
+                {allowed.length} of {MAX_ALLOWED_MERCHANTS} stores selected.
+              </p>
               {merchants.length === 0 && (
                 <p className="mt-3 rounded bg-[var(--surface-raised)] p-4 text-sm text-[var(--muted)]">
                   No built-in stores loaded. You can still add your own.
@@ -319,7 +331,9 @@ export function PouchForm({
         </fieldset>
       </fieldset>
       <div className="rounded bg-[var(--surface-raised)] px-4 py-3 text-xs leading-5 text-[var(--muted)]">
-        Every order requires approval before payment.
+        {initial && initial.confirmAbove > 0
+          ? `Orders up to ${toUsdc(initial.confirmAbove).toFixed(2)} USDC from a built-in store, with every item an exact match, are paid without asking. Everything else requires approval before payment.`
+          : "Every order requires approval before payment."}
       </div>
       <button
         className={`${btnPrimary} w-full sm:w-auto`}

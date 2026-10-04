@@ -1,4 +1,4 @@
-import type { Order, Pouch, TopUp } from "@solpouch/shared";
+import type { Order, Pouch, SpendPoint, TopUp } from "@solpouch/shared";
 
 export class StoreConflictError extends Error {
   constructor(message = "Record changed; reload it before retrying") {
@@ -68,3 +68,50 @@ export function publicPouch(p: StoredPouch): Pouch {
 }
 
 export type UserProfile = { email: string; displayName?: string; avatar?: string; wallet?: string; createdAt: string; updatedAt: string };
+
+/** One decoded vault program event. Idempotency key: (signature, eventIndex). */
+export interface VaultEventRecord {
+  signature: string;
+  /** Position of the event among this program's events in the transaction. */
+  eventIndex: number;
+  name: string;
+  pouchAddress: string | null;
+  amount: number | null;
+  /** Event time (the program's clock when it carries one, else the block time). */
+  time: string;
+  slot: number;
+  /** Decoded fields with keys as base58, numbers as decimal strings, byte arrays as hex. */
+  data: Record<string, unknown>;
+}
+/** A PaymentMade event as a row of the `payments` hypertable. */
+export interface PaymentRecord {
+  txSignature: string;
+  eventIndex: number;
+  time: string;
+  /** Store pouch ID, or the pouch PDA address when no stored pouch has it. */
+  pouchId: string;
+  merchantId: string | null;
+  /** 32 hex chars; equals orders.id for payments the backend made. */
+  orderId: string;
+  amount: number;
+}
+export interface IndexerCursor { signature: string; slot: number }
+
+/** Storage for the chain indexer. Writes are idempotent per (signature, eventIndex). */
+export interface PaymentIndex {
+  /** Record one transaction's events and payments atomically; returns how many events were new. */
+  recordVaultEvents(events: VaultEventRecord[], payments: PaymentRecord[]): Promise<number>;
+  getIndexerCursor(name: string): Promise<IndexerCursor | undefined>;
+  saveIndexerCursor(name: string, cursor: IndexerCursor): Promise<void>;
+  /** Spend from indexed payments for these pouches, or undefined when none are indexed. */
+  indexedSpend(pouchIds: string[], bucket: "day" | "hour"): Promise<SpendPoint[] | undefined>;
+}
+export function isPaymentIndex(store: Store): store is Store & PaymentIndex {
+  return typeof (store as Partial<PaymentIndex>).indexedSpend === "function" && typeof (store as Partial<PaymentIndex>).recordVaultEvents === "function";
+}
+export function spendBucket(time: string, bucket: "day" | "hour"): string {
+  const d = new Date(time);
+  if (bucket === "day") d.setUTCHours(0, 0, 0, 0);
+  else d.setUTCMinutes(0, 0, 0);
+  return d.toISOString();
+}

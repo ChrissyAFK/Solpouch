@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Hono } from "hono";
 import { z } from "zod";
-import type { Pouch } from "@solpouch/shared";
+import { MAX_ALLOWED_MERCHANTS, type Pouch } from "@solpouch/shared";
 import { fakeAddress } from "../store/memory.js";
 import { publicPouch, type StoredPouch } from "../store/types.js";
 import type { AuthEnv } from "../auth/session.js";
@@ -13,6 +13,12 @@ const rules = {
   confirmAbove: z.number().int().nonnegative().max(10_000_000_000),
   allowedMerchantIds: z.array(z.string().max(100)).max(100),
 };
+/** Checked outside zod so the response is a 422 with a stable code, not a generic 400. */
+function assertMerchantCount(ids: string[] | undefined) {
+  if (ids && ids.length > MAX_ALLOWED_MERCHANTS) {
+    throw new HttpError(422, `A pouch can allow at most ${MAX_ALLOWED_MERCHANTS} stores. Remove some stores, or choose Any store.`, "TooManyMerchants");
+  }
+}
 const createBody = z.object({
   name: z.string().min(1).max(60),
   maxPerOrder: rules.maxPerOrder,
@@ -35,6 +41,7 @@ export function pouchRoutes(deps: Deps) {
   app.post("/", async (c) => {
     const email = c.get("user").email;
     const b = createBody.parse(await c.req.json());
+    assertMerchantCount(b.allowedMerchantIds);
     return deps.store.withPouchLock(`owner:${email}`,async()=> {
     if ((await deps.store.listPouches(email)).length >= 50) throw new HttpError(409, "Pouch limit reached (50)");
     const pouch: StoredPouch = {
@@ -62,6 +69,7 @@ export function pouchRoutes(deps: Deps) {
     return deps.store.withPouchLock(c.req.param("id"),async()=> {
     const p = await getOwnedPouch(deps, c.req.param("id"), c.get("user").email);
     const b = updateBody.parse(await c.req.json());
+    assertMerchantCount(b.allowedMerchantIds);
     Object.assign(p, Object.fromEntries(Object.entries(b).filter(([, v]) => v !== undefined)));
     await deps.vault.updateRules(p);
     return c.json(publicPouch(await deps.store.savePouch(p)));

@@ -41,7 +41,8 @@ Dashboard redesign from `codex/dashboard-design` is merged into `scaffold` (not 
 ## Not done yet
 
 - Wallet sign-in for owner actions (the backend still signs owner txs for the demo).
-- Indexer is a stub; `confirmAbove` is stored but not used for auto-confirm.
+- Chain indexer (`apps/backend/src/indexer.ts`, `ENABLE_INDEXER=true`, chain mode + Postgres only) is unit-tested against fixture logs and a fake RPC, but has not been run against devnet or Tiger Data; the new schema (`vault_events`, `indexer_cursors`, real-time `spend_daily`) has not been applied to the live database yet.
+- `confirmAbove` auto-pay works for exact catalog orders at or below the amount (tests only), but the web form has no field to set it; it can be set through `PATCH /pouches/:id/rules`. The updated `voice/prompt.md` (rule 8) must be copied to the ElevenLabs agent.
 - `scripts/chain-smoke.ts` and `scripts/db-check.ts` are manual checks; `test/postgres.test.ts` runs only with `TEST_DATABASE_URL`.
 
 ## Run it

@@ -27,6 +27,26 @@ if (process.env.VAULT_MODE === "chain") {
 }
 const app = createApp({ store, vault });
 
+// Read-only chain indexer (off unless ENABLE_INDEXER=true, VAULT_MODE=chain and Postgres).
+const { indexerDisabledReason, VaultIndexer } = await import("./indexer.js");
+const indexerOff = indexerDisabledReason(process.env, store instanceof PostgresStore);
+let indexer: InstanceType<typeof VaultIndexer> | undefined;
+if (!indexerOff && store instanceof PostgresStore) {
+  const { Connection, PublicKey } = await import("@solana/web3.js");
+  indexer = new VaultIndexer({
+    connection: new Connection(process.env.SOLANA_RPC_URL || "https://api.devnet.solana.com", "confirmed"),
+    programId: new PublicKey(process.env.VAULT_PROGRAM_ID!),
+    store,
+    pollMs: Number(process.env.INDEXER_POLL_MS) || 30_000,
+  });
+  void indexer.start().then(() => console.log("indexer: started"));
+} else if (process.env.ENABLE_INDEXER === "true") {
+  console.warn(`indexer: not started (${indexerOff})`);
+}
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => { void (indexer?.stop() ?? Promise.resolve()).finally(() => process.exit(0)); });
+}
+
 const port = Number(process.env.BACKEND_PORT ?? 8787);
 serve({ fetch: app.fetch, port }, () => {
   console.log(`solpouch backend on :${port} (vault=${process.env.VAULT_MODE ?? "mock"}, ai=${aiProvider()})`);
