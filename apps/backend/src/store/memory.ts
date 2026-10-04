@@ -1,5 +1,6 @@
 import { toMicros, type Order, type Pouch, type TopUp } from "@solpouch/shared";
-import type { Store } from "./types.js";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { StoreConflictError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthChallenge, type AuthSession } from "./types.js";
 
 // TODO: PostgresStore backed by Tiger Data (see db/schema.sql). Swap in src/index.ts.
 
@@ -53,39 +54,100 @@ export class MemoryStore implements Store {
   private pouches = new Map<string, Pouch>();
   private orders = new Map<string, Order>();
   private topups = new Map<string, TopUp>();
+  private operations = new Map<string, VaultOperation>();
+  private challenges = new Map<string, AuthChallenge>();
+  private sessions = new Map<string, AuthSession>();
+  private rateLimits = new Map<string, { hits: number; expiresAt: number }>();
+  private nextCleanupAt = 0;
+  private cleanupExpired() {
+    const now = Date.now();
+    if (now < this.nextCleanupAt) return;
+    this.nextCleanupAt = now + 60_000;
+    const sweep = <T>(map: Map<string, T>, expiresAt: (value: T) => number) => {
+      const limit = Math.min(1000, map.size);
+      let scanned = 0;
+      for (const [id, value] of map) {
+        if (scanned++ >= limit) break;
+        map.delete(id);
+        // Rotate survivors so later bounded sweeps eventually inspect every entry.
+        if (expiresAt(value) > now) map.set(id, value);
+      }
+    };
+    sweep(this.challenges, (record) => Date.parse(record.expiresAt));
+    sweep(this.sessions, (record) => Date.parse(record.expiresAt));
+    sweep(this.rateLimits, (bucket) => bucket.expiresAt);
+  }
+  private locks = new Map<string, Promise<void>>();
+  private heldLocks = new AsyncLocalStorage<Set<string>>();
 
-  constructor(seed: Pouch[] = seedPouches()) {
-    for (const p of seed) this.pouches.set(p.id, p);
+  constructor(seed: Pouch[] = []) {
+    for (const p of seed) this.pouches.set(p.id, structuredClone({ ...p, version: p.version ?? 0 }));
   }
-
-  async listPouches() {
-    return [...this.pouches.values()];
+  private save<T extends { id: string; version?: number; createdAt?: string }>(map: Map<string, T>, record: T): T {
+    const current = map.get(record.id);
+    if (current ? record.version !== current.version : record.version !== undefined) throw new StoreConflictError();
+    if (current?.createdAt && record.createdAt && new Date(current.createdAt).toISOString() !== new Date(record.createdAt).toISOString()) throw new StoreConflictError("Creation time cannot change");
+    const saved = structuredClone({ ...record, version: (current?.version ?? 0) + 1 });
+    map.set(record.id, saved);
+    return structuredClone(saved);
   }
-  async getPouch(id: string) {
-    return this.pouches.get(id);
-  }
-  async savePouch(p: Pouch) {
-    this.pouches.set(p.id, p);
-    return p;
-  }
+  async listPouches() { return structuredClone([...this.pouches.values()]); }
+  async getPouch(id: string) { return structuredClone(this.pouches.get(id)); }
+  async savePouch(p: Pouch) { return this.save(this.pouches, p); }
   async listOrders(pouchId?: string) {
-    const all = [...this.orders.values()];
-    return (pouchId ? all.filter((o) => o.pouchId === pouchId) : all).sort((a, b) =>
-      b.createdAt.localeCompare(a.createdAt),
-    );
+    return structuredClone([...this.orders.values()].filter((o) => !pouchId || o.pouchId === pouchId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
   }
-  async getOrder(id: string) {
-    return this.orders.get(id);
+  async getOrder(id: string) { return structuredClone(this.orders.get(id)); }
+  async saveOrder(o: Order) { return this.save(this.orders, o); }
+  async getTopUp(id: string) { return structuredClone(this.topups.get(id)); }
+  async saveTopUp(t: TopUp) { return this.save(this.topups, t); }
+  async withPouchLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+    const held = this.heldLocks.getStore();
+    if (held?.has(id)) return fn();
+    const previous = this.locks.get(id) ?? Promise.resolve();
+    let release!: () => void;
+    const next = new Promise<void>((resolve) => { release = resolve; });
+    this.locks.set(id, next);
+    await previous;
+    try { return await this.heldLocks.run(new Set([...(held ?? []), id]), fn); }
+    finally { release(); if (this.locks.get(id) === next) this.locks.delete(id); }
   }
-  async saveOrder(o: Order) {
-    this.orders.set(o.id, o);
-    return o;
+  async getOperation(id: string) { return structuredClone(this.operations.get(id)); }
+  async saveOperation(record: VaultOperation) {
+    const current = this.operations.get(record.id);
+    if (current && !sameOperation(current, record)) throw new StoreConflictError("Operation is immutable");
+    this.operations.set(record.id, structuredClone(record));
   }
-  async getTopUp(id: string) {
-    return this.topups.get(id);
+  async saveChallenge(record: AuthChallenge) {
+    this.cleanupExpired();
+    if (this.challenges.has(record.id)) throw new StoreConflictError("Challenge already exists");
+    this.challenges.set(record.id, structuredClone(record));
   }
-  async saveTopUp(t: TopUp) {
-    this.topups.set(t.id, t);
-    return t;
+  async consumeChallenge(id: string) {
+    const record = this.challenges.get(id);
+    this.challenges.delete(id);
+    return record && Date.parse(record.expiresAt) > Date.now() ? structuredClone(record) : undefined;
+  }
+  async saveSession(record: AuthSession) {
+    this.cleanupExpired();
+    if (this.sessions.has(record.tokenHash)) throw new StoreConflictError("Session already exists");
+    this.sessions.set(record.tokenHash, structuredClone({ ...record, scope: record.scope ?? "web" }));
+  }
+  async getSession(tokenHash: string) {
+    const record = this.sessions.get(tokenHash);
+    if (record && Date.parse(record.expiresAt) > Date.now()) return structuredClone(record);
+    this.sessions.delete(tokenHash);
+    return undefined;
+  }
+  async deleteSession(tokenHash: string) { this.sessions.delete(tokenHash); }
+  async consumeRateLimit(key: string, windowMs: number, max: number) {
+    validateRateLimit(key, windowMs, max);
+    const now = Date.now();
+    this.cleanupExpired();
+    const previous = this.rateLimits.get(key);
+    const bucket = previous && previous.expiresAt > now ? previous : { hits: 0, expiresAt: now + windowMs };
+    bucket.hits++;
+    this.rateLimits.set(key, bucket);
+    return { allowed: bucket.hits <= max, retryAfter: Math.max(1, Math.ceil((bucket.expiresAt - now) / 1000)) };
   }
 }

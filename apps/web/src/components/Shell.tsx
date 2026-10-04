@@ -5,13 +5,19 @@ import { usePathname } from "next/navigation";
 import { Icon, type IconName } from "./Icons";
 import { Footer } from "./Footer";
 import { ChatWidget } from "./ChatWidget";
+import { WalletSessionProvider, WalletGate, WalletAccount, PaymentMode, useWalletSession } from "./WalletSession";
 export function Shell({ children }: { children: React.ReactNode }) {
+  return <WalletSessionProvider><WorkspaceShell>{children}</WorkspaceShell></WalletSessionProvider>;
+}
+function WorkspaceShell({ children }: { children: React.ReactNode }) {
+  const session = useWalletSession();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuToggle = useRef<HTMLButtonElement>(null);
   const pouchRoute =
     pathname === "/pouches" || pathname.startsWith("/pouches/");
   const orderRoute = pathname === "/order";
+  const protectedRoute = pathname === "/dashboard" || pouchRoute || orderRoute;
   const pageLabel =
     pathname === "/dashboard"
       ? "Overview"
@@ -158,7 +164,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             Personal <span>/</span>
             <strong>{pageLabel}</strong>
           </div>
-          <span className="demo-label">Payments on Solana</span>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", justifyContent: "flex-end" }}><PaymentMode /><WalletAccount /></div>
         </header>
         <main
           id="main-content"
@@ -170,10 +176,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
             marginBottom: 0,
           }}
         >
-          {children}
+          {protectedRoute ? <WalletGate>{children}</WalletGate> : children}
         </main>
         <Footer />
-        <ChatWidget />
+        {protectedRoute && session.wallet && <ChatWidget key={`${session.wallet}:${session.epoch}`} />}
       </div>
     </div>
   );

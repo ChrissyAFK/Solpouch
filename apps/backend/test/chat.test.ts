@@ -1,3 +1,4 @@
+import { authenticatedStore, webHeaders } from "./authFixture.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toMicros } from "@solpouch/shared";
 import { createApp } from "../src/app.js";
@@ -17,23 +18,23 @@ vi.mock("@google/genai", async (importOriginal) => {
 let store: MemoryStore;
 let vault: MockVaultClient;
 let app: ReturnType<typeof createApp>;
-beforeEach(() => {
+beforeEach(async () => {
   vi.stubEnv("GEMINI_API_KEY", "");
   vi.stubEnv("GEMINI_MODEL", "");
   vi.clearAllMocks();
-  store = new MemoryStore();
+  store = await authenticatedStore();
   vault = new MockVaultClient(store, (id) => getMerchant(id)?.payTo);
   app = createApp({ store, vault });
 });
 afterEach(() => vi.unstubAllEnvs());
-const post = (body: unknown) => app.request("/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+const post = (body: unknown) => app.request("/chat", { method: "POST", headers: { "Content-Type": "application/json", ...webHeaders }, body: JSON.stringify(body) });
 const ask = (content: string) => post({ messages: [{ role: "user", content }] });
 
 describe("read-only chat", () => {
   it("reports configured mode without calling the provider", async () => {
-    expect(await (await app.request("/chat/status")).json()).toEqual({ mode: "demo" });
+    expect(await (await app.request("/chat/status", { headers: webHeaders })).json()).toEqual({ mode: "demo" });
     vi.stubEnv("GEMINI_API_KEY", "fake-test-key");
-    expect(await (await app.request("/chat/status")).json()).toEqual({ mode: "gemini" });
+    expect(await (await app.request("/chat/status", { headers: webHeaders })).json()).toEqual({ mode: "gemini" });
     expect(sdk.generateContent).not.toHaveBeenCalled();
   });
 
@@ -83,7 +84,7 @@ describe("read-only chat", () => {
   });
 
   it("rejects malformed and oversized bodies", async () => {
-    expect((await app.request("/chat", { method: "POST", body: "{" })).status).toBe(400);
+    expect((await app.request("/chat", { method: "POST", headers: webHeaders, body: "{" })).status).toBe(400);
     expect((await ask("x".repeat(193_000))).status).toBe(413);
   });
 

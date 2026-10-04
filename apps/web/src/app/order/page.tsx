@@ -133,7 +133,8 @@ function OrderWorkspace() {
   }
   const selected = pouches.find((p) => p.id === (order?.pouchId ?? pouchId));
   const isDraft = order?.status === "draft";
-  const step = !order ? 1 : isDraft ? 2 : 3;
+  const isPaying = order?.status === "paying";
+  const step = !order ? 1 : isDraft || isPaying ? 2 : 3;
   const merchant = merchants.find((m) => m.id === order?.merchantId);
 
   return (
@@ -274,10 +275,11 @@ function OrderWorkspace() {
                   </span>
                 </div>
                 <p className="mt-3 text-sm text-[#a9a5b9]">“{order.request}”</p>
+                {isPaying && <Notice>Payment is still being checked. Check this order again to recover its result. Do not start another order for the same purchase.</Notice>}
                 {order.status === "paid" && (
                   <Notice>
                     {order.txSignature?.startsWith("mock")
-                      ? "Payment complete."
+                      ? "Demo payment complete. No real funds moved."
                       : "Payment recorded."}
                   </Notice>
                 )}
@@ -353,7 +355,11 @@ function OrderWorkspace() {
                   Prices come from the store’s catalog.
                 </p>
                 <div className="mt-6 flex flex-wrap gap-3">
-                  {isDraft ? (
+                  {isPaying ? (
+                    <button className={btnPrimary} disabled={busy} onClick={() => void act("confirm")}>
+                      {busy ? "Checking payment…" : "Check payment status"}
+                    </button>
+                  ) : isDraft ? (
                     <>
                       <button
                         className={btnPrimary}

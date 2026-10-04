@@ -9,21 +9,23 @@ const { MemoryStore } = await import("./store/memory.js");
 const { createVaultClient } = await import("./vault/index.js");
 
 const { PostgresStore } = await import("./store/postgres.js");
+if (process.env.VAULT_MODE === "chain" && !process.env.DATABASE_URL) {
+  throw new Error("Chain mode requires DATABASE_URL so payment recovery survives restarts");
+}
+if (process.env.DATABASE_URL && process.env.VAULT_MODE !== "chain") {
+  throw new Error("Mock mode uses temporary memory only. Clear DATABASE_URL for the mock demo, or configure chain mode for persistent payments.");
+}
 const store = process.env.DATABASE_URL ? await PostgresStore.connect(process.env.DATABASE_URL, []) : new MemoryStore([]);
 console.log(`store: ${process.env.DATABASE_URL ? "postgres (Tiger Data)" : "memory"}`);
 let vault = createVaultClient(store);
 if (process.env.VAULT_MODE === "chain") {
   const { ensureOnChain, ChainVaultClient } = await import("./vault/index.js");
   const { SyncedVaultClient } = await import("./vault/synced.js");
-  // Creates missing pouches on devnet and funds each vault up to its stored balance.
+  // Only reads existing chain accounts. Startup never creates, mints or transfers funds.
   for (const p of await ensureOnChain(vault as InstanceType<typeof ChainVaultClient>, await store.listPouches())) {
     await store.savePouch(p);
   }
   vault = new SyncedVaultClient(vault, store);
-  for (const p of await store.listPouches()) {
-    const { balance, spentToday } = await vault.getBalance(p.id);
-    await store.savePouch({ ...p, balance, spentToday });
-  }
 }
 const app = createApp({ store, vault });
 

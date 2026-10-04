@@ -12,6 +12,10 @@ import { statsRoutes } from "./routes/stats.js";
 import { topupRoutes } from "./routes/topups.js";
 import { voiceRoutes } from "./routes/voice.js";
 import { chatRoutes } from "./routes/chat.js";
+import { authRoutes } from './routes/auth.js';
+import { bearer, session, requireVoiceSecret } from './security/auth.js';
+import { ownedStore } from './security/access.js';
+import { StoreConflictError } from './store/types.js';
 import { rateLimit } from "./security/rateLimit.js";
 
 const DEFAULT_ORIGINS = ["http://localhost:3000", "https://solpouch.tech", "https://www.solpouch.tech"];
@@ -25,38 +29,53 @@ export function createApp(deps: Deps) {
     : DEFAULT_ORIGINS;
 
   app.use("*", secureHeaders());
+  app.use("*", async (c, next) => { c.header("Cache-Control", "no-store"); await next(); });
   app.use("*", bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "Request body too large" } satisfies ApiError, 413) }));
   app.use(
     "*",
     cors({
       origin: (o) => (origins.includes(o) ? o : null),
-      allowHeaders: ["Content-Type", "X-Solpouch-Secret"],
+      allowHeaders: ["Content-Type", "X-Solpouch-Secret", "Authorization"],
+      credentials: true,
     }),
   );
 
-  // Cloudflare tunnel traffic (ElevenLabs webhooks) may only reach /health and /voice/*.
+  // Browser mutations must originate from an explicitly configured site.
   app.use("*", async (c, next) => {
-    if (c.req.header("cf-connecting-ip") && process.env.PUBLIC_API !== "all") {
-      const p = c.req.path;
-      if (p !== "/health" && p !== "/voice" && !p.startsWith("/voice/")) return c.json({ error: "Not found" }, 404);
+    if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method)) {
+      const origin = c.req.header("origin");
+      if (origin ? !origins.includes(origin) : !bearer(c)) return c.json({ error: "Request origin is not allowed" }, 403);
     }
     await next();
   });
 
-  const writes = rateLimit({ windowMs: MIN, max: 30, key: "write" });
-  const gemini = rateLimit({ windowMs: MIN, max: 10, key: "gemini-min" });
-  const geminiDay = rateLimit({ windowMs: DAY, max: 200, key: "gemini-day" });
-  const topups = rateLimit({ windowMs: MIN, max: 5, key: "topup" });
-  app.use("*", rateLimit({ windowMs: MIN, max: 120, key: "all" }));
+  const writes = rateLimit({ store: deps.store, windowMs: MIN, max: 30, key: "write" });
+  const gemini = rateLimit({ store: deps.store, windowMs: MIN, max: 10, key: "gemini-min" });
+  const geminiDay = rateLimit({ store: deps.store, windowMs: DAY, max: 200, key: "gemini-day" });
+  const topups = rateLimit({ store: deps.store, windowMs: MIN, max: 5, key: "topup" });
+  app.use("*", rateLimit({ store: deps.store, windowMs: MIN, max: 120, key: "all" }));
   app.use("*", async (c, next) => {
     const m = c.req.method;
     return m === "POST" || m === "PATCH" ? writes(c, next) : next();
   });
   app.on("POST", ["/chat", "/orders"], gemini, geminiDay);
   app.on("POST", "/topups/*", topups);
-  app.use("/voice/*", rateLimit({ windowMs: MIN, max: 60, key: "voice" }));
+  app.use("/voice/*", rateLimit({ store: deps.store, windowMs: MIN, max: 60, key: "voice" }));
 
-  app.get("/health", (c) => c.json({ ok: true }));
+  app.use("/auth/*", rateLimit({ store: deps.store, windowMs: MIN, max: 20, key: "auth" }));
+  app.route("/auth", authRoutes(deps, origins));
+  app.get("/health", (c) => c.json({ ok: true, mode: process.env.VAULT_MODE === "chain" ? "chain" : "mock", network: process.env.VAULT_MODE === "chain" ? "devnet" : "simulated" }));
+  app.use("*", async (c, next) => {
+    if (c.req.path === '/health' || c.req.path === '/merchants' || c.req.path.startsWith('/merchants/')) return next();
+    const voice = c.req.path === '/voice' || c.req.path.startsWith('/voice/');
+    if (voice) requireVoiceSecret(c);
+    const current = await session(c, deps.store, voice ? 'voice' : 'web');
+    if (process.env.VAULT_MODE === 'chain' && current.wallet !== deps.vault.authorizedOwner) throw new HttpError(403, 'This devnet demo supports only its configured owner wallet');
+    c.set('wallet', current.wallet);
+    c.set('deps', { ...deps, store: ownedStore(deps.store, current.wallet) });
+    c.header('Cache-Control', 'no-store');
+    await next();
+  });
   app.route("/pouches", pouchRoutes(deps));
   app.route("/orders", orderRoutes(deps));
   app.route("/topups", topupRoutes(deps));
@@ -66,6 +85,7 @@ export function createApp(deps: Deps) {
   app.route("/chat", chatRoutes(deps));
 
   app.onError((err, c) => {
+    if (err instanceof StoreConflictError) return c.json({ error: 'This record changed. Reload and try again.', code: 'RecordChanged' }, 409);
     if (err instanceof HttpError) {
       const body: ApiError = { error: err.message, code: err.code };
       return c.json(body, err.status);

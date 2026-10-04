@@ -14,6 +14,18 @@ import type {
 export const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8787";
 
+export const SESSION_EXPIRED_EVENT = "solpouch:session-expired";
+let sessionVersion = 0;
+export function resetSessionRequests() { sessionVersion++; }
+export async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const version = sessionVersion;
+  const response = await fetch(input, { ...init, credentials: "include" });
+  if (response.status === 401 && version === sessionVersion && typeof window !== "undefined") {
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+  }
+  return response;
+}
+
 export class ApiRequestError extends Error {
   code?: string;
   status: number;
@@ -29,7 +41,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
   try {
-    res = await fetch(BACKEND_URL + path, {
+    res = await authFetch(BACKEND_URL + path, {
       ...init,
       headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
       cache: "no-store",
@@ -46,7 +58,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
       const body =
         data && typeof data === "object" ? (data as Partial<ApiError>) : {};
       const message =
-        res.status >= 500
+        res.status >= 500 && body.code !== "PaymentPending"
           ? "Solpouch is having trouble right now. Try again in a moment."
           : typeof body.error === "string"
             ? body.error
@@ -103,6 +115,7 @@ export const api = {
   confirm: (id: string) => post<Order>(`/orders/${id}/confirm`),
   cancel: (id: string) => post<Order>(`/orders/${id}/cancel`),
   startTopUp: (b: StartTopUpBody) => post<TopUp>("/topups", b),
+  topUp: (id: string) => req<TopUp>(`/topups/${encodeURIComponent(id)}`),
   completeTopUp: (id: string) => post<TopUp>(`/topups/${id}/complete`),
   spend: (pouchId: string, bucket: "day" | "hour" = "day") =>
     req<SpendPoint[]>(
@@ -113,6 +126,7 @@ export const api = {
 export function errMsg(e: unknown): string {
   if (e instanceof ApiRequestError) {
     const messages: Record<string, string> = {
+      PaymentPending: e.message,
       PouchFrozen: "This pouch is frozen. Unfreeze it before making a payment.",
       MerchantNotAllowed:
         "This store is not allowed for this pouch. Choose another pouch or update its allowed stores.",

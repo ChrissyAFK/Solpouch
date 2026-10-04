@@ -118,3 +118,44 @@ ALTER TABLE payments SET (
   timescaledb.compress_orderby   = 'time DESC'
 );
 SELECT add_compression_policy('payments', INTERVAL '7 days', if_not_exists => TRUE);
+
+-- Additive storage-hardening migration. Existing records remain unowned, version 0.
+ALTER TABLE pouches ADD COLUMN IF NOT EXISTS owner_wallet text;
+ALTER TABLE pouches ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 0;
+ALTER TABLE topups ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 0;
+ALTER TABLE topups ADD COLUMN IF NOT EXISTS tx_signature text;
+CREATE INDEX IF NOT EXISTS pouches_owner_wallet_idx ON pouches(owner_wallet);
+
+-- Regular tables: journals and auth records must have globally unique identifiers.
+CREATE TABLE IF NOT EXISTS vault_operations (
+  id text PRIMARY KEY,
+  kind text NOT NULL CHECK (kind IN ('pay', 'topup')),
+  pouch_id text NOT NULL,
+  tx_signature text NOT NULL,
+  signed_transaction text NOT NULL,
+  last_valid_block_height bigint NOT NULL,
+  created_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auth_challenges (
+  id text PRIMARY KEY,
+  wallet text NOT NULL,
+  message text NOT NULL,
+  expires_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  token_hash text PRIMARY KEY,
+  wallet text NOT NULL,
+  expires_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS auth_challenges_expiry_idx ON auth_challenges(expires_at);
+CREATE INDEX IF NOT EXISTS auth_sessions_expiry_idx ON auth_sessions(expires_at);
+ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT 'web';
+CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+  key text PRIMARY KEY,
+  hits bigint NOT NULL,
+  expires_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS rate_limit_buckets_expiry_idx ON rate_limit_buckets(expires_at);
+-- Voice sessions refer to a web session hash; access checks require that parent alive.
+ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS parent_token_hash text;

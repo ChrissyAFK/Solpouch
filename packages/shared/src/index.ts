@@ -16,6 +16,9 @@ export interface Merchant {
 
 export interface Pouch {
   id: string;
+  /** Unowned legacy records are not visible to authenticated wallets. */
+  ownerWallet?: string;
+  version?: number;
   /** On-chain Pouch PDA address. */
   address: string;
   name: string;
@@ -62,6 +65,7 @@ export type OrderStatus =
   | "cancelled";
 
 export interface Order {
+  version?: number;
   id: string; // also the on-chain order_id (16 bytes, hex)
   pouchId: string;
   merchantId: string;
@@ -75,9 +79,11 @@ export interface Order {
   createdAt: string;
 }
 
-export type TopUpStatus = "started" | "cooling_down" | "completed" | "cancelled";
+export type TopUpStatus = "started" | "cooling_down" | "processing" | "completed" | "cancelled";
 
 export interface TopUp {
+  version?: number;
+  txSignature?: string;
   id: string;
   pouchId: string;
   amount: Micros;

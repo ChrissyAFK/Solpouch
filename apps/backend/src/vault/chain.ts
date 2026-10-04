@@ -1,14 +1,13 @@
 import { readFileSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AnchorProvider, BN, Program, Wallet } from "@coral-xyz/anchor";
+import { AnchorProvider, BN, Program, Wallet, utils } from "@coral-xyz/anchor";
 import {
   Connection,
   Keypair,
   PublicKey,
   SystemProgram,
   Transaction,
-  sendAndConfirmTransaction,
 } from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
@@ -17,8 +16,11 @@ import {
   getAccount,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
+import { merchants } from "../merchants/index.js";
+import type { Store } from "../store/types.js";
+import { recoverTransaction } from "./recovery.js";
 import type { Micros, Pouch } from "@solpouch/shared";
-import { VaultRejected, type VaultClient, type VaultRejectCode } from "./types.js";
+import { VaultRejected, type VaultClient, type VaultRejectCode, type VaultState } from "./types.js";
 import idlJson from "./idl/solpouch_vault.json" with { type: "json" };
 import type { SolpouchVault } from "./idl/solpouch_vault.js";
 
@@ -79,7 +81,7 @@ export class ChainVaultClient implements VaultClient {
   private agent: Keypair;
   private program: Program<SolpouchVault>;
 
-  constructor(private payToOf: (merchantId: string) => string | undefined = () => undefined) {
+  constructor(private payToOf: (merchantId: string) => string | undefined = () => undefined, private store?: Store) {
     const rpc = process.env.SOLANA_RPC_URL || "https://api.devnet.solana.com";
     this.connection = new Connection(rpc, COMMITMENT);
     this.programId = new PublicKey(process.env.VAULT_PROGRAM_ID ?? "");
@@ -92,6 +94,8 @@ export class ChainVaultClient implements VaultClient {
     });
     this.program = new Program<SolpouchVault>({ ...(idlJson as object), address: this.programId.toBase58() } as SolpouchVault, provider);
   }
+
+  get authorizedOwner(): string { return this.owner.publicKey.toBase58(); }
 
   private pouchPda(id: string): PublicKey {
     return PublicKey.findProgramAddressSync(
@@ -116,14 +120,41 @@ export class ChainVaultClient implements VaultClient {
       .map((s) => new PublicKey(s));
   }
 
-  private async sendIxs(ixs: Parameters<Transaction["add"]>, signers: Keypair[]): Promise<string> {
-    const tx = new Transaction().add(...ixs);
-    return sendAndConfirmTransaction(this.connection, tx, signers, { commitment: COMMITMENT });
+  private async assertDevnet() {
+    if (await this.connection.getGenesisHash() !== "EtWTRABZaYq6iMfeYKouRu166VU2xqa1") {
+      throw new Error("Chain signing is restricted to Solana devnet");
+    }
+  }
+
+  private async submit(id: string, kind: "pay" | "topup", pouchId: string, build: () => Promise<Transaction>, signers: Keypair[]) {
+    if (!this.store) throw new Error("A persistent operation store is required for chain payments");
+    await this.assertDevnet();
+    return recoverTransaction(this.store, id, {
+      status: async (signature) => {
+        const value = (await this.connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
+        return { confirmed: !!value && !value.err && (value.confirmationStatus === "confirmed" || value.confirmationStatus === "finalized"), failed: !!value?.err };
+      },
+      blockHeight: () => this.connection.getBlockHeight(COMMITMENT),
+      broadcast: (bytes) => this.connection.sendRawTransaction(bytes, { skipPreflight: false, maxRetries: 0 }),
+      confirm: async (operation) => {
+        const tx = Transaction.from(Buffer.from(operation.signedTransaction, "base64"));
+        const result = await this.connection.confirmTransaction({ signature: operation.txSignature, blockhash: tx.recentBlockhash!, lastValidBlockHeight: operation.lastValidBlockHeight }, COMMITMENT);
+        return { failed: !!result.value.err };
+      },
+    }, async () => {
+      const tx = await build();
+      const latest = await this.connection.getLatestBlockhash(COMMITMENT);
+      tx.feePayer = this.owner.publicKey;
+      tx.recentBlockhash = latest.blockhash;
+      tx.sign(...signers);
+      return { id, kind, pouchId, txSignature: utils.bytes.bs58.encode(tx.signature!), signedTransaction: tx.serialize().toString("base64"), lastValidBlockHeight: latest.lastValidBlockHeight, createdAt: new Date().toISOString() };
+    }, { kind, pouchId });
   }
 
   async createPouch(pouch: Pouch): Promise<{ address: string }> {
     const pda = this.pouchPda(pouch.id);
     if (await this.connection.getAccountInfo(pda, COMMITMENT)) return { address: pda.toBase58() };
+    await this.assertDevnet();
     try {
       await this.program.methods
         .createPouch(
@@ -148,73 +179,37 @@ export class ChainVaultClient implements VaultClient {
     return { address: pda.toBase58() };
   }
 
-  async topUp(pouchId: string, amount: Micros): Promise<{ txSignature: string }> {
+  async topUp(pouchId: string, amount: Micros, operationId?: string): Promise<{ txSignature: string }> {
+    if (!operationId) throw new Error("A saved top-up ID is required");
     const pouch = this.pouchPda(pouchId);
     const ownerAta = getAssociatedTokenAddressSync(this.mint, this.owner.publicKey);
-    await this.sendIxs(
-      [
-        createAssociatedTokenAccountIdempotentInstruction(
-          this.owner.publicKey, ownerAta, this.owner.publicKey, this.mint),
-        createMintToInstruction(this.mint, ownerAta, this.owner.publicKey, BigInt(amount)),
-      ],
-      [this.owner],
-    );
-    try {
-      const txSignature = await this.program.methods
-        .topUp(new BN(amount))
-        .accountsPartial({
-          owner: this.owner.publicKey,
-          pouch,
-          vault: this.vaultPda(pouch),
-          ownerToken: ownerAta,
-          tokenProgram: TOKEN_PROGRAM_ID,
-        })
-        .rpc({ commitment: COMMITMENT });
-      return { txSignature };
-    } catch (e) {
-      mapError(e);
-    }
+    return this.submit(`topup:${operationId}`, "topup", pouchId, async () => {
+      const tx = new Transaction().add(createAssociatedTokenAccountIdempotentInstruction(this.owner.publicKey, ownerAta, this.owner.publicKey, this.mint));
+      // Faucet is opt-in and minted funds plus deposit succeed or fail in ONE transaction.
+      if (process.env.ENABLE_DEVNET_FAUCET === "true") tx.add(createMintToInstruction(this.mint, ownerAta, this.owner.publicKey, BigInt(amount)));
+      tx.add(await this.program.methods.topUp(new BN(amount)).accountsPartial({ owner: this.owner.publicKey, pouch, vault: this.vaultPda(pouch), ownerToken: ownerAta, tokenProgram: TOKEN_PROGRAM_ID }).instruction());
+      return tx;
+    }, [this.owner]);
   }
 
-  async pay(
-    pouch: Pouch,
-    merchantPayTo: string,
-    amount: Micros,
-    orderId: string,
-  ): Promise<{ txSignature: string }> {
+  async pay(pouch: Pouch, merchantPayTo: string, amount: Micros, orderId: string): Promise<{ txSignature: string }> {
     const pda = this.pouchPda(pouch.id);
     const order = orderBytes(orderId);
     const receipt = this.receiptPda(pda, order);
-    if (await this.connection.getAccountInfo(receipt, COMMITMENT)) throw new VaultRejected("OrderAlreadyUsed");
-
-    const merchant = new PublicKey(merchantPayTo);
-    const merchantAta = getAssociatedTokenAddressSync(this.mint, merchant, true);
-    await this.sendIxs(
-      [createAssociatedTokenAccountIdempotentInstruction(this.owner.publicKey, merchantAta, merchant, this.mint)],
-      [this.owner],
-    );
-    try {
-      const txSignature = await this.program.methods
-        .pay(new BN(amount), Array.from(order))
-        .accountsPartial({
-          agent: this.agent.publicKey,
-          pouch: pda,
-          vault: this.vaultPda(pda),
-          merchantToken: merchantAta,
-          receipt,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-        })
-        .signers([this.agent])
-        .rpc({ commitment: COMMITMENT });
-      return { txSignature };
-    } catch (e) {
-      mapError(e);
-    }
+    return this.submit(`pay:${orderId}`, "pay", pouch.id, async () => {
+      // A historical receipt without a local journal cannot safely be reconstructed.
+      if (await this.connection.getAccountInfo(receipt, COMMITMENT)) throw new Error("Existing payment receipt requires reconciliation");
+      const merchant = new PublicKey(merchantPayTo);
+      const merchantAta = getAssociatedTokenAddressSync(this.mint, merchant, true);
+      return new Transaction()
+        .add(createAssociatedTokenAccountIdempotentInstruction(this.owner.publicKey, merchantAta, merchant, this.mint))
+        .add(await this.program.methods.pay(new BN(amount), Array.from(order)).accountsPartial({ agent: this.agent.publicKey, pouch: pda, vault: this.vaultPda(pda), merchantToken: merchantAta, receipt, tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId }).instruction());
+    }, [this.owner, this.agent]);
   }
 
   private async ownerOnly(id: string, method: "freeze" | "unfreeze"): Promise<{ txSignature: string }> {
     const pouch = this.pouchPda(id);
+    await this.assertDevnet();
     try {
       const txSignature = await this.program.methods[method]()
         .accountsPartial({ owner: this.owner.publicKey, pouch })
@@ -233,6 +228,11 @@ export class ChainVaultClient implements VaultClient {
   }
 
   async getBalance(pouchId: string): Promise<{ balance: Micros; spentToday: Micros }> {
+    const { balance, spentToday } = await this.getState(pouchId);
+    return { balance, spentToday };
+  }
+
+  async getState(pouchId: string): Promise<VaultState> {
     const pda = this.pouchPda(pouchId);
     const [acct, vault] = await Promise.all([
       this.program.account.pouch.fetch(pda, COMMITMENT),
@@ -240,11 +240,23 @@ export class ChainVaultClient implements VaultClient {
     ]);
     const now = Math.floor(Date.now() / 1000);
     const expired = now - acct.dayStart.toNumber() >= DAY_SECONDS;
-    return { balance: Number(vault.amount), spentToday: expired ? 0 : acct.spentToday.toNumber() };
+    if (!acct.owner.equals(this.owner.publicKey) || !acct.mint.equals(this.mint)) {
+      throw new Error("Chain pouch owner or mint does not match the configured vault");
+    }
+    const allowedMerchantIds = acct.allowedMerchants.map((key) => {
+      const matches = merchants.filter((merchant) => this.payToOf(merchant.id) === key.toBase58());
+      if (matches.length !== 1) throw new Error("Chain pouch has an unknown or ambiguous merchant address");
+      return matches[0].id;
+    });
+    const balance = Number(vault.amount);
+    if (!Number.isSafeInteger(balance)) throw new Error("Chain balance exceeds supported precision");
+    return { balance, spentToday: expired ? 0 : acct.spentToday.toNumber(), frozen: acct.frozen,
+      maxPerOrder: acct.maxPerOrder.toNumber(), dailyLimit: acct.dailyLimit.toNumber(), allowedMerchantIds };
   }
 
   async updateRules(pouch: Pouch): Promise<{ txSignature: string }> {
     const pda = this.pouchPda(pouch.id);
+    await this.assertDevnet();
     try {
       const txSignature = await this.program.methods
         .setRules(null, new BN(pouch.maxPerOrder), new BN(pouch.dailyLimit), this.merchantKeys(pouch))
@@ -257,14 +269,16 @@ export class ChainVaultClient implements VaultClient {
   }
 }
 
-/** For each pouch: create on chain if missing, fund the vault up to pouch.balance, return with `address` set. */
+/** Startup reconciliation is read-only on chain. Missing accounts require explicit creation. */
 export async function ensureOnChain(vault: ChainVaultClient, pouches: Pouch[]): Promise<Pouch[]> {
   const out: Pouch[] = [];
-  for (const p of pouches) {
-    const { address } = await vault.createPouch(p);
-    const { balance } = await vault.getBalance(p.id);
-    if (balance < p.balance) await vault.topUp(p.id, p.balance - balance);
-    out.push({ ...p, address });
+  for (const pouch of pouches) {
+    try {
+      const state = await vault.getState(pouch.id);
+      out.push({ ...pouch, ...state });
+    } catch {
+      throw new Error(`Cannot read chain pouch ${pouch.id}. Check the account and RPC; startup will not create or fund it.`);
+    }
   }
   return out;
 }

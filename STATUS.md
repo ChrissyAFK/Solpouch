@@ -2,6 +2,14 @@
 
 Dashboard redesign from `codex/dashboard-design` is merged into `scaffold` (not merged to main).
 
+## Backend hardening branch (2026-10-03)
+
+Wallet sign-in, server-side ownership, scoped voice credentials, versioned storage, shared rate limits, verified database TLS, read-only startup, and journaled payment retries are implemented. See [BACKEND-HARDENING.md](BACKEND-HARDENING.md) for migration and recovery steps. Existing pouches stay hidden until an operator assigns their verified owner. This is a devnet, single-owner chain adapter; it does not implement production multi-wallet signing.
+
+Local automated checks pass for auth, isolation, concurrency and simulated failure/restart recovery. Real database migration/restart and funded devnet verification remain outstanding. Direct ElevenLabs UI sessions are disabled pending secure conversation binding; authenticated text chat remains available. The domain deployment is unchanged by this branch.
+
+The historical integration notes below describe the earlier deployment, not the hardened branch's runtime verification.
+
 ## Done
 
 | Part | Where | Verified |
@@ -30,7 +38,7 @@ Dashboard redesign from `codex/dashboard-design` is merged into `scaffold` (not 
 
 ## Not done yet
 
-- No sign-in yet: anyone who can reach the backend directly can manage pouches. Wallet sign-in is the real fix.
+- Production multi-wallet transaction signing and authenticated voice provider binding remain to be built.
 
 - A permanent tunnel on solpouch.tech (the quick tunnel URL changes on restart).
 - Indexer is a stub; `confirmAbove` is stored but not used for auto-confirm.
@@ -41,7 +49,7 @@ Dashboard redesign from `codex/dashboard-design` is merged into `scaffold` (not 
 ```
 pnpm install
 cp .env.example .env      # keys go here only, never in apps/web
-pnpm dev:backend          # http://localhost:8787, works offline with seeded pouches
+pnpm dev:backend          # http://localhost:8787, starts empty; wallet sign-in required
 pnpm dev:web              # http://localhost:3000
 pnpm --filter @solpouch/backend test
 cd programs/solpouch_vault && cargo test
@@ -56,7 +64,7 @@ anchor test --provider.cluster localnet
 
 ## Dashboard chat
 
-The floating **Ask Solpouch** widget talks to the ElevenLabs agent (`NEXT_PUBLIC_ELEVENLABS_AGENT_ID`, public, not a key) over a websocket: typed messages use a text-only session, and **Talk** starts a voice call with the mic. If the agent connection fails, it falls back to the Gemini `/chat` route below. Verified 2026-10-03: a typed balance question returns live pouch balances.
+Earlier deployment: the floating **Ask Solpouch** widget talked to the ElevenLabs agent (`NEXT_PUBLIC_ELEVENLABS_AGENT_ID`, public, not a key) over a websocket: typed messages use a text-only session, and **Talk** starts a voice call with the mic. If the agent connection fails, it falls back to the Gemini `/chat` route below. Verified 2026-10-03: a typed balance question returns live pouch balances.
 
 The Gemini fallback uses the existing Gemini integration. Set `GEMINI_API_KEY` in the ignored root `.env` to enable model replies; `GEMINI_MODEL` optionally overrides the existing default model. Restart the backend after changing environment configuration. Keep keys on the backend.
 

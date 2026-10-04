@@ -1,3 +1,4 @@
+import { authenticatedStore, webHeaders, voiceHeaders, VOICE_SECRET } from "./authFixture.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import { toMicros } from "@solpouch/shared";
 import { createApp } from "../src/app.js";
@@ -7,7 +8,7 @@ import { MockVaultClient } from "../src/vault/mock.js";
 import { VaultRejected } from "../src/vault/types.js";
 
 delete process.env.GEMINI_API_KEY;
-delete process.env.ELEVENLABS_TOOL_SECRET;
+process.env.VOICE_WEBHOOK_SECRET = VOICE_SECRET;
 
 const thai = getMerchant("thai-express")!.payTo;
 const builders = getMerchant("burnaby-builders")!.payTo;
@@ -16,9 +17,9 @@ const $ = toMicros;
 let clock = 1_000_000;
 let store: MemoryStore;
 let vault: MockVaultClient;
-beforeEach(() => {
+beforeEach(async () => {
   clock = 1_000_000;
-  store = new MemoryStore();
+  store = await authenticatedStore();
   vault = new MockVaultClient(store, (id) => getMerchant(id)?.payTo, () => clock);
 });
 
@@ -61,9 +62,11 @@ describe("MockVaultClient rules", () => {
     await store.savePouch(p);
     expect(await code(vault.pay(p, thai, $(10), "o1"))).toBe("InsufficientFunds");
   });
-  it("reused order id", async () => {
-    await vault.pay(await uber(), thai, $(5), "o1");
-    expect(await code(vault.pay(await uber(), thai, $(5), "o1"))).toBe("OrderAlreadyUsed");
+  it("reused order id returns the original signature without another debit", async () => {
+    const first = await vault.pay(await uber(), thai, $(5), "o1");
+    const repeated = await vault.pay(await uber(), thai, $(5), "o1");
+    expect(repeated.txSignature).toBe(first.txSignature);
+    expect((await uber()).balance).toBe($(95));
   });
   it("rolls the day after 24h", async () => {
     await vault.pay(await uber(), thai, $(25), "o1");
@@ -79,8 +82,8 @@ describe("HTTP flow", () => {
   const post = (app: ReturnType<typeof mk>, path: string, body?: unknown, headers: Record<string, string> = {}) =>
     app.request(path, {
       method: "POST",
-      headers: { "content-type": "application/json", ...headers },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: { "content-type": "application/json", ...(path.startsWith("/voice/") ? voiceHeaders : webHeaders), ...headers },
+      body: JSON.stringify(body ?? {}),
     });
 
   it("draft -> confirm -> paid", async () => {
@@ -145,14 +148,13 @@ describe("HTTP flow", () => {
     expect((await uber()).frozen).toBe(true);
   });
 
-  it("voice secret is enforced when set", async () => {
-    process.env.ELEVENLABS_TOOL_SECRET = "s3cret";
-    try {
-      const app = mk();
-      expect((await post(app, "/voice/tools/get_pouches")).status).toBe(401);
-      expect((await post(app, "/voice/tools/get_pouches", {}, { "X-Solpouch-Secret": "s3cret" })).status).toBe(200);
-    } finally {
-      delete process.env.ELEVENLABS_TOOL_SECRET;
-    }
+  it("voice requires the configured secret and a voice-scoped session", async () => {
+    const app = mk();
+    expect((await post(app, "/voice/tools/get_pouches", {}, { "X-Solpouch-Secret": "wrong" })).status).toBe(401);
+    expect((await post(app, "/voice/tools/get_pouches", {}, webHeaders)).status).toBe(401);
+    expect((await post(app, "/voice/tools/get_pouches", {})).status).toBe(200);
+    delete process.env.VOICE_WEBHOOK_SECRET;
+    try { expect((await post(app, "/voice/tools/get_pouches", {})).status).toBe(503); }
+    finally { process.env.VOICE_WEBHOOK_SECRET = VOICE_SECRET; }
   });
 });

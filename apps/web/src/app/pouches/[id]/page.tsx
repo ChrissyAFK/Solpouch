@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useWalletSession } from "@/components/WalletSession";
 import { StatePanel } from "@/components/StatePanel";
 import { PouchSkeleton } from "@/components/Skeletons";
 import { useParams } from "next/navigation";
@@ -43,6 +44,12 @@ function TopUpSection({
   pouch: Pouch;
   onDone: () => Promise<void>;
 }) {
+  const { wallet } = useWalletSession();
+  const storageKey = `solpouch:topup:${wallet}:${pouch.id}`;
+  const [restoring, setRestoring] = useState(true);
+  const [restoreFailed, setRestoreFailed] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const restoreVersion = useRef(0);
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [topup, setTopup] = useState<TopUp | null>(null);
@@ -50,6 +57,47 @@ function TopUpSection({
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  const restore = useCallback(async () => {
+    const version = ++restoreVersion.current;
+    setRestoring(true);
+    setRestoreFailed(false);
+    setError(null);
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (!saved) {
+        setTopup(null);
+        setSubmitted(false);
+        return;
+      }
+      const record = JSON.parse(saved) as { id?: unknown; submitted?: unknown };
+      if (typeof record.id !== "string") throw new Error("Invalid saved top-up");
+      const recovered = await api.topUp(record.id);
+      if (version !== restoreVersion.current) return;
+      if (recovered.pouchId !== pouch.id) throw new Error("Top-up belongs to another pouch");
+      if (recovered.status === "completed" || recovered.status === "cancelled") {
+        localStorage.removeItem(storageKey);
+        setTopup(null);
+        setSubmitted(false);
+        setDone(recovered.status === "completed");
+      } else {
+        setTopup(recovered);
+        setSubmitted(record.submitted === true || recovered.status === "processing");
+      }
+    } catch (cause) {
+      if (version !== restoreVersion.current) return;
+      setRestoreFailed(true);
+      setError(cause instanceof ApiRequestError ? errMsg(cause) : "Could not recover your saved top-up. Check browser storage and retry before starting another.");
+    } finally {
+      if (version === restoreVersion.current) setRestoring(false);
+    }
+  }, [storageKey, pouch.id]);
+  useEffect(() => {
+    void restore();
+    const storageChanged = (event: StorageEvent) => { if (event.key === storageKey) void restore(); };
+    window.addEventListener("storage", storageChanged);
+    return () => { restoreVersion.current++; window.removeEventListener("storage", storageChanged); };
+  }, [restore, storageKey]);
 
   useEffect(() => {
     if (!topup) return;
@@ -66,7 +114,7 @@ function TopUpSection({
 
   async function start(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (busy || restoring || restoreFailed) return;
     const micros = toMicros(Number(amount));
     if (
       !Number.isSafeInteger(micros) ||
@@ -80,13 +128,11 @@ function TopUpSection({
     setError(null);
     setDone(false);
     try {
-      setTopup(
-        await api.startTopUp({
-          pouchId: pouch.id,
-          amount: micros,
-          reason: reason.trim(),
-        }),
-      );
+      const created = await api.startTopUp({ pouchId: pouch.id, amount: micros, reason: reason.trim() });
+      setTopup(created);
+      setSubmitted(false);
+      // Save the operation identity before any completion request can move funds.
+      localStorage.setItem(storageKey, JSON.stringify({ id: created.id, submitted: false }));
       setNow(Date.now());
     } catch (err) {
       setError(errMsg(err));
@@ -95,18 +141,24 @@ function TopUpSection({
     }
   }
   async function complete() {
-    if (!topup || !ready || busy) return;
+    if (!topup || !ready || busy || restoring || restoreFailed) return;
     setBusy(true);
     setError(null);
     try {
-      await api.completeTopUp(topup.id);
+      localStorage.setItem(storageKey, JSON.stringify({ id: topup.id, submitted: true }));
+      setSubmitted(true);
+      const result = await api.completeTopUp(topup.id);
+      if (result.status !== "completed") throw new Error("Top-up remains pending");
+      localStorage.removeItem(storageKey);
       setTopup(null);
+      setSubmitted(false);
       setAmount("");
       setReason("");
       setDone(true);
       await onDone();
     } catch (err) {
-      setError(errMsg(err));
+      setError(err instanceof ApiRequestError ? errMsg(err) : "Could not confirm this top-up. Keep this request and check its status again.");
+      try { setTopup(await api.topUp(topup.id)); } catch { /* Keep the saved identity for recovery. */ }
     } finally {
       setBusy(false);
     }
@@ -124,7 +176,9 @@ function TopUpSection({
       </div>
       <ErrorBanner message={error} />
       {done && <Notice>Top-up complete. Your balance has been updated.</Notice>}
-      {!topup ? (
+      {restoring ? <p role="status">Checking for an unfinished top-up…</p> : restoreFailed ? (
+        <button className={btnSecondary} onClick={() => void restore()}>Retry top-up recovery</button>
+      ) : !topup ? (
         <form onSubmit={start} className="space-y-4">
           <div>
             <label className={label} htmlFor="tu-amt">
@@ -178,7 +232,7 @@ function TopUpSection({
         <div className="space-y-4">
           <div className="rounded bg-[#211d2d] p-5">
             <p className="text-xs font-medium uppercase tracking-wider text-[#a9a5b9]">
-              {ready ? "Ready to add" : "Cooling down"}
+              {submitted ? "Checking payment" : ready ? "Ready to add" : "Cooling down"}
             </p>
             <p className="mt-2 text-3xl font-semibold tracking-tight">
               {usd(toUsdc(topup.amount))}
@@ -186,7 +240,7 @@ function TopUpSection({
             <p className="mt-2 text-sm text-[#a9a5b9]">{topup.reason}</p>
           </div>
           <p className="text-sm font-medium" role="status">
-            {ready
+            {submitted ? "This top-up may already be submitted. Check the same request to recover its result." : ready
               ? "Your waiting period is over."
               : `Time remaining: ${countdown}`}
           </p>
@@ -195,11 +249,11 @@ function TopUpSection({
             disabled={!ready || busy}
             onClick={complete}
           >
-            {busy ? "Completing…" : "Complete top-up"}
+            {busy ? "Checking top-up…" : submitted ? "Check top-up status" : "Complete top-up"}
           </button>
           <p className="text-xs leading-5 text-[#a9a5b9]">
-            Keep this page open to complete this top-up. Pending top-ups cannot
-            currently be recovered from the dashboard after a reload.
+            This request is saved in this browser for your wallet. Reloading will
+            recover the same top-up. Do not start a replacement while its result is unknown.
           </p>
         </div>
       )}

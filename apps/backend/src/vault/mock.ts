@@ -5,6 +5,7 @@ import { fakeAddress } from "../store/memory.js";
 import { VaultRejected, type VaultClient } from "./types.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const resultsByStore = new WeakMap<Store, Map<string, string>>();
 const sig = () => "mock" + randomBytes(32).toString("hex");
 
 /**
@@ -13,28 +14,39 @@ const sig = () => "mock" + randomBytes(32).toString("hex");
  */
 export class MockVaultClient implements VaultClient {
   private dayStart = new Map<string, number>();
-  private usedOrders = new Set<string>();
+  private outcomes: Map<string, string>;
 
   constructor(
     private store: Store,
     /** Resolves a merchant id to its payTo address, to check the allowlist by address. */
     private payToOf: (merchantId: string) => string | undefined,
     private now: () => number = Date.now,
-  ) {}
+  ) {
+    this.outcomes = resultsByStore.get(store) ?? new Map();
+    resultsByStore.set(store, this.outcomes);
+  }
 
   async createPouch(pouch: Pouch) {
     this.dayStart.set(pouch.id, this.now());
     return { address: pouch.address || fakeAddress() };
   }
 
-  async topUp(pouchId: string, amount: Micros) {
+  async topUp(pouchId: string, amount: Micros, operationId?: string) {
+    const key = operationId ? `topup:${operationId}` : undefined;
+    const previous = key && this.outcomes.get(key);
+    if (previous) return { txSignature: previous };
     const p = await this.mustGet(pouchId);
     p.balance += amount;
     await this.store.savePouch(p);
-    return { txSignature: sig() };
+    const txSignature = sig();
+    if (key) this.outcomes.set(key, txSignature);
+    return { txSignature };
   }
 
   async pay(pouch: Pouch, merchantPayTo: string, amount: Micros, orderId: string) {
+    const key = `pay:${orderId}`;
+    const previous = this.outcomes.get(key);
+    if (previous) return { txSignature: previous };
     const p = await this.mustGet(pouch.id);
     if (p.frozen) throw new VaultRejected("PouchFrozen");
     const allowed = p.allowedMerchantIds.map((id) => this.payToOf(id));
@@ -50,12 +62,12 @@ export class MockVaultClient implements VaultClient {
     }
     if (p.spentToday + amount > p.dailyLimit) throw new VaultRejected("OverDailyLimit");
     if (amount > p.balance) throw new VaultRejected("InsufficientFunds");
-    if (this.usedOrders.has(orderId)) throw new VaultRejected("OrderAlreadyUsed");
-    this.usedOrders.add(orderId);
     p.balance -= amount;
     p.spentToday += amount;
     await this.store.savePouch(p);
-    return { txSignature: sig() };
+    const txSignature = sig();
+    this.outcomes.set(key, txSignature);
+    return { txSignature };
   }
 
   async freeze(pouchId: string) {

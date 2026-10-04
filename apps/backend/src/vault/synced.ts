@@ -9,26 +9,30 @@ import type { VaultClient } from "./types.js";
 export class SyncedVaultClient implements VaultClient {
   constructor(private inner: VaultClient, private store: Store) {}
 
+  get authorizedOwner() { return this.inner.authorizedOwner; }
+
+  get getState() { return this.inner.getState?.bind(this.inner); }
+
   private async refresh(pouchId: string, patch: Partial<Pouch> = {}) {
     const p = await this.store.getPouch(pouchId);
     if (!p) return;
-    const { balance, spentToday } = await this.inner.getBalance(pouchId);
-    await this.store.savePouch({ ...p, ...patch, balance, spentToday });
+    const state = this.inner.getState ? await this.inner.getState(pouchId) : await this.inner.getBalance(pouchId);
+    await this.store.savePouch({ ...p, ...patch, ...state });
   }
 
   createPouch(pouch: Pouch) {
     return this.inner.createPouch(pouch);
   }
 
-  async topUp(pouchId: string, amount: Micros) {
-    const r = await this.inner.topUp(pouchId, amount);
-    await this.refresh(pouchId);
+  async topUp(pouchId: string, amount: Micros, operationId?: string) {
+    const r = await this.inner.topUp(pouchId, amount, operationId);
+    await this.refresh(pouchId).catch(() => { /* Chain result is authoritative; startup or a later successful write repairs the cache. */ });
     return r;
   }
 
   async pay(pouch: Pouch, merchantPayTo: string, amount: Micros, orderId: string) {
     const r = await this.inner.pay(pouch, merchantPayTo, amount, orderId);
-    await this.refresh(pouch.id);
+    await this.refresh(pouch.id).catch(() => { /* Never turn a confirmed payment into a retryable payment failure. */ });
     return r;
   }
 

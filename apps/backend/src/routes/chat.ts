@@ -1,3 +1,5 @@
+import { reconcilePouches } from "../services/reconcile.js";
+import { requestDeps } from "../security/access.js";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
@@ -13,10 +15,11 @@ const chatBody = z.object({
   message: "The last message must be from the user", path: ["messages"],
 });
 
-export function chatRoutes(deps: Deps) {
+export function chatRoutes(_baseDeps: Deps) {
   const app = new Hono();
   app.get("/status", (c) => c.json({ mode: chatMode() }));
   app.post("/", bodyLimit({ maxSize: 192_000, onError: (c) => c.json({ error: "Chat request is too large." }, 413) }), async (c) => {
+    const deps = requestDeps(c);
     const { messages } = chatBody.parse(await c.req.json());
     const mode = chatMode();
     const [pouches, orders] = await Promise.all([deps.store.listPouches(), deps.store.listOrders()]);
