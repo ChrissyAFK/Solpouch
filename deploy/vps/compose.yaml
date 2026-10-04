@@ -12,6 +12,8 @@ services:
     volumes:
       # Keypairs: the backend reads .keys/owner.json and .keys/agent.json from /app.
       - ./keys:/app/.keys:ro
+      # Postgres CA: set DATABASE_CA_CERT=/app/certs/timescale-ca.pem in .env.
+      - ./certs:/app/certs:ro
     networks:
       edge:
         ipv4_address: 172.30.0.3

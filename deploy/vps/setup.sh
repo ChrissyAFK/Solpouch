@@ -21,5 +21,5 @@ if command -v ufw >/dev/null && sudo ufw status | grep -q "Status: active"; then
   sudo ufw allow 80/tcp && sudo ufw allow 443/tcp
 fi
 
-mkdir -p ~/solpouch/keys
-echo "Ready. Copy compose.yaml, Caddyfile, .env and keys/ into ~/solpouch."
+mkdir -p ~/solpouch/keys ~/solpouch/certs
+echo "Ready. Copy compose.yaml, Caddyfile, .env, keys/ and certs/ into ~/solpouch."

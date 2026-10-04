@@ -59,11 +59,17 @@ curl -I https://next.solpouch.tech/            # 200 (sign-in won't work on this
    ```bash
    scp Solpouch/.env solpouch@<IP>:solpouch/.env
    scp Solpouch/.keys/owner.json Solpouch/.keys/agent.json solpouch@<IP>:solpouch/keys/
-   ssh solpouch@<IP> 'sudo chown 1000:1000 ~/solpouch/keys/* && chmod 600 ~/solpouch/keys/*'
+   scp Solpouch/certs/timescale-ca.pem solpouch@<IP>:solpouch/certs/
    ```
-   In the server's `.env`, delete `TRUSTED_PROXY_IPS`, `TRUSTED_PROXY_HEADER` and any `*_KEYPAIR_PATH`
-   set to a Windows path (the defaults read `/app/.keys`). If `DATABASE_CA_CERT` is set, copy that file
-   too and mount it in `compose.yaml`.
+   On the server, make the files readable only by the container user (uid 1000) and fix the paths:
+   ```bash
+   cd ~/solpouch
+   chmod 600 .env && chmod 644 certs/* && chmod 600 keys/*
+   docker run --rm -v "$PWD/keys:/k" alpine chown 1000:1000 /k/owner.json /k/agent.json
+   sed -i -e '/^TRUSTED_PROXY_/d' -e 's#^DATABASE_CA_CERT=.*#DATABASE_CA_CERT=/app/certs/timescale-ca.pem#' .env
+   ```
+   `OWNER_KEYPAIR_PATH`/`AGENT_KEYPAIR_PATH` stay `.keys/...` (resolved from `/app`). Leave
+   `.keys/checkout.json` and `.keys/android/` on the laptop: the backend doesn't read them.
 2. **Stop the laptop backend and web** by PID (never by process name), and disable the
    "Solpouch Tunnel" scheduled task so it doesn't restart.
 3. In Cloudflare DNS, replace the tunnel records for `@`, `www` and `api` with A → `<IP>`, DNS only.
