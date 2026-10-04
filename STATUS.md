@@ -59,8 +59,12 @@ Program build and tests run in WSL Ubuntu (Rust, Solana CLI 3.1, Anchor 1.2 via 
 
 ```
 anchor build
-anchor test --provider.cluster localnet
+anchor test                       # Anchor.toml cluster is localnet; uses Surfpool by default
+anchor test --validator legacy    # same, with solana-test-validator (no Surfpool needed)
+anchor deploy --provider.cluster devnet   # devnet deploys are explicit; needs the upgrade authority
 ```
+
+`[provider] cluster` is `localnet` so a plain `anchor test` can never deploy to devnet. Pass `--provider.cluster devnet` for any devnet command.
 
 ## Dashboard chat
 
