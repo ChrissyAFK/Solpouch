@@ -10,6 +10,8 @@ export function publicPouch(p: StoredPouch): Pouch {
 
 export type UserProfile = { email: string; displayName?: string; avatar?: string; wallet?: string; createdAt: string; updatedAt: string };
 
+export type UserPatch = { displayName?: string | null; avatar?: string | null; wallet?: string | null };
+
 export class StoreConflictError extends Error {
   constructor(message = "Record changed; reload it before retrying") {
     super(message);
@@ -44,6 +46,8 @@ export interface Store {
 
   getUser(email: string): Promise<UserProfile | undefined>;
   saveUser(u: UserProfile): Promise<UserProfile>;
+  /** Atomically update only the given fields (undefined = keep, null = clear). Creates the user if missing. */
+  updateUser(email: string, patch: UserPatch, now: string): Promise<UserProfile>;
   findUserByWallet(wallet: string): Promise<UserProfile | undefined>;
 
   withPouchLock<T>(id: string, fn: () => Promise<T>): Promise<T>;

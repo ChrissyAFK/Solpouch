@@ -58,9 +58,8 @@ export function authRoutes(deps: Deps, origins: string[]) {
     const holder = await deps.store.findUserByWallet(challenge.wallet);
     if (holder && holder.email !== session.email) throw new HttpError(409, "This wallet is linked to another account");
     const now = new Date().toISOString();
-    const prev = (await deps.store.getUser(session.email)) ?? { email: session.email, createdAt: now, updatedAt: now };
     try {
-      await deps.store.saveUser({ ...prev, wallet: challenge.wallet, updatedAt: now });
+      await deps.store.updateUser(session.email, { wallet: challenge.wallet }, now);
     } catch (e) {
       if (e instanceof StoreConflictError) throw new HttpError(409, "This wallet is linked to another account");
       throw e;
@@ -72,8 +71,7 @@ export function authRoutes(deps: Deps, origins: string[]) {
     const session = c.get("user");
     const prev = await deps.store.getUser(session.email);
     if (prev?.wallet) {
-      const { wallet: _w, ...rest } = prev; // eslint-disable-line @typescript-eslint/no-unused-vars
-      await deps.store.saveUser({ ...rest, updatedAt: new Date().toISOString() });
+      await deps.store.updateUser(session.email, { wallet: null }, new Date().toISOString());
     }
     return c.json({ user: await mergedUser(deps.store, session) });
   });

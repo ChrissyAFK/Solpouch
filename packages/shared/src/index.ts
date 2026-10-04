@@ -90,10 +90,12 @@ export interface Order {
   fulfillment?: { via: "direct" | "instacart" | "service"; label: string; checkoutUrl?: string };
 }
 
-export type TopUpStatus = "started" | "cooling_down" | "processing" | "completed" | "cancelled";
+export type TopUpStatus = "started" | "cooling_down" | "processing" | "completed" | "cancelled" | "failed";
 
 export interface TopUp {
   version?: number;
+  /** Set when status is "failed": the vault rejection code. */
+  failReason?: string;
   txSignature?: string;
   id: string;
   pouchId: string;
@@ -176,6 +178,9 @@ export const VAULT_ERRORS = [
   "NameTooLong",
   "TooManyMerchants",
   "VaultNotEmpty",
+  "ZeroAmount",
+  "AgentIsMerchant",
+  "DuplicateMerchant",
   "OrderAlreadyUsed",
   "PouchNotOnChain",
   "AgentKeyMismatch",

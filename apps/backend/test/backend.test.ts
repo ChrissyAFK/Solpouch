@@ -1,4 +1,13 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// The offline table stands in for a real web lookup here; production code refuses fallback results.
+vi.mock("../src/ai/findOnline.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/ai/findOnline.js")>();
+  return { ...actual, findOnline: async (...args: Parameters<typeof actual.findOnline>) => {
+    const r = await actual.findOnline(...args);
+    return r && { ...r, fallback: false };
+  } };
+});
 import { toMicros } from "@solpouch/shared";
 import { createApp } from "../src/app.js";
 import { getMerchant } from "../src/merchants/index.js";

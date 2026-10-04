@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import type { Order, TopUp } from "@solpouch/shared";
 import { HttpError } from "../services/orders.js";
-import { StoreConflictError, sameOperation, validateRateLimit, type Store, type StoredPouch, type UserProfile, type VaultOperation, type AuthChallenge } from "./types.js";
+import { StoreConflictError, sameOperation, validateRateLimit, type Store, type StoredPouch, type UserProfile, type VaultOperation, type AuthChallenge, type UserPatch } from "./types.js";
 
 const iso = (v: Date | string) => (v instanceof Date ? v.toISOString() : new Date(v).toISOString());
 type Row = Record<string, any>;
@@ -18,10 +18,10 @@ function toPouch(r: Row): StoredPouch {
   return { id: r.id, address: r.address, name: r.name, balance: Number(r.balance), maxPerOrder: Number(r.max_per_order), dailyLimit: Number(r.daily_limit), spentToday: fresh ? Number(r.spent_today) : 0, confirmAbove: Number(r.confirm_above), allowedMerchantIds: structuredClone(r.allowed_merchant_ids), frozen: r.frozen, version: Number(r.version), ...(r.owner_email ? { ownerEmail: r.owner_email as string } : {}) };
 }
 function toOrder(r: Row): Order {
-  return { id: r.id, pouchId: r.pouch_id, merchantId: r.merchant_id, request: r.request, lines: structuredClone(r.lines), total: Number(r.total), status: r.status, createdAt: iso(r.created_at), version: Number(r.version), ...(r.reject_reason ? { rejectReason: r.reject_reason } : {}), ...(r.tx_signature ? { txSignature: r.tx_signature } : {}) };
+  return { id: r.id, pouchId: r.pouch_id, merchantId: r.merchant_id, request: r.request, lines: structuredClone(r.lines), total: Number(r.total), status: r.status, createdAt: iso(r.created_at), version: Number(r.version), ...(r.reject_reason ? { rejectReason: r.reject_reason } : {}), ...(r.tx_signature ? { txSignature: r.tx_signature } : {}), ...(r.store ? { store: structuredClone(r.store) } : {}), ...(r.fulfillment ? { fulfillment: structuredClone(r.fulfillment) } : {}) };
 }
 function toTopUp(r: Row): TopUp {
-  return { id: r.id, pouchId: r.pouch_id, amount: Number(r.amount), reason: r.reason, status: r.status, readyAt: iso(r.ready_at), createdAt: iso(r.created_at), version: Number(r.version), ...(r.from_wallet ? { fromWallet: r.from_wallet } : {}), ...(r.tx_signature ? { txSignature: r.tx_signature } : {}) };
+  return { id: r.id, pouchId: r.pouch_id, amount: Number(r.amount), reason: r.reason, status: r.status, readyAt: iso(r.ready_at), createdAt: iso(r.created_at), version: Number(r.version), ...(r.from_wallet ? { fromWallet: r.from_wallet } : {}), ...(r.fail_reason ? { failReason: r.fail_reason } : {}), ...(r.tx_signature ? { txSignature: r.tx_signature } : {}) };
 }
 function toOperation(r: Row): VaultOperation {
   return { id: r.id, kind: r.kind, pouchId: r.pouch_id, txSignature: r.tx_signature, signedTransaction: r.signed_transaction, lastValidBlockHeight: Number(r.last_valid_block_height), createdAt: iso(r.created_at) };
@@ -166,10 +166,10 @@ export class PostgresStore implements Store {
   }
   async listOrders(pouchId?: string) { return (await this.query(`SELECT * FROM orders ${pouchId ? "WHERE pouch_id=$1 " : ""}ORDER BY created_at DESC`, pouchId ? [pouchId] : undefined)).rows.map(toOrder); }
   async getOrder(id: string) { const { rows } = await this.query("SELECT * FROM orders WHERE id=$1 ORDER BY created_at DESC LIMIT 1", [id]); return rows[0] ? toOrder(rows[0]) : undefined; }
-  async saveOrder(o: Order) { return toOrder(await this.save("orders", o, { created_at: o.createdAt, pouch_id: o.pouchId, merchant_id: o.merchantId, request: o.request, lines: JSON.stringify(o.lines), total: o.total, status: o.status, reject_reason: o.rejectReason ?? null, tx_signature: o.txSignature ?? null })); }
+  async saveOrder(o: Order) { return toOrder(await this.save("orders", o, { created_at: o.createdAt, pouch_id: o.pouchId, merchant_id: o.merchantId, request: o.request, lines: JSON.stringify(o.lines), total: o.total, status: o.status, reject_reason: o.rejectReason ?? null, tx_signature: o.txSignature ?? null, store: o.store ? JSON.stringify(o.store) : null, fulfillment: o.fulfillment ? JSON.stringify(o.fulfillment) : null })); }
   async getTopUp(id: string) { const { rows } = await this.query("SELECT * FROM topups WHERE id=$1 ORDER BY created_at DESC LIMIT 1", [id]); return rows[0] ? toTopUp(rows[0]) : undefined; }
   async listTopUps(pouchId: string) { return (await this.query("SELECT * FROM topups WHERE pouch_id=$1 ORDER BY created_at DESC", [pouchId])).rows.map(toTopUp); }
-  async saveTopUp(t: TopUp) { return toTopUp(await this.save("topups", t, { created_at: t.createdAt, pouch_id: t.pouchId, amount: t.amount, reason: t.reason, status: t.status, ready_at: t.readyAt, tx_signature: t.txSignature ?? null, from_wallet: t.fromWallet ?? null })); }
+  async saveTopUp(t: TopUp) { return toTopUp(await this.save("topups", t, { created_at: t.createdAt, pouch_id: t.pouchId, amount: t.amount, reason: t.reason, status: t.status, ready_at: t.readyAt, tx_signature: t.txSignature ?? null, from_wallet: t.fromWallet ?? null, fail_reason: t.failReason ?? null })); }
 
   async getUser(email: string) { const { rows } = await this.query("SELECT * FROM users WHERE email=$1", [email]); return rows[0] ? toUser(rows[0]) : undefined; }
   async findUserByWallet(wallet: string) { const { rows } = await this.query("SELECT * FROM users WHERE wallet=$1", [wallet]); return rows[0] ? toUser(rows[0]) : undefined; }
@@ -185,6 +185,26 @@ export class PostgresStore implements Store {
       throw error;
     }
     return u;
+  }
+
+  async updateUser(email: string, patch: UserPatch, now: string) {
+    const has = (v: unknown) => v !== undefined;
+    try {
+      const { rows } = await this.query(
+        `INSERT INTO users (email, display_name, avatar, wallet, created_at, updated_at) VALUES ($1,$2::text,$3::text,$4::text,$8::timestamptz,$8::timestamptz)
+         ON CONFLICT (email) DO UPDATE SET
+           display_name = CASE WHEN $5::boolean THEN $2::text ELSE users.display_name END,
+           avatar = CASE WHEN $6::boolean THEN $3::text ELSE users.avatar END,
+           wallet = CASE WHEN $7::boolean THEN $4::text ELSE users.wallet END,
+           updated_at = $8::timestamptz
+         RETURNING *`,
+        [email, patch.displayName ?? null, patch.avatar ?? null, patch.wallet ?? null, has(patch.displayName), has(patch.avatar), has(patch.wallet), now],
+      );
+      return toUser(rows[0]);
+    } catch (error) {
+      if ((error as { code?: string }).code === "23505") throw new StoreConflictError("This wallet is linked to another account");
+      throw error;
+    }
   }
 
   async getOperation(id: string) { const { rows } = await this.query("SELECT * FROM vault_operations WHERE id=$1", [id]); return rows[0] ? toOperation(rows[0]) : undefined; }

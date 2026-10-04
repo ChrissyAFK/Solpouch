@@ -1,8 +1,6 @@
 import { toMicros, type Order, type Pouch, type TopUp } from "@solpouch/shared";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { StoreConflictError, sameOperation, validateRateLimit, type Store, type StoredPouch, type UserProfile, type VaultOperation, type AuthChallenge } from "./types.js";
-
-// TODO: PostgresStore backed by Tiger Data (see db/schema.sql). Swap in src/index.ts.
+import { StoreConflictError, sameOperation, validateRateLimit, type Store, type StoredPouch, type UserProfile, type VaultOperation, type AuthChallenge, type UserPatch } from "./types.js";
 
 export function fakeAddress(): string {
   const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -113,9 +111,26 @@ export class MemoryStore implements Store {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
   }
   async getUser(email: string) { return structuredClone(this.users.get(email)); }
+  private assertWalletFree(email: string, wallet: string | undefined) {
+    if (!wallet) return;
+    for (const other of this.users.values()) if (other.email !== email && other.wallet === wallet) throw new StoreConflictError("This wallet is linked to another account");
+  }
   async saveUser(u: UserProfile) {
+    this.assertWalletFree(u.email, u.wallet);
     this.users.set(u.email, structuredClone(u));
     return structuredClone(u);
+  }
+  async updateUser(email: string, patch: UserPatch, now: string) {
+    const prev = this.users.get(email) ?? { email, createdAt: now, updatedAt: now };
+    const next: UserProfile = { ...prev, updatedAt: now };
+    for (const k of ["displayName", "avatar", "wallet"] as const) {
+      if (patch[k] === undefined) continue;
+      if (patch[k] === null) delete next[k];
+      else next[k] = patch[k] as string;
+    }
+    this.assertWalletFree(email, next.wallet);
+    this.users.set(email, structuredClone(next));
+    return structuredClone(next);
   }
   async findUserByWallet(wallet: string) {
     for (const u of this.users.values()) if (u.wallet === wallet) return structuredClone(u);

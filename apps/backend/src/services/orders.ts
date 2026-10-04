@@ -76,6 +76,8 @@ export async function createDraft(deps: Deps, request: string, pouchId?: string)
   }
   const mayGoOnline = pouch ? webAllowed(pouch) : pouches.some((p) => webAllowed(p));
   const found = mayGoOnline ? await findOnline(parsed.items, { allowedDomains }) : null;
+  // The AI lookup failed and findOnline invented a placeholder store/price: never make that payable.
+  if (found?.fallback) throw new HttpError(503, "Couldn't look that up right now. Try again in a minute.", "LookupFailed");
   if (found) {
     const { store, items } = found;
     const merchant = registerWebMerchant({
@@ -185,16 +187,29 @@ export async function confirmOrder(deps: Deps, id: string): Promise<Order> {
       });
     }
     if (!pouch || !merchant) throw new HttpError(404, "Pouch or merchant not found");
-    if (order.status === "draft") order = await deps.store.saveOrder({ ...order, status: "paying" });
+    if (order.status === "draft") {
+      // The pouch rules may have changed since the draft was made.
+      if (!isAnyStore(pouch) && !pouch.allowedMerchantIds.includes(order.merchantId)) {
+        await deps.store.saveOrder({ ...order, status: "rejected", rejectReason: "MerchantNotAllowed" });
+        throw new HttpError(422, "Payment refused: MerchantNotAllowed", "MerchantNotAllowed");
+      }
+      order = await deps.store.saveOrder({ ...order, status: "paying" });
+    }
     let txSignature: string;
     try {
       ({ txSignature } = await deps.vault.pay(pouch, merchant.payTo, order.total, order.id));
     } catch (e) {
+      // Any VaultRejected (including TxFailed/TxExpired) is terminal: no funds moved.
       if (e instanceof VaultRejected) {
         await deps.store.saveOrder({ ...order, status: "rejected", rejectReason: e.code });
         throw new HttpError(422, `Payment refused: ${e.code}`, e.code);
       }
       if (e instanceof PaymentPending) throw new HttpError(503, e.message, "PaymentPending");
+      // No journal entry means no transaction was ever signed, so nothing can have been sent: go back to draft.
+      if (!(await deps.store.getOperation(`pay:${order.id}`))) {
+        await deps.store.saveOrder({ ...order, status: "draft" });
+        throw new HttpError(503, "The payment could not be started. Nothing was charged; try again.", "PaymentNotSent");
+      }
       // Keep paying: the chain may have accepted the transaction even if the response was lost.
       throw new HttpError(503, "Payment is not confirmed yet. Retry this order to check its status.", "PaymentPending");
     }

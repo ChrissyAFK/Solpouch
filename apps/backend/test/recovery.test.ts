@@ -183,6 +183,8 @@ describe("payment service recovery", () => {
   });
   it("keeps uncertain payments paying instead of allowing a new draft", async () => {
     await draft();
+    // A journal entry means a transaction may have been sent, so the order must stay paying.
+    await store.saveOperation({ id: "pay:one", kind: "pay", pouchId: "uber-eats", txSignature: "sig", signedTransaction: "tx", lastValidBlockHeight: 1, createdAt: new Date().toISOString() });
     vi.spyOn(vault, "pay").mockRejectedValue(new Error("timeout"));
     await expect(confirmOrder({ store, vault }, "one")).rejects.toMatchObject({ status: 503 });
     expect((await store.getOrder("one"))!.status).toBe("paying");

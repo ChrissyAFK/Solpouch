@@ -6,6 +6,8 @@ import { HttpError, type Deps } from "../services/orders.js";
 import { completeTopUp } from "../services/topups.js";
 import { requestDeps } from "../security/access.js";
 
+export const FAILED_TOPUP_VISIBLE_MS = 10 * 60_000;
+
 const startBody = z.object({
   pouchId: z.string().min(1).max(100),
   amount: z.number().int().positive().max(10_000_000_000),
@@ -21,7 +23,11 @@ export function topupRoutes(_baseDeps: Deps) {
     const pouchId = c.req.query("pouchId");
     if (!pouchId) throw new HttpError(400, "pouchId is required");
     const all = await requestDeps(c).store.listTopUps(pouchId);
-    return c.json(all.filter((t) => t.status === "cooling_down"));
+    const now = Date.now();
+    return c.json(all.filter((t) =>
+      t.status === "cooling_down" || t.status === "processing" ||
+      // Failures happen after readyAt, so it bounds "recent" without a separate updated-at column.
+      (t.status === "failed" && now - Date.parse(t.readyAt) <= FAILED_TOPUP_VISIBLE_MS)));
   });
 
   app.post("/", async (c) => {

@@ -1,4 +1,5 @@
 import { PaymentPending } from "../vault/recovery.js";
+import { VaultRejected } from "../vault/types.js";
 import { HttpError, type Deps } from "./orders.js";
 
 export async function completeTopUp(deps: Deps, id: string) {
@@ -9,11 +10,23 @@ export async function completeTopUp(deps: Deps, id: string) {
     if (topup.status === "completed") return topup;
     if (topup.status !== "cooling_down" && topup.status !== "processing") throw new HttpError(409, `Top-up is ${topup.status}`);
     if (Date.now() < new Date(topup.readyAt).getTime()) throw new HttpError(409, `Cooldown not over yet, ready at ${topup.readyAt}`, "CooldownActive");
-    if (topup.status === "cooling_down") topup = await deps.store.saveTopUp({ ...topup, status: "processing" });
+    if (topup.status === "cooling_down") {
+      // The funding wallet must still be the one linked to the pouch owner's account.
+      if (topup.fromWallet) {
+        const pouch = await deps.store.getPouch(topup.pouchId);
+        const holder = pouch?.ownerEmail ? await deps.store.getUser(pouch.ownerEmail) : await deps.store.findUserByWallet(topup.fromWallet);
+        if (holder?.wallet !== topup.fromWallet) throw new HttpError(403, "The wallet for this top-up is no longer linked to your account", "WalletChanged");
+      }
+      topup = await deps.store.saveTopUp({ ...topup, status: "processing" });
+    }
     try {
       const { txSignature } = await deps.vault.topUp(topup.pouchId, topup.amount, topup.id);
       return await deps.store.saveTopUp({ ...topup, status: "completed", txSignature });
     } catch (error) {
+      if (error instanceof VaultRejected) {
+        await deps.store.saveTopUp({ ...topup, status: "failed", failReason: error.code });
+        throw new HttpError(422, `Top-up failed: ${error.code}`, error.code);
+      }
       if (error instanceof PaymentPending) throw new HttpError(503, error.message, "PaymentPending");
       throw new HttpError(503, "Top-up is not confirmed yet. Retry this top-up to check its status.", "PaymentPending");
     }

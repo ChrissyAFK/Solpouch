@@ -138,6 +138,10 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 0;
 ALTER TABLE topups ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 0;
 ALTER TABLE topups ADD COLUMN IF NOT EXISTS tx_signature text;
 ALTER TABLE topups ADD COLUMN IF NOT EXISTS from_wallet text;
+ALTER TABLE topups ADD COLUMN IF NOT EXISTS fail_reason text;
+-- Web-store orders keep their store and fulfillment details across restarts.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS store jsonb;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS fulfillment jsonb;
 
 -- Regular tables: journals and auth records must have globally unique identifiers.
 CREATE TABLE IF NOT EXISTS vault_operations (

@@ -13,7 +13,10 @@ import { cancelOrder, confirmOrder, createDraft, HttpError, type Deps } from "..
  */
 export const VOICE_TOOLS = ["get_pouches", "create_order", "confirm_order", "cancel_order", "freeze_all"] as const;
 
-const usd = (m: number) => `$${toUsdc(m).toFixed(2)}`;
+/** A draft younger than this cannot be confirmed by voice. */
+export const VOICE_CONFIRM_MIN_AGE_MS = 4000;
+
+const usd =(m: number) => `$${toUsdc(m).toFixed(2)}`;
 
 export function readback(order: Order): string {
   const merchant = getMerchant(order.merchantId)?.name ?? "the merchant";
@@ -46,11 +49,22 @@ export function voiceRoutes(_baseDeps: Deps) {
       }
       case "create_order": {
         const b = requestBody.parse(body);
-        const order = await createDraft(deps, b.request, b.pouchId);
-        return c.json({ say: readback(order), orderId: order.id, total: usd(order.total), needsConfirmation: true });
+        try {
+          const order = await createDraft(deps, b.request, b.pouchId);
+          return c.json({ say: readback(order), orderId: order.id, total: usd(order.total), needsConfirmation: true });
+        } catch (e) {
+          // Speakable failure instead of an error response the agent cannot read out.
+          if (e instanceof HttpError) return c.json({ say: e.message, needsConfirmation: false, ...(e.code ? { code: e.code } : {}) });
+          throw e;
+        }
       }
       case "confirm_order": {
         const { orderId } = orderIdBody.parse(body);
+        // Stop the model confirming in the same breath as creating: the user must hear the read-back first.
+        const draft = await deps.store.getOrder(orderId);
+        if (draft?.status === "draft" && Date.now() - Date.parse(draft.createdAt) < VOICE_CONFIRM_MIN_AGE_MS) {
+          return c.json({ say: "Please listen to the read-back first, then say yes again to place the order.", status: "draft", needsConfirmation: true });
+        }
         try {
           const order = await confirmOrder(deps, orderId);
           return c.json({ say: order.txSignature?.startsWith("mock") ? `Demo payment recorded: ${usd(order.total)}. No real funds moved.` : `Payment recorded: ${usd(order.total)}.`, status: order.status });
