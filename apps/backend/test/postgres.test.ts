@@ -42,4 +42,22 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("PostgresStore", () => {
     expect(await store.getSession(session.id)).toBeUndefined();
     await store.close();
   });
+
+  it("records indexed vault events idempotently and serves spend from them", async () => {
+    const store = await PostgresStore.connect(process.env.TEST_DATABASE_URL!, []);
+    const id = `idx-${Date.now()}`;
+    const time = new Date().toISOString();
+    const events = [{ signature: id, eventIndex: 0, name: "PaymentMade", pouchAddress: `addr-${id}`, amount: 250, time, slot: 1, data: { amount: "250" } }];
+    const payments = [{ txSignature: id, eventIndex: 0, time, pouchId: id, merchantId: null, orderId: "0".repeat(32), amount: 250 }];
+    expect(await store.indexedSpend([id], "day")).toBeUndefined();
+    expect(await store.recordVaultEvents(events, payments)).toBe(1);
+    expect(await store.recordVaultEvents(events, payments)).toBe(0);
+    const day = await store.indexedSpend([id], "day");
+    expect(day).toHaveLength(1);
+    expect(day![0]).toMatchObject({ pouchId: id, spent: 250, orders: 1 });
+    expect((await store.indexedSpend([id], "hour"))![0]).toMatchObject({ spent: 250, orders: 1 });
+    await store.saveIndexerCursor(`test-${id}`, { signature: id, slot: 5 });
+    expect(await store.getIndexerCursor(`test-${id}`)).toEqual({ signature: id, slot: 5 });
+    await store.close();
+  });
 });

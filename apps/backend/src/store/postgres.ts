@@ -2,8 +2,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import type { Order, Pouch, TopUp } from "@solpouch/shared";
-import { StoreConflictError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type StoredPouch, type UserProfile } from "./types.js";
+import type { Order, Pouch, SpendPoint, TopUp } from "@solpouch/shared";
+import { StoreConflictError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type StoredPouch, type UserProfile, type PaymentIndex, type VaultEventRecord, type PaymentRecord, type IndexerCursor } from "./types.js";
 
 const iso = (v: Date | string) => (v instanceof Date ? v.toISOString() : new Date(v).toISOString());
 type Row = Record<string, any>;
@@ -31,7 +31,7 @@ export function postgresPoolConfig(url: string): pg.PoolConfig {
   return { connectionString: u.toString(), max: 5, connectionTimeoutMillis: 10_000, ssl: disable ? false : { rejectUnauthorized: true, ...(process.env.DATABASE_CA_CERT ? { ca: readFileSync(process.env.DATABASE_CA_CERT, "utf8") } : {}) } };
 }
 
-export class PostgresStore implements Store {
+export class PostgresStore implements Store, PaymentIndex {
   private context = new AsyncLocalStorage<{ client: pg.PoolClient; locks: Set<string>; state: { error?: Error } }>();
   private nextCleanupAt = 0;
   private async cleanupExpired() {
@@ -201,5 +201,52 @@ export class PostgresStore implements Store {
         expires_at=CASE WHEN rate_limit_buckets.expires_at <= now() THEN now()+$2::bigint*interval '1 millisecond' ELSE rate_limit_buckets.expires_at END
       RETURNING hits, GREATEST(1,ceil(extract(epoch FROM (expires_at-now())))) AS retry_after`, [key, windowMs]);
     return { allowed: Number(rows[0].hits) <= max, retryAfterSeconds: Number(rows[0].retry_after) };
+  }
+
+  async recordVaultEvents(events: VaultEventRecord[], payments: PaymentRecord[]) {
+    if (!events.length) return 0;
+    // One dedicated connection per transaction so BEGIN/COMMIT cover every insert.
+    return this.lock(`indexer:${events[0]!.signature}`, async () => {
+      await this.query("BEGIN");
+      try {
+        let inserted = 0;
+        for (const e of events) {
+          const { rowCount } = await this.query(
+            `INSERT INTO vault_events (signature,event_index,name,pouch_address,amount,time,slot,data)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (signature,event_index) DO NOTHING`,
+            [e.signature, e.eventIndex, e.name, e.pouchAddress, e.amount, e.time, e.slot, JSON.stringify(e.data)]);
+          if (!rowCount) continue;
+          inserted++;
+          const p = payments.find((x) => x.txSignature === e.signature && x.eventIndex === e.eventIndex);
+          if (p) await this.query(
+            "INSERT INTO payments (time,pouch_id,merchant_id,order_id,amount,tx_signature) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING",
+            [p.time, p.pouchId, p.merchantId, p.orderId, p.amount, p.txSignature]);
+        }
+        await this.query("COMMIT");
+        return inserted;
+      } catch (error) {
+        await this.query("ROLLBACK").catch(() => {});
+        throw error;
+      }
+    });
+  }
+  async getIndexerCursor(name: string) {
+    const { rows } = await this.query("SELECT signature, slot FROM indexer_cursors WHERE name=$1", [name]);
+    return rows[0] ? { signature: rows[0].signature as string, slot: Number(rows[0].slot) } : undefined;
+  }
+  async saveIndexerCursor(name: string, c: IndexerCursor) {
+    await this.query(`INSERT INTO indexer_cursors (name,signature,slot,updated_at) VALUES ($1,$2,$3,now())
+      ON CONFLICT (name) DO UPDATE SET signature=$2, slot=$3, updated_at=now()`, [name, c.signature, c.slot]);
+  }
+  async indexedSpend(pouchIds: string[], bucket: "day" | "hour"): Promise<SpendPoint[] | undefined> {
+    if (!pouchIds.length) return undefined;
+    const { rows: any } = await this.query("SELECT 1 FROM payments WHERE pouch_id = ANY($1::text[]) LIMIT 1", [pouchIds]);
+    if (!any.length) return undefined;
+    // Day buckets come from the spend_daily continuous aggregate (real-time, see schema.sql).
+    const sql = bucket === "day"
+      ? "SELECT bucket, pouch_id, spent, orders FROM spend_daily WHERE pouch_id = ANY($1::text[]) ORDER BY bucket, pouch_id"
+      : "SELECT time_bucket('1 hour', time) AS bucket, pouch_id, sum(amount) AS spent, count(*) AS orders FROM payments WHERE pouch_id = ANY($1::text[]) GROUP BY 1, 2 ORDER BY 1, 2";
+    const { rows } = await this.query(sql, [pouchIds]);
+    return rows.map((r) => ({ bucket: iso(r.bucket), pouchId: r.pouch_id, spent: Number(r.spent), orders: Number(r.orders) }));
   }
 }

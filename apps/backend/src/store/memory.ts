@@ -1,6 +1,6 @@
-import { toMicros, type Order, type Pouch, type TopUp } from "@solpouch/shared";
+import { toMicros, type Order, type Pouch, type SpendPoint, type TopUp } from "@solpouch/shared";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { StoreConflictError, sameOperation, validateRateLimit, type Store, type VaultOperation, type AuthSession, type StoredPouch, type UserProfile } from "./types.js";
+import { StoreConflictError, sameOperation, spendBucket, validateRateLimit, type Store, type VaultOperation, type AuthSession, type StoredPouch, type UserProfile, type PaymentIndex, type VaultEventRecord, type PaymentRecord, type IndexerCursor } from "./types.js";
 
 // TODO: PostgresStore backed by Tiger Data (see db/schema.sql). Swap in src/index.ts.
 
@@ -50,7 +50,7 @@ export function seedPouches(): Pouch[] {
   ];
 }
 
-export class MemoryStore implements Store {
+export class MemoryStore implements Store, PaymentIndex {
   private pouches = new Map<string, StoredPouch>();
   private orders = new Map<string, Order>();
   private topups = new Map<string, TopUp>();
@@ -58,6 +58,9 @@ export class MemoryStore implements Store {
   private users = new Map<string, UserProfile>();
   private sessions = new Map<string, AuthSession>();
   private rateLimits = new Map<string, { hits: number; expiresAt: number }>();
+  private vaultEvents = new Map<string, VaultEventRecord>();
+  private payments = new Map<string, PaymentRecord>();
+  private cursors = new Map<string, IndexerCursor>();
   private nextCleanupAt = 0;
   private cleanupExpired() {
     const now = Date.now();
@@ -150,5 +153,34 @@ export class MemoryStore implements Store {
     bucket.hits++;
     this.rateLimits.set(key, bucket);
     return { allowed: bucket.hits <= max, retryAfterSeconds: Math.max(1, Math.ceil((bucket.expiresAt - now) / 1000)) };
+  }
+  async recordVaultEvents(events: VaultEventRecord[], payments: PaymentRecord[]) {
+    let inserted = 0;
+    for (const e of events) {
+      const key = `${e.signature}#${e.eventIndex}`;
+      if (this.vaultEvents.has(key)) continue;
+      this.vaultEvents.set(key, structuredClone(e));
+      inserted++;
+      const p = payments.find((x) => x.txSignature === e.signature && x.eventIndex === e.eventIndex);
+      if (p && !this.payments.has(key)) this.payments.set(key, structuredClone(p));
+    }
+    return inserted;
+  }
+  async getIndexerCursor(name: string) { return structuredClone(this.cursors.get(name)); }
+  async saveIndexerCursor(name: string, cursor: IndexerCursor) { this.cursors.set(name, structuredClone(cursor)); }
+  async indexedSpend(pouchIds: string[], bucket: "day" | "hour") {
+    const ids = new Set(pouchIds);
+    const rows = [...this.payments.values()].filter((p) => ids.has(p.pouchId));
+    if (!rows.length) return undefined;
+    const points = new Map<string, SpendPoint>();
+    for (const p of rows) {
+      const b = spendBucket(p.time, bucket);
+      const key = `${p.pouchId}|${b}`;
+      const pt = points.get(key) ?? { bucket: b, pouchId: p.pouchId, spent: 0, orders: 0 };
+      pt.spent += p.amount;
+      pt.orders += 1;
+      points.set(key, pt);
+    }
+    return [...points.values()].sort((a, b) => a.bucket.localeCompare(b.bucket) || a.pouchId.localeCompare(b.pouchId));
   }
 }
