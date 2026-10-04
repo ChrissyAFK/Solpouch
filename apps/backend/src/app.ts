@@ -18,6 +18,7 @@ import { orderRoutes } from "./routes/orders.js";
 import { pouchRoutes } from "./routes/pouches.js";
 import { statsRoutes } from "./routes/stats.js";
 import { topupRoutes } from "./routes/topups.js";
+import { allocationRoutes } from "./routes/allocations.js";
 import { ownedStore } from "./security/access.js";
 import { withdrawalRoutes } from "./routes/withdrawals.js";
 import { voiceRoutes } from "./routes/voice.js";
@@ -69,7 +70,7 @@ export function createApp(deps: Deps) {
   app.use("/voice/*", rateLimit({ store: deps.store, windowMs: MIN, max: 60, key: "voice" }));
 
   app.get("/health", (c) => c.json({ ok: true, release: RELEASE }));
-  for (const base of ["/shopping-lists", "/pouches", "/orders", "/topups", "/stats", "/profile", "/funding"]) app.use(`${base}/*`, requireUser(deps.store));
+  for (const base of ["/shopping-lists", "/pouches", "/orders", "/topups", "/allocations", "/stats", "/profile", "/funding"]) app.use(`${base}/*`, requireUser(deps.store));
   // Withdrawals run against a store scoped to the signed-in user: other accounts' pouches look missing (404).
   app.use("/withdrawals/*", requireUser(deps.store));
   app.use("/withdrawals/*", async (c, next) => {
@@ -90,6 +91,7 @@ export function createApp(deps: Deps) {
   app.route("/shopping-lists", shoppingListRoutes(deps));
   app.route("/orders", orderRoutes(deps));
   app.route("/topups", topupRoutes(deps));
+  app.route("/allocations", allocationRoutes(deps));
   app.route("/withdrawals", withdrawalRoutes(deps));
   app.route("/merchants", merchantRoutes());
   app.route("/stats", statsRoutes(deps));

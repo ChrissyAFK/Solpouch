@@ -25,6 +25,8 @@ export interface Deps {
   fundingRepository?: FundingRepository;
   store: Store;
   vault: VaultClient;
+  /** Wallet-transfer chain access for /allocations. Defaults to the real RPC in chain mode; tests inject a fake. */
+  allocationChain?: import('../vault/allocationChain.js').AllocationChain;
   /** Override Google ID token verification (tests). */
   verifyGoogle?: (credential: string) => Promise<GoogleUser>;
 }

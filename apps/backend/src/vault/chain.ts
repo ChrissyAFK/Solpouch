@@ -36,7 +36,7 @@ const DAY_SECONDS = 86_400;
 const MINT_DECIMALS = 6;
 const COMMITMENT = "confirmed" as const;
 
-function loadKeypair(path: string): Keypair {
+export function loadKeypair(path: string): Keypair {
   const p = isAbsolute(path) ? path : resolve(REPO_ROOT, path);
   return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(p, "utf8"))));
 }
