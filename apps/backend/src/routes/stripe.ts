@@ -40,5 +40,7 @@ export function stripeWebhookRoutes(deps: Deps) { const app = new Hono(); app.po
 catch (e) {
     if (e instanceof StripeBusy)
         throw new HttpError(503, 'Payment processing; retry delivery.');
+    if (e instanceof MintPending)
+        return c.json({ received: true, pending: true }, 202);
     throw e;
 } return c.json({ received: true }); }); return app; }

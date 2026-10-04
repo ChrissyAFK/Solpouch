@@ -7,6 +7,7 @@ import { startStripe, reconcileStripe, stripeWebhook } from '../src/stripe/servi
 import type { StripeSession, StripeProvider } from '../src/stripe/provider.js';
 import { authHeaders, linkTestWallet, TEST_USER } from './helpers.js';
 import { randomUUID } from 'node:crypto';
+import { MintPending } from '../src/stripe/mint.js';
 afterEach(() => vi.unstubAllEnvs());
 async function fixture() { vi.stubEnv('FUNDING_PROVIDER', 'stripe'); vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_fixture'); vi.stubEnv('FUNDING_USD_PER_CAD', '0.73'); vi.stubEnv('VAULT_MODE', 'mock'); const store = new MemoryStore([]); await linkTestWallet(store); const stripeRepository = new MemoryStripeRepository(); let session: StripeSession; const stripeProvider: StripeProvider = { create: vi.fn(async (r) => session = { id: 'cs_test_fixture', url: 'https://checkout.stripe.com/c/pay/test', livemode: false, payment_status: 'unpaid', amount_total: r.amountCents, currency: 'cad', client_reference_id: r.id, metadata: { fundingRequestId: r.id } }), retrieve: vi.fn(async () => session), verify: vi.fn(() => ({ type: 'checkout.session.completed', livemode: false, data: { object: session } })) }; const deps = { store, vault: new MockVaultClient(store, () => undefined), stripeRepository, stripeProvider, stripeMint: vi.fn(async () => ({ txSignature: 'sig' })) }; return { deps, pay: () => session.payment_status = 'paid', session: () => session }; }
 describe('Stripe test funding', () => {
@@ -50,3 +51,4 @@ it('does not regress recorded paid state on an expired unpaid response',async()=
  session().status='expired';session().payment_status='unpaid';
  expect((await reconcileStripe(deps,request.id,TEST_USER)).status).toBe('paid');
 });
+it('accepts a webhook whose mint awaits review so Stripe stops retrying', async () => { const { deps, pay } = await fixture(); await startStripe(deps, TEST_USER, '25', randomUUID()); pay(); vi.stubEnv('VAULT_MODE', 'chain'); vi.stubEnv('STRIPE_DEMO_MINT', '1'); deps.stripeMint.mockRejectedValueOnce(new MintPending()); const res = await createApp(deps).request('/funding-webhooks/stripe', { method: 'POST', headers: { 'stripe-signature': 'test' }, body: '{}' }); expect(res.status).toBe(202); expect(await res.json()).toEqual({ received: true, pending: true }); });

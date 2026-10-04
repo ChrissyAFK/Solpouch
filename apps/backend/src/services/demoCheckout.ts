@@ -5,7 +5,7 @@ import { validateOrderLines } from "./orderValidation.js";
 
 export function demoRate(): string {
   const rate = process.env.FUNDING_USD_PER_CAD?.trim() ?? "";
-  if (!/^(?:0|[1-9]\d{0,2})(?:\.\d{1,6})?$/.test(rate) || Number(rate) <= 0) throw new HttpError(503,"Configure the demo CAD conversion rate.","DemoUnavailable");
+  if (!/^(?:0|[1-9]\d{0,2})(?:\.\d{1,6})?$/.test(rate) || Number(rate) <= 0 || Number(rate) > 2) throw new HttpError(503,"Configure the demo CAD conversion rate.","DemoUnavailable");
   return rate;
 }
 function converted(lines: OrderLine[], rate: string): OrderLine[] {

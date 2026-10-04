@@ -1,7 +1,7 @@
 import {afterEach,beforeEach,expect,it,vi} from "vitest";
 import {MemoryStore} from "../src/store/memory.js";
 import {ownedSeed,TEST_USER} from "./helpers.js";
-import {prepareDemoCheckout} from "../src/services/demoCheckout.js";
+import {demoRate,prepareDemoCheckout} from "../src/services/demoCheckout.js";
 import {autoConfirmEligible,confirmOrder,type Deps} from "../src/services/orders.js";
 import {isCheckoutReference,orderCurrency,type Order} from "@solpouch/shared";
 import {editDraft} from "../src/services/shopping.js";
@@ -75,4 +75,8 @@ it("rejects USDC catalog carts handed off to Instacart",async()=>{
  expect(orderCurrency(order)).toBe("USDC");
  await expect(prepareDemoCheckout(deps,TEST_USER,order.id,order.version!)).rejects.toMatchObject({status:422});
  expect(deps.vault.pay).not.toHaveBeenCalled();
+});
+it("rejects a demo conversion rate above the Stripe bound",()=>{
+ vi.stubEnv("FUNDING_USD_PER_CAD","73");expect(()=>demoRate()).toThrow("Configure the demo CAD conversion rate.");
+ vi.stubEnv("FUNDING_USD_PER_CAD","2");expect(demoRate()).toBe("2");
 });

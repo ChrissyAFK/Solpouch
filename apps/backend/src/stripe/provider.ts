@@ -1,4 +1,5 @@
-import Stripe from 'stripe';
+import { createRequire } from 'node:module';
+import type StripeClient from 'stripe';
 import type { StripeFundingRequest } from './repository.js';
 import { HttpError } from '../services/orders.js';
 export interface StripeSession {
@@ -26,6 +27,9 @@ export interface StripeProvider {
 export function testStripeKey() { const key = process.env.STRIPE_SECRET_KEY ?? ''; if (!key.startsWith('sk_test_'))
     throw new HttpError(503, 'Stripe test checkout is not configured. Live payments are disabled.'); return key; }
 export function stripeProvider(): StripeProvider {
+    // Loaded on first use so a missing install or unset Stripe env can never stop the API booting.
+    const mod = createRequire(import.meta.url)('stripe') as { default?: typeof StripeClient } & typeof StripeClient;
+    const Stripe = mod.default ?? mod;
     const stripe = new Stripe(testStripeKey(), { maxNetworkRetries: 1, timeout: 15000 });
     return {
         async create(r) { const origin = process.env.FUNDING_RETURN_ORIGIN || 'https://solpouch.tech'; const url = new URL(origin); if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)))

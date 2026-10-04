@@ -80,6 +80,9 @@ export class PostgresStripeRepository implements StripeRepository {
             if (acquired && !state.lost)
                 await c.query('SELECT pg_advisory_unlock(hashtextextended($1,0))', [`stripe:${id}`]);
         }
+        catch {
+            state.lost = true;
+        }
         finally {
             c.removeListener('error', lost);
             c.release(state.lost);

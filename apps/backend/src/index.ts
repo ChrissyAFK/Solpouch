@@ -81,7 +81,7 @@ if (stripeDatabase && (process.env.FUNDING_PROVIDER === "stripe" || process.env.
   const { default: pg } = await import("pg");
   const { PostgresStripeRepository } = await import("./stripe/repository.js");
   try {
-    stripePool = new pg.Pool({ ...postgresPoolConfig(stripeDatabase), max: 5, connectionTimeoutMillis: 3000 });
+    stripePool = new pg.Pool({ ...postgresPoolConfig(stripeDatabase), max: 10, connectionTimeoutMillis: 3000 });
     stripePool.on("error", () => console.warn("Stripe funding database connection closed."));
     const repository = new PostgresStripeRepository(stripePool);
     await repository.initialize();
