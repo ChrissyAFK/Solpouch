@@ -8,7 +8,7 @@ Current audit fixes and local verification are tracked in `docs/AUDIT_FIXES.md`.
 
 Dashboard redesign from `codex/dashboard-design` is merged into `scaffold` (not merged to main).
 
-## Assistant v2 (2026-10-04, branch `feat/assistant-v2`, not merged, not deployed)
+## Assistant v2 (2026-10-04, branch `feat/assistant-v2`, merged into `scaffold` and live as release e363e03; voice settings applied to the live agent)
 
 Order finding was rebuilt: an understand step (items, store, or one clarifying question), one web search, a price check against the product's own page, and a result cache (24 h when every price was checked, 1 h otherwise). Spec: `docs/superpowers/specs/2026-10-04-assistant-v2-design.md`. Plan: `docs/superpowers/plans/2026-10-04-assistant-v2.md`.
 
@@ -29,7 +29,7 @@ Known limits: almost every large retailer answers a direct page fetch with 403 (
 
 Final review (2026-10-04): no path pays an estimated or look-alike line without a yes. Fixed after it (`3055854`, `781dff8`): a page price is confirmed only when the page's product name holds every word of the item (or half the words and a price within 5%), and a page with no currency counts as CAD only on a `.ca` domain or a `ca` / `en-ca` / `fr-ca` first path segment; users whose pouches allow only catalog merchants get a catalog draft again; voice says "Estimated total" only when a line is an estimate; the result cache key includes quantity; more reserved address ranges are refused; `voice/apply-settings.mjs` reads the agent and merges before it writes. A run on `3055854` gave 34/40, median 6.7 s, slowest 11.6 s, 1 of 41 prices confirmed (three NOT FOUND at Walmart, No Frills and Home Hardware that passed in the earlier run, Cactus Club over its $30 limit, and one "unavailable" caused by a removed retry, since restored). No full run was completed on `781dff8`.
 
-Not yet done: a signed-in browser run of the whole flow, merge, deploy, applying the voice settings.
+Not yet done: a signed-in order and a voice call against production since the deploy, a full eval run on the final code, tracing the "429 Too Many Requests, retrying" lines in `backend-run.log`.
 
 ## Backend hardening branch (2026-10-03)
 
