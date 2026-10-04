@@ -22,7 +22,7 @@ export function contentSecurityPolicy({
     // React, chart sizing and progress bars use inline styles.
     "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
     // Google Identity Services sign-in. ElevenLabs agent (chat widget): session setup over HTTPS, conversation over WSS.
-    `connect-src 'self' ${backend.origin} https://api.elevenlabs.io wss://api.elevenlabs.io https://accounts.google.com/gsi/ https://auth.privy.io https://*.rpc.privy.systems https://api.devnet.solana.com wss://api.devnet.solana.com${development ? " ws: wss:" : ""}`,
+    `connect-src 'self' ${backend.origin} https://api.elevenlabs.io wss://api.elevenlabs.io https://accounts.google.com/gsi/ https://auth.privy.io https://*.rpc.privy.systems https://explorer-api.walletconnect.com https://api.devnet.solana.com wss://api.devnet.solana.com${development ? " ws: wss:" : ""}`,
     // Google profile pictures.
     "img-src 'self' data: blob: https://*.googleusercontent.com",
     "font-src 'self'",
