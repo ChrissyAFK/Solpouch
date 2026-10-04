@@ -1,11 +1,43 @@
 "use client";
 import { useId, useState } from "react";
 import type { Merchant, Pouch, CreatePouchBody } from "@solpouch/shared";
-import { toMicros, toUsdc } from "@solpouch/shared";
+import { toMicros, toUsdc, WEB_PREFIX } from "@solpouch/shared";
 import { errMsg } from "@/lib/api";
 import { ErrorBanner, btnPrimary, input, label } from "./ui";
 
 export type PouchFormValues = CreatePouchBody;
+
+/** "web:homedepot.ca" -> "homedepot.ca"; catalog ids resolved by `name`. */
+export function storeLabel(id: string, name?: (id: string) => string): string {
+  return id.startsWith(WEB_PREFIX)
+    ? id.slice(WEB_PREFIX.length)
+    : name
+      ? name(id)
+      : id;
+}
+
+/** [] -> "Any store", otherwise a comma list of store names. */
+export function storesText(
+  ids: string[],
+  name?: (id: string) => string,
+): string {
+  return ids.length === 0
+    ? "Any store"
+    : ids.map((i) => storeLabel(i, name)).join(", ");
+}
+
+/** Website or domain -> bare lowercase domain, or null if it is not one. */
+export function normalizeDomain(raw: string): string | null {
+  let v = raw.trim().toLowerCase();
+  v = v.replace(/^[a-z][a-z0-9+.-]*:\/\//, "");
+  v = v.split(/[/?#]/)[0].replace(/^[^@]*@/, "").replace(/:\d+$/, "");
+  v = v.replace(/^www\./, "").replace(/\.$/, "");
+  return /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(
+    v,
+  )
+    ? v
+    : null;
+}
 
 export function PouchForm({
   merchants,
@@ -31,8 +63,25 @@ export function PouchForm({
   const [allowed, setAllowed] = useState<string[]>(
     initial?.allowedMerchantIds ?? [],
   );
+  const [mode, setMode] = useState<"any" | "only">(
+    !initial || initial.allowedMerchantIds.length === 0 ? "any" : "only",
+  );
+  const [webInput, setWebInput] = useState("");
+  const [webError, setWebError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function addWeb() {
+    const d = normalizeDomain(webInput);
+    if (!d) {
+      setWebError("Enter a website like homedepot.ca.");
+      return;
+    }
+    const web = WEB_PREFIX + d;
+    setAllowed((c) => (c.includes(web) ? c : [...c, web]));
+    setWebInput("");
+    setWebError(null);
+  }
 
   return (
     <form
@@ -57,6 +106,10 @@ export function PouchForm({
           setError("Give your pouch a name.");
           return;
         }
+        if (mode === "only" && allowed.length === 0) {
+          setError("Pick at least one store, or choose Any store.");
+          return;
+        }
         setBusy(true);
         try {
           await onSubmit({
@@ -64,7 +117,7 @@ export function PouchForm({
             maxPerOrder: toMicros(amounts[0]),
             dailyLimit: toMicros(amounts[1]),
             confirmAbove: initial?.confirmAbove ?? 0,
-            allowedMerchantIds: allowed,
+            allowedMerchantIds: mode === "any" ? [] : allowed,
           });
         } catch (err) {
           setError(errMsg(err));
@@ -135,48 +188,133 @@ export function PouchForm({
         </div>
         <fieldset>
           <legend className={label}>Allowed stores</legend>
-          <p className="mb-3 text-sm text-[var(--muted)]">
-            Choose where this pouch can be used.
-          </p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {merchants.map((m) => {
-              const checked = allowed.includes(m.id);
-              return (
-                <label
-                  key={m.id}
-                  className={`flex min-h-12 cursor-pointer items-center gap-3 rounded border px-4 py-3 text-sm font-medium transition-colors ${checked ? "border-[var(--solana-purple)] bg-[var(--surface-raised)] text-[var(--ink)]" : "border-[var(--line-strong)] bg-[var(--surface)] text-[var(--ink)]"}`}
-                >
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-[var(--ok)]"
-                    checked={checked}
-                    onChange={() =>
-                      setAllowed((current) =>
-                        checked
-                          ? current.filter((x) => x !== m.id)
-                          : [...current, m.id],
-                      )
-                    }
-                  />
-                  <span>
-                    {m.name}
-                    <span className="mt-1 block text-xs font-normal capitalize text-[var(--muted)]">
-                      {m.kind.replaceAll("_", " ")}
-                    </span>
-                  </span>
-                </label>
-              );
-            })}
+          <div
+            role="radiogroup"
+            aria-label="Store rule"
+            className="mb-3 inline-flex rounded border border-[var(--line-strong)] bg-[var(--surface)] p-1"
+          >
+            {(
+              [
+                ["any", "Any store"],
+                ["only", "Only stores I pick"],
+              ] as const
+            ).map(([val, text]) => (
+              <button
+                key={val}
+                type="button"
+                role="radio"
+                aria-checked={mode === val}
+                onClick={() => setMode(val)}
+                className={`min-h-10 rounded px-4 text-sm font-medium transition-colors ${mode === val ? "bg-[var(--solana-purple)] text-white" : "text-[var(--muted)] hover:text-[var(--ink)]"}`}
+              >
+                {text}
+              </button>
+            ))}
           </div>
-          {merchants.length === 0 && (
-            <p className="rounded bg-[var(--surface-raised)] p-4 text-sm text-[var(--muted)]">
-              No stores are available. Reload the page to try again.
+          {mode === "any" ? (
+            <p className="text-sm text-[var(--muted)]">
+              Solpouch can buy from any store, searching online when needed.
+              Your per-order and daily limits still apply.
             </p>
-          )}
-          {merchants.length > 0 && allowed.length === 0 && (
-            <p className="mt-3 text-xs text-[var(--warn)]">
-              No stores selected. This pouch will not be able to make purchases.
-            </p>
+          ) : (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {merchants.map((m) => {
+                  const checked = allowed.includes(m.id);
+                  return (
+                    <label
+                      key={m.id}
+                      className={`flex min-h-12 cursor-pointer items-center gap-3 rounded border px-4 py-3 text-sm font-medium transition-colors ${checked ? "border-[var(--solana-purple)] bg-[var(--surface-raised)] text-[var(--ink)]" : "border-[var(--line-strong)] bg-[var(--surface)] text-[var(--ink)]"}`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-[var(--ok)]"
+                        checked={checked}
+                        onChange={() =>
+                          setAllowed((current) =>
+                            checked
+                              ? current.filter((x) => x !== m.id)
+                              : [...current, m.id],
+                          )
+                        }
+                      />
+                      <span>
+                        {m.name}
+                        <span className="mt-1 block text-xs font-normal capitalize text-[var(--muted)]">
+                          {m.kind.replaceAll("_", " ")}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="mt-4">
+                <label className={label} htmlFor={`${id}-web`}>
+                  Add a store
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id={`${id}-web`}
+                    className={input}
+                    value={webInput}
+                    placeholder="homedepot.ca"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    onChange={(e) => {
+                      setWebInput(e.target.value);
+                      setWebError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addWeb();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="min-h-12 shrink-0 rounded border border-[var(--line-strong)] bg-[var(--surface-raised)] px-4 text-sm font-medium text-[var(--ink)]"
+                    onClick={addWeb}
+                  >
+                    Add
+                  </button>
+                </div>
+                {webError && (
+                  <p role="alert" className="mt-2 text-xs text-[var(--danger)]">
+                    {webError}
+                  </p>
+                )}
+              </div>
+              {allowed.some((x) => x.startsWith(WEB_PREFIX)) && (
+                <ul className="mt-3 flex flex-wrap gap-2">
+                  {allowed
+                    .filter((x) => x.startsWith(WEB_PREFIX))
+                    .map((x) => (
+                      <li
+                        key={x}
+                        className="flex items-center gap-2 rounded border border-[var(--solana-purple)] bg-[var(--surface-raised)] py-1 pl-3 pr-1 text-sm"
+                      >
+                        {storeLabel(x)}
+                        <button
+                          type="button"
+                          aria-label={`Remove ${storeLabel(x)}`}
+                          className="grid h-8 w-8 place-items-center rounded text-[var(--muted)] hover:text-[var(--ink)]"
+                          onClick={() =>
+                            setAllowed((c) => c.filter((y) => y !== x))
+                          }
+                        >
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              )}
+              {merchants.length === 0 && (
+                <p className="mt-3 rounded bg-[var(--surface-raised)] p-4 text-sm text-[var(--muted)]">
+                  No built-in stores loaded. You can still add your own.
+                </p>
+              )}
+            </>
           )}
         </fieldset>
       </fieldset>

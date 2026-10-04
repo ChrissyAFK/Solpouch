@@ -20,7 +20,80 @@ import {
   usd,
 } from "@/components/ui";
 
-const suggestions = ["2 eggs and 1 bread", "1 oat milk", "10 deck screws"];
+function ItemName({
+  product,
+  fallback,
+  paper,
+}: {
+  product: Order["lines"][number]["product"];
+  fallback: string;
+  paper?: boolean;
+}) {
+  const name = product?.name ?? fallback;
+  return (
+    <>
+      {product?.url ? (
+        <a
+          href={product.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={s.itemLink}
+        >
+          {name}
+        </a>
+      ) : (
+        name
+      )}
+      {product?.estimated && (
+        <span className={paper ? s.estimatedPaper : s.estimated}>
+          Estimated price
+        </span>
+      )}
+    </>
+  );
+}
+
+function StoreVia({ order, paper }: { order: Order; paper?: boolean }) {
+  const { store, fulfillment: f } = order;
+  if (!store && !(f && f.via !== "direct")) return null;
+  const via =
+    f?.via === "instacart"
+      ? "Bought via Instacart"
+      : f?.via === "service"
+        ? "Bought via Solpouch Buyer"
+        : null;
+  const linkText = f?.via === "instacart" ? "Open Instacart cart" : "Open store page";
+  return (
+    <div className={paper ? s.viaPaper : s.via}>
+      {store?.url && (
+        <div>
+          <a
+            href={store.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={s.itemLink}
+          >
+            {store.domain}
+          </a>
+        </div>
+      )}
+      {!store?.url && store?.domain && <div>{store.domain}</div>}
+      {via && <div>{via}</div>}
+      {f?.checkoutUrl && (
+        <a
+          href={f.checkoutUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={s.viaButton}
+        >
+          {linkText}
+        </a>
+      )}
+    </div>
+  );
+}
+
+const suggestions =["2 eggs and 1 bread", "1 oat milk", "10 deck screws"];
 
 export default function OrderPage() {
   return (
@@ -303,8 +376,9 @@ function OrderWorkspace() {
                       {isDraft ? "Review order" : "Your order"}
                     </h2>
                     <p className="mt-1 text-sm text-[var(--muted)]">
-                      {merchant?.name ?? "Your order"}
+                      {order.store?.name ?? merchant?.name ?? "Your order"}
                     </p>
+                    {order.status !== "paid" && <StoreVia order={order} />}
                   </div>
                   <span className={s.statusPill}>{order.status}</span>
                 </div>
@@ -314,15 +388,16 @@ function OrderWorkspace() {
                     <span className={s.stamp}>Paid</span>
                     <div className={s.receiptHead}>
                       <div className={s.receiptStore}>
-                        {merchant?.name ?? "Your order"}
+                        {order.store?.name ?? merchant?.name ?? "Your order"}
                       </div>
+                      <StoreVia order={order} paper />
                       <div className={s.receiptMeta}>{paidDate}</div>
                     </div>
                     <ul className={s.receiptItems}>
                       {order.lines.map((line, i) => (
                         <li key={i} className={s.receiptItem}>
                           <span>
-                            {line.product?.name ?? line.requested}
+                            <ItemName product={line.product} fallback={line.requested} paper />
                             <br />
                             <span className={s.receiptQty}>
                               {line.qty} ×{" "}
@@ -403,7 +478,7 @@ function OrderWorkspace() {
                         <div className="flex justify-between gap-4">
                           <div>
                             <h3 className="font-semibold">
-                              {line.product?.name ?? "Item unavailable"}
+                              <ItemName product={line.product} fallback="Item unavailable" />
                             </h3>
                             <p className="mt-1 text-sm text-[var(--muted)]">
                               {line.product
@@ -516,7 +591,11 @@ function OrderWorkspace() {
                     </li>
                   ))}
                 </ul>
-                <p className="mt-4 text-xs text-[var(--muted)]">
+                <p className="mt-3 text-xs text-[var(--muted)]">
+                  These are examples. Anything else is searched online when the
+                  pouch allows any store.
+                </p>
+                <p className="mt-3 text-xs text-[var(--muted)]">
                   Approval required for every order.
                 </p>
               </div>

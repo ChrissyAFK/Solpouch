@@ -23,7 +23,7 @@ import type {
 import { toMicros, toUsdc } from "@solpouch/shared";
 import { api, ApiRequestError, errMsg } from "@/lib/api";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
-import { PouchForm } from "@/components/PouchForm";
+import { PouchForm, storesText } from "@/components/PouchForm";
 import { PouchGlyph } from "@/components/PouchGlyph";
 import {
   ErrorBanner,
@@ -347,9 +347,7 @@ export default function PouchDetail() {
             <dd>{usd(toUsdc(pouch.dailyLimit))}</dd>
             <dt className="text-[var(--muted)]">Stores</dt>
             <dd className="font-sans">
-              {pouch.allowedMerchantIds.length > 0
-                ? pouch.allowedMerchantIds.map(mname).join(", ")
-                : "None"}
+              {storesText(pouch.allowedMerchantIds, mname)}
             </dd>
           </dl>
         </div>
