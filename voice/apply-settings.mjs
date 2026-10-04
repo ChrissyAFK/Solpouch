@@ -43,12 +43,13 @@ if (process.argv.includes("--dry-run")) {
       turn: { ...cc.turn, speculative_turn: true, turn_eagerness: "normal" },
       // Expressive mode makes the LLM invent bracketed audio tags ("[Understood]") that get spoken and shown.
       tts: { ...cc.tts, expressive_mode: false, speed: 1.1 },
-      agent: { prompt: { ...curPrompt, ...(curPrompt.tool_ids ? {} : tools ? { tools } : {}), prompt: promptText } },
+      // No greeting: the user can speak the moment the call connects.
+      agent: { first_message: "", prompt: { ...curPrompt, ...(curPrompt.tool_ids ? {} : tools ? { tools } : {}), prompt: promptText } },
     },
   };
   const res = await fetch(url, { method: "PATCH", headers: { "xi-api-key": key, "content-type": "application/json" }, body: JSON.stringify(body) });
   const text = await res.text();
   if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${text.slice(0, 500)}`);
   const c = JSON.parse(text).conversation_config;
-  console.log(`applied: ${c?.asr?.keywords?.length ?? "?"} keywords, speculative_turn=${c?.turn?.speculative_turn}, turn_eagerness=${c?.turn?.turn_eagerness}, expressive_mode=${c?.tts?.expressive_mode}, speed=${c?.tts?.speed}, tools ${toolsBefore} -> ${c?.agent?.prompt?.tool_ids?.length ?? c?.agent?.prompt?.tools?.length ?? 0}, prompt ${c?.agent?.prompt?.prompt?.length} chars`);
+  console.log(`applied: ${c?.asr?.keywords?.length ?? "?"} keywords, speculative_turn=${c?.turn?.speculative_turn}, turn_eagerness=${c?.turn?.turn_eagerness}, expressive_mode=${c?.tts?.expressive_mode}, speed=${c?.tts?.speed}, tools ${toolsBefore} -> ${c?.agent?.prompt?.tool_ids?.length ?? c?.agent?.prompt?.tools?.length ?? 0}, prompt ${c?.agent?.prompt?.prompt?.length} chars, first_message=${JSON.stringify(c?.agent?.first_message ?? "")}`);
 }
