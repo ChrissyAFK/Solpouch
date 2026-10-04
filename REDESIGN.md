@@ -94,7 +94,7 @@ Radii: `--r-sm 8` (inputs, chips) · `--r-md 12` (buttons, panels) · `--r-lg 16
 - [x] 7. Info pages: About, Privacy, Terms, Contact, Delete account
 - [x] 8. Dashboard overview: stat tiles, spending card, pouch list as cards
 - [x] 9. Order page and receipt
-- [ ] 10. Chat widget panel
+- [x] 10. Chat widget panel
 
 ## Log
 - 01:17 Item 1: Hanken Grotesk + Geist Mono, light/dark fare-gate tokens with old names aliased, base buttons/inputs/cards/focus/motion tokens. Build passes; /dashboard and /about checked at 1440.
@@ -106,3 +106,4 @@ Radii: `--r-sm 8` (inputs, chips) · `--r-md 12` (buttons, panels) · `--r-lg 16
 - 01:36 Item 7: info pages (About, Privacy, Terms, Contact, Delete account) on tokens: title Hanken 800 at -0.035em with balanced wrap and no font-stretch, hairline rule under the header, ink h2s with more space above, brand list markers and links with gated hover, mono code, 16px mobile gutter. Build passes; /privacy checked at 1440, all five routes return 200.
 - 01:39 Item 8: dashboard overview on tokens: stat tiles at 16px radius, the Balance tile on black readout glass with a mint mono figure and the money-card shadow, brand spend bar at 6px; pouch and order lists each on one surface card with a raised header row, 20px row padding and gated hover; dashed empty-state cards; 48px section rhythm. Build passes; the overview sits behind Google sign-in, which isn't configured on the test server, so only the shell was checked visually (1440).
 - 01:41 Item 9: order page and receipt on tokens: step tabs on a hairline with a brand underline, 56px Talk button, suggestion chips as 36px brand-soft pressables with gated hover, pill status, receipt as white tape with 12px radius and the money-card shadow, rejection panel with a danger hairline, brand 'via' button with press scale; no solana-purple left. Build passes; not checked visually (the test server was stopped for low memory, and /order sits behind sign-in).
+- 01:43 Item 10: Ask Solpouch panel on tokens: 16px-radius surface panel with a layered shadow that rises in from the launcher (220ms ease-out via @starting-style, off under reduced motion), white header, 20px gutters, brand-soft user bubbles, 40px preset chips with press scale and gated hover, brand Send button, Talk on readout glass while live; hardcoded #9945ff/#14f195 removed and every 10-12px size raised to 13px. Build passes; not checked visually (the test server was stopped for low memory and was not restarted).
