@@ -103,5 +103,7 @@ test("Android wrapper files: asset links, offline worker and offline page", asyn
   assert.equal(worker.status, 200);
   assert.match(worker.headers.get("content-type"), /javascript/);
   assert.match(worker.headers.get("cache-control"), /no-cache/);
-  assert.equal((await get("/offline")).status, 200);
+  const offline = await get("/offline.html");
+  assert.equal(offline.status, 200);
+  assert.match(offline.headers.get("content-security-policy") ?? "", /default-src 'none'/);
 });

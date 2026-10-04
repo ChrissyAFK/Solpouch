@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Solpouch</string>
+    <string name="shortcut_order_short">New order</string>
+    <string name="shortcut_order_long">Start a new order</string>
+    <string name="shortcut_pouches_short">Pouches</string>
+    <string name="shortcut_pouches_long">See your pouches</string>
+    <string name="shortcut_orders_short">Orders</string>
+    <string name="shortcut_orders_long">See your orders</string>
+    <string name="asset_statements" translatable="false">[{ \"relation\": [\"delegate_permission/common.handle_all_urls\"], \"target\": { \"namespace\": \"web\", \"site\": \"https://solpouch.tech\" } }]</string>
+</resources>

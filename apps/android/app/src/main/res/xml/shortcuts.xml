@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:targetApi="25">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_order"
+        android:shortcutId="order"
+        android:shortcutLongLabel="@string/shortcut_order_long"
+        android:shortcutShortLabel="@string/shortcut_order_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="https://solpouch.tech/order"
+            android:targetClass="com.google.androidbrowserhelper.trusted.LauncherActivity"
+            android:targetPackage="tech.solpouch.app" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_pouches"
+        android:shortcutId="pouches"
+        android:shortcutLongLabel="@string/shortcut_pouches_long"
+        android:shortcutShortLabel="@string/shortcut_pouches_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="https://solpouch.tech/pouches"
+            android:targetClass="com.google.androidbrowserhelper.trusted.LauncherActivity"
+            android:targetPackage="tech.solpouch.app" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_orders"
+        android:shortcutId="orders"
+        android:shortcutLongLabel="@string/shortcut_orders_long"
+        android:shortcutShortLabel="@string/shortcut_orders_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="https://solpouch.tech/orders"
+            android:targetClass="com.google.androidbrowserhelper.trusted.LauncherActivity"
+            android:targetPackage="tech.solpouch.app" />
+    </shortcut>
+</shortcuts>

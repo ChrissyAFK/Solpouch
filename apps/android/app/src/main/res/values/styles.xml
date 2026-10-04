@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shown for the instant before the browser takes over. -->
+    <style name="Theme.Solpouch.Launcher" parent="@android:style/Theme.Translucent.NoTitleBar">
+        <item name="android:statusBarColor">@color/surface</item>
+        <item name="android:navigationBarColor">@color/surface</item>
+    </style>
+</resources>

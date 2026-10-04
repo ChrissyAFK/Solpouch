@@ -1,7 +1,7 @@
 // Offline fallback only. Nothing else is intercepted or cached, so account and
 // money data never touch the Cache API.
-const CACHE = "solpouch-offline-v1";
-const PRECACHE = ["/offline", "/icons/icon-192.png"];
+const CACHE = "solpouch-offline-v2";
+const PRECACHE = ["/offline.html"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -28,6 +28,6 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET" || request.mode !== "navigate") return;
   if (new URL(request.url).origin !== self.location.origin) return;
   event.respondWith(
-    fetch(request).catch(async () => (await caches.match("/offline")) ?? Response.error()),
+    fetch(request).catch(async () => (await caches.match("/offline.html")) ?? Response.error()),
   );
 });

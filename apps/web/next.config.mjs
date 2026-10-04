@@ -18,6 +18,17 @@ const nextConfig = {
           { key: "Content-Type", value: "text/javascript; charset=utf-8" },
         ],
       },
+      // Static offline fallback: it skips the per-request policy, so it carries its own.
+      {
+        source: "/offline.html",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value:
+              "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+          },
+        ],
+      },
     ];
   },
 };
