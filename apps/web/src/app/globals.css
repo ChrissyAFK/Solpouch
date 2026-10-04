@@ -673,12 +673,26 @@ h1 {
   min-width: 0;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 20px 22px;
+  border-radius: var(--r-lg);
+  padding: 24px;
+}
+/* The balance is money: it reads out on the black validator glass. */
+.wallet-metrics > .wallet-metric:first-child {
+  background: var(--readout);
+  border-color: var(--readout);
+  box-shadow: 0 1px 2px var(--shadow), 0 12px 32px -12px var(--shadow-lg);
+}
+.wallet-metrics > .wallet-metric:first-child .stat-label,
+.wallet-metrics > .wallet-metric:first-child .stat-sub {
+  color: var(--readout-muted);
+}
+.wallet-metrics > .wallet-metric:first-child .stat-figure {
+  color: var(--readout-ok);
 }
 .stat-label {
   margin: 0;
   font-size: var(--text-sm);
+  font-weight: 500;
   color: var(--muted);
 }
 .stat-figure {
@@ -686,11 +700,12 @@ h1 {
   font-family: var(--font-mono);
   font-size: var(--text-3xl);
   line-height: 1.1;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-weight: 500;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
   overflow-wrap: anywhere;
+  margin-top: 4px;
 }
 .stat-sub {
   margin: 0;
@@ -698,7 +713,7 @@ h1 {
   color: var(--muted);
 }
 .stat-bar {
-  height: 4px;
+  height: 6px;
   width: 100%;
   margin-top: 6px;
   border-radius: 999px;
@@ -708,7 +723,7 @@ h1 {
 .stat-bar > div {
   height: 100%;
   border-radius: 999px;
-  background: var(--solana-purple);
+  background: var(--brand);
 }
 .stat-bar.is-high > div {
   background: var(--warn);
@@ -799,19 +814,19 @@ h1 {
   }
 }
 .wallet-section {
-  margin-top: 28px;
+  margin-top: 48px;
   scroll-margin-top: 20px;
 }
 .section-heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 15px;
-  margin-bottom: 14px;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 .section-heading h2 {
   margin: 0;
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
   font-weight: 700;
   letter-spacing: -0.02em;
 }
@@ -831,8 +846,17 @@ h1 {
   font-size: var(--text-sm);
   color: var(--muted);
 }
-.pouch-table {
-  border-top: 1px solid var(--line);
+/* Pouch and order lists sit on one surface card; rows are hairline-separated. */
+.pouch-table,
+.orders-table {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.pouch-table > :last-child,
+.orders-table > :last-child {
+  border-bottom: 0;
 }
 .pouch-table-head,
 .pouch-row {
@@ -844,18 +868,18 @@ h1 {
   align-items: center;
 }
 .pouch-table-head {
-  padding: 12px 12px;
+  padding: 12px 20px;
+  font-weight: 500;
+  background: var(--surface-raised);
   color: var(--muted);
   font-size: var(--text-xs);
   border-bottom: 1px solid var(--line);
 }
 .pouch-row {
-  padding: 8px 12px;
+  padding: 12px 20px;
   border-bottom: 1px solid var(--line);
   min-height: 80px;
-}
-.pouch-row:hover {
-  background: var(--surface);
+  transition: background-color var(--dur-hover) var(--ease-out);
 }
 .pouch-glyph {
   display: flex;
@@ -871,10 +895,7 @@ h1 {
   letter-spacing: -0.02em;
   margin: 0 0 4px;
 }
-.pouch-identity h3 > a:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
+
 .pouch-identity > span {
   display: block;
   font-size: var(--text-sm);
@@ -930,9 +951,7 @@ h1 {
   min-height: 32px;
   padding: 0;
 }
-.row-actions button:hover {
-  color: var(--ink);
-}
+
 .row-actions a {
   display: flex;
   gap: 6px;
@@ -940,8 +959,21 @@ h1 {
   color: var(--ink);
   min-height: 32px;
 }
-.row-actions a:hover {
-  color: var(--solana-green);
+@media (hover: hover) and (pointer: fine) {
+  .pouch-row:hover,
+  .order-row:hover {
+    background: var(--canvas);
+  }
+  .pouch-identity h3 > a:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .row-actions button:hover {
+    color: var(--ink);
+  }
+  .row-actions a:hover {
+    color: var(--brand);
+  }
 }
 .mobile-label {
   display: none;
@@ -954,10 +986,7 @@ h1 {
   padding-bottom: 10px;
 }
 .orders-section {
-  margin-top: 33px;
-}
-.orders-table {
-  border-top: 1px solid var(--line);
+  margin-top: 48px;
 }
 .order-table-head,
 .order-row {
@@ -968,20 +997,20 @@ h1 {
 }
 .order-table-head {
   font-size: var(--text-xs);
+  font-weight: 500;
   color: var(--muted);
-  padding: 12px 12px;
+  padding: 12px 20px;
+  background: var(--surface-raised);
   border-bottom: 1px solid var(--line);
 }
 .order-table-head > span:nth-child(4) {
   text-align: right;
 }
 .order-row {
-  padding: 12px 12px;
+  padding: 12px 20px;
   border-bottom: 1px solid var(--line);
   min-height: 64px;
-}
-.order-row:hover {
-  background: var(--surface);
+  transition: background-color var(--dur-hover) var(--ease-out);
 }
 .order-identity {
   min-width: 0;
@@ -1042,9 +1071,10 @@ h1 {
   color: var(--muted);
 }
 .table-empty {
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  padding: 25px 12px;
+  background: var(--surface);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-lg);
+  padding: 28px 24px;
   color: var(--muted);
   font-size: 14px;
 }
