@@ -41,6 +41,7 @@ ssh tariq@5.78.87.188 'mkdir -p ~/solpouch/keys ~/solpouch/certs'
 scp deploy/vps/compose.yaml tariq@5.78.87.188:solpouch/
 # The proxy's address on trading-os-edge, for the rate limiter's trusted-proxy check:
 ssh tariq@5.78.87.188 "docker inspect shared-automation-proxy-1 --format '{{(index .NetworkSettings.Networks \"trading-os-edge\").IPAddress}}'"
+# 172.20.0.3 as of 2026-10-04; re-check if the proxy container is recreated.
 ```
 
 The server has no swap; 2 GB of it keeps a memory spike from killing containers
@@ -60,7 +61,7 @@ The teammate appends `deploy/vps/Caddyfile` to the shared Caddyfile with the hos
 
 ```bash
 ssh tariq@5.78.87.188
-cd ~/solpouch && printf 'SESSION_SECRET=%s\nPROXY_IP=<proxy IP>\n' "$(openssl rand -hex 32)" > .env
+cd ~/solpouch && printf 'SESSION_SECRET=%s\nPROXY_IP=172.20.0.3\n' "$(openssl rand -hex 32)" > .env
 docker compose up -d
 curl https://api-next.solpouch.tech/health     # 200
 curl -I https://next.solpouch.tech/            # 200 (sign-in won't work on this host, expected)
@@ -80,7 +81,7 @@ curl -I https://next.solpouch.tech/            # 200 (sign-in won't work on this
    chmod 600 .env && chmod 644 certs/* && chmod 600 keys/*
    docker run --rm -v "$PWD/keys:/k" alpine chown 1000:1000 /k/owner.json /k/agent.json
    sed -i -e '/^TRUSTED_PROXY_/d' -e 's#^DATABASE_CA_CERT=.*#DATABASE_CA_CERT=/app/certs/timescale-ca.pem#' .env
-   echo 'PROXY_IP=<proxy IP>' >> .env
+   echo 'PROXY_IP=172.20.0.3' >> .env
    ```
    `OWNER_KEYPAIR_PATH`/`AGENT_KEYPAIR_PATH` stay `.keys/...` (resolved from `/app`). Leave
    `.keys/checkout.json` and `.keys/android/` on the laptop: the backend doesn't read them.
