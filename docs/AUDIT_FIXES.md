@@ -43,7 +43,7 @@ WEB_TEST_URL=http://localhost:3003 pnpm --filter @solpouch/web test:browser
 WEB_TEST_URL=http://localhost:3003 pnpm --filter @solpouch/web test:smoke
 ```
 
-Browser tests require Playwright/Chrome; `PLAYWRIGHT_MODULE` can identify an existing Playwright installation. They intercept backend/provider traffic and never move real funds.
+Browser tests require Playwright/Chrome; `PLAYWRIGHT_MODULE` can identify an existing Playwright installation. Set `BROWSER_CHANNEL=chromium` to use Playwright's bundled Chromium instead of installed Chrome. If the web build used a non-default `NEXT_PUBLIC_BACKEND_URL` (for example, so unmatched requests cannot reach a locally running backend), pass the same origin as `WEB_TEST_BACKEND_URL`. They intercept backend/provider traffic and never move real funds.
 
 The isolated PostgreSQL suite accepts `POSTGRES_INTEGRATION_URL` pointing at a local disposable server. Optional `POSTGRES_INTEGRATION_PG_CTL` and `POSTGRES_INTEGRATION_DATA_DIR` enable the actual restart test, which validates the target before stopping it. It uses fresh schemas and the production relational store, excluding Timescale-only analytics DDL. Never point this suite at a production database.
 

@@ -5,6 +5,8 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? 'playwright')
 const browser = await chromium.launch({ channel: process.env.BROWSER_CHANNEL ?? 'chrome', headless: true });
 after(() => browser.close());
 const origin = process.env.WEB_TEST_URL ?? 'http://localhost:3005';
+// Must match the NEXT_PUBLIC_BACKEND_URL the web build was made with.
+const backend = (process.env.WEB_TEST_BACKEND_URL ?? 'http://localhost:8787').replace(/\/$/, '');
 // Alice has a linked wallet (top-ups require one); Bob does not.
 const a = { token: 'fixture-a', user: { email: 'alice@example.test', name: 'Alice', wallet: '11111111111111111111111111111112' } };
 const b = { token: 'fixture-b', user: { email: 'bob@example.test', name: 'Bob' } };
@@ -14,7 +16,7 @@ const deferred = () => { let resolve; const promise = new Promise(r => resolve =
 async function setup(t, handler = async () => false) {
   const page = await browser.newPage(); t.after(() => page.close());
   await page.addInitScript(a => localStorage.setItem('solpouch.session', JSON.stringify(a)), a);
-  await page.route('http://localhost:8787/**', async route => {
+  await page.route(`${backend}/**`, async route => {
     const path = new URL(route.request().url()).pathname;
     const user = route.request().headers().authorization === 'Bearer fixture-b' ? b.user : a.user;
     if (await handler(route, path, user)) return;
@@ -196,4 +198,54 @@ test('another account can sign out while the first server revocation is still pe
   await page.waitForFunction(() => localStorage.getItem('solpouch.session') === null);
   held.resolve(); await page.waitForTimeout(100);
   assert.deepEqual(calls, ['Bearer fixture-a', 'Bearer fixture-b']);
+});
+test('top-ups need a linked wallet; a WalletRequired reply swaps the form for the link prompt', async t => {
+  const starts = [];
+  const page = await setup(t, async (route, path, user) => {
+    if (path === '/pouches/p') { await route.fulfill({ json: pouch }); return true; }
+    if (path === '/topups' && route.request().method() === 'POST') {
+      starts.push(user.email);
+      await route.fulfill({ status: 409, json: { error: 'wallet missing', code: 'WalletRequired' } }); return true;
+    }
+    return false;
+  });
+  const prompt = page.getByText('Link a wallet to add money. Top-ups are recorded against your linked wallet.', { exact: true });
+  const amount = page.getByRole('spinbutton', { name: 'Custom amount in USDC', exact: true });
+  await page.goto(`${origin}/pouches/p`);
+  await amount.fill('5');
+  await page.getByRole('button', { name: /^Add .*5\.00 USDC$/ }).click();
+  await prompt.waitFor();
+  assert.equal(await amount.count(), 0);
+  assert.deepEqual(starts, ['alice@example.test']);
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('solpouch.session')).user.wallet), undefined);
+  // No injected wallet in this browser: the prompt explains instead of offering a dead button.
+  await page.getByText(/No wallet found/).waitFor();
+  await switchAccount(page, b);
+  await prompt.waitFor();
+  assert.equal(await amount.count(), 0);
+  assert.deepEqual(starts, ['alice@example.test']);
+});
+test('pouch rules are checked inline before saving, including the auto-pay cap', async t => {
+  const saves = [];
+  const page = await setup(t, async (route, path) => {
+    if (path === '/pouches/p') { await route.fulfill({ json: { ...pouch, confirmAbove: 0 } }); return true; }
+    if (path === '/pouches/p/rules') { const body = route.request().postDataJSON(); saves.push(body); await route.fulfill({ json: { ...pouch, ...body } }); return true; }
+    return false;
+  });
+  await page.goto(`${origin}/pouches/p`);
+  const perOrder = page.getByRole('spinbutton', { name: 'Per-order limit · USDC', exact: true });
+  const daily = page.getByRole('spinbutton', { name: 'Daily limit · USDC', exact: true });
+  const autoPay = page.getByRole('spinbutton', { name: 'Pay automatically up to · USDC', exact: true });
+  const save = page.getByRole('button', { name: 'Save changes', exact: true });
+  await perOrder.fill('60'); await daily.fill('50'); await save.click();
+  await page.getByRole('alert').filter({ hasText: 'Must be at least the per-order limit.' }).waitFor();
+  assert.equal(await daily.getAttribute('aria-invalid'), 'true');
+  assert.equal(await perOrder.getAttribute('aria-invalid'), 'false');
+  await daily.fill('100'); await autoPay.fill('70'); await save.click();
+  await page.getByRole('alert').filter({ hasText: 'Cannot be higher than the per-order limit.' }).waitFor();
+  assert.equal(await autoPay.getAttribute('aria-invalid'), 'true');
+  assert.equal(saves.length, 0);
+  await autoPay.fill('20'); await save.click();
+  await page.getByText('Spending rules saved.', { exact: true }).waitFor();
+  assert.deepEqual(saves, [{ maxPerOrder: 60000000, dailyLimit: 100000000, confirmAbove: 20000000, allowedMerchantIds: [] }]);
 });
