@@ -9,6 +9,8 @@ import type { VaultClient } from "./types.js";
 export class SyncedVaultClient implements VaultClient {
   constructor(private inner: VaultClient, private store: Store) {}
 
+  async assertDevnet() { if (!this.inner.assertDevnet) throw new Error("Devnet chain verification unavailable"); await this.inner.assertDevnet(); }
+
   get authorizedOwner() { return this.inner.authorizedOwner; }
 
   get getState() {

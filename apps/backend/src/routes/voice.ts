@@ -1,3 +1,4 @@
+import { prepareDemoCheckout } from "../services/demoCheckout.js";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { consumeBudget, clientIp } from "../security/rateLimit.js";
@@ -12,7 +13,7 @@ import { cancelOrder, confirmOrder, createOrder, getOwnedOrder, HttpError, type 
  * SAFETY: there is deliberately no tool that tops up, creates pouches, changes rules or unfreezes.
  * The voice agent can only read, build a cart, confirm/cancel that cart, and freeze.
  */
-export const VOICE_TOOLS = ["get_pouches", "create_order", "confirm_order", "cancel_order", "freeze_all"] as const;
+export const VOICE_TOOLS = ["get_pouches", "create_order", "prepare_demo_checkout", "confirm_order", "cancel_order", "freeze_all"] as const;
 
 const usd = (m: number) => `$${toUsdc(m).toFixed(2)}`;
 let warned = false;
@@ -33,6 +34,10 @@ export function readback(order: Order): string {
     const sub = l.substitution ? ` as a substitute. ${l.note ?? ""}`.trimEnd() : "";
     return `${l.qty} ${l.product.name}, ${usd(l.lineTotal)}${sub}`;
   });
+  if (order.fulfillment?.via === "demo" && order.fulfillment.demo) {
+    const demo = order.fulfillment.demo;
+    return `Devnet demo only: ${parts.join("; ")}. Source estimate CAD ${usd(demo.sourceTotal)}, converted at ${demo.usdPerCad} USD per CAD. Pay ${toUsdc(order.total).toFixed(6)} test USDC to ${demo.payTo}. No retailer order will be placed. Do you approve this demo payment?`;
+  }
   if (isCheckoutReference(order)) {
     return `From ${merchant}: ${parts.join("; ")}. Estimated total CAD ${usd(order.total)}. This is a search estimate only. Check current prices and complete checkout with the retailer using the link on the order page. Solpouch has not placed an order.`;
   }
@@ -103,14 +108,21 @@ export function voiceRoutes(deps: Deps) {
           throw e;
         }
       }
+      case "prepare_demo_checkout": {
+        const {orderId,version} = orderIdBody.extend({version:z.number().int().positive()}).parse(body);
+        try {
+          const order = await prepareDemoCheckout(deps,email,orderId,version);
+          return c.json({say:readback(order),orderId:order.id,version:order.version,needsConfirmation:true,demo:true});
+        } catch (e) { if (e instanceof HttpError) return c.json({say:e.message,code:e.code,needsConfirmation:false}); throw e; }
+      }
       case "confirm_order": {
         const { orderId, version } = orderIdBody.extend({version:z.number().int().positive().optional()}).parse(body);
         const draft = await getOwnedOrder(deps, orderId, email);
         if (draft.status === "draft" && draft.version !== (version ?? -1)) return c.json({say:"This cart changed. Review it again before approving.",status:"draft",code:"RecordChanged"});
-        if (draft.status === "draft" && Date.now() - Date.parse(draft.createdAt) < VOICE_CONFIRM_MIN_AGE_MS) return c.json({say:"Please listen to the read-back first, then say yes again to place the order.",status:"draft",needsConfirmation:true});
+        if (draft.status === "draft" && Date.now() - Date.parse(draft.fulfillment?.demo?.preparedAt ?? draft.createdAt) < VOICE_CONFIRM_MIN_AGE_MS) return c.json({say:"Please listen to the read-back first, then say yes again to place the order.",status:"draft",needsConfirmation:true});
         try {
           const order = await confirmOrder(deps, email, orderId, version ?? -1);
-          return c.json({ say: order.txSignature?.startsWith("mock") ? `Demo payment recorded: ${usd(order.total)}. No real funds moved.` : `Payment recorded: ${usd(order.total)}.`, status: order.status });
+          return c.json({ say: order.fulfillment?.via === "demo" ? `Devnet demo payment recorded: ${toUsdc(order.total).toFixed(6)} test USDC. No retailer order was placed.` : order.txSignature?.startsWith("mock") ? `Demo payment recorded: ${usd(order.total)}. No real funds moved.` : `Payment recorded: ${usd(order.total)}.`, status: order.status });
         } catch (e) {
           if (e instanceof HttpError && (e.code === "WebCheckoutRequired" || e.code === "RecordChanged")) {
             return c.json({ say: e.message, status: "draft", code: e.code });

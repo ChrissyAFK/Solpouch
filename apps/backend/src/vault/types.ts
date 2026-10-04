@@ -12,6 +12,8 @@ export class VaultRejected extends Error {
 export type VaultState = Pick<Pouch, "balance" | "spentToday" | "frozen" | "maxPerOrder" | "dailyLimit" | "allowedMerchantIds"> & { /** ISO start of the rolling 24h spend window, when known. */ spentSince?: string };
 
 export interface VaultClient {
+  /** Required for explicitly enabled devnet demo payments. Checks actual RPC genesis. */
+  assertDevnet?(): Promise<void>;
   /** `stored` is the mirrored pouch, used to map the shared checkout key back to web:/any-store entries. */
   getState?(pouchId: string, stored?: Pouch): Promise<VaultState>;
   readonly authorizedOwner?: string;

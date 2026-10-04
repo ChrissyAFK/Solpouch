@@ -71,3 +71,17 @@ test('silent agent reply times out without replaying the request', async t => {
  await page.getByText('The agent reply timed out. Check your orders before repeating a payment request.',{exact:true}).waitFor();
  assert.equal(sockets,1);assert.equal(messages,1);
 });
+test('demo checkout requires preparation then a separate approval of converted amount',async t=>{
+ const reference={...draft,version:4,merchantId:'web:ubereats.com',store:{name:"McDonald's",domain:'ubereats.com'},fulfillment:{via:'service',label:'Uber Eats'},total:15990000};
+ const converted={...reference,version:5,total:11672700,fulfillment:{via:'demo',label:'Devnet demo checkout',demo:{sourceCurrency:'CAD',sourceTotal:15990000,sourceLines:reference.lines,usdPerCad:'0.73',payTo:'FixtureDestinationWallet',preparedAt:new Date().toISOString()}}};
+ let payments=0;const page=await setup(t,[reference]);
+ await page.route('**/orders/cartfixture/demo-checkout',r=>{assert.equal(r.request().postDataJSON().version,4);return r.fulfill({json:converted});});
+ await page.route('**/orders/cartfixture/confirm',r=>{assert.equal(r.request().postDataJSON().version,5);payments++;return r.fulfill({json:{...converted,status:'paid'}});});
+ const cards=page.getByRole('region',{name:'Recent carts and payments'});
+ await cards.getByRole('button',{name:'Prepare devnet demo checkout'}).click();
+ await cards.getByText('No retailer order is placed. Devnet test tokens only.').waitFor();
+ await cards.getByText('Checkout wallet: FixtureDestinationWallet').waitFor();
+ assert.equal(payments,0);
+ await cards.getByRole('button',{name:'Pay demo checkout · 11.672700 test-USDC'}).click();
+ await cards.getByText('paid',{exact:true}).waitFor();assert.equal(payments,1);
+});

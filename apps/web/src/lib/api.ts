@@ -139,9 +139,13 @@ export type WalletUser = { email: string; name?: string; picture?: string; walle
 export type AuthSession = { id: string; createdAt: string; expiresAt: string; current: boolean };
 
 export type FundingRequest = { id: string; direction: "BUY" | "SELL"; country: "US" | "CA"; currency: "USD" | "CAD"; amount: string; wallet: string; environment: "staging"; status: "created" | "session_ready" | "session_uncertain" | "processing" | "provider_completed" | "sandbox_completed" | "confirmed" | "failed" | "cancelled" | "refunded"; createdAt: string; updatedAt: string; providerOrderId?: string; txSignature?: string; cryptoAmount?: string; message?: string };
-export type FundingConfig = { environment: "staging"; productionEnabled: false; configured: boolean; countries: { country: "US" | "CA"; currency: "USD" | "CAD"; buyEnabled: boolean; sellEnabled: boolean }[]; notice: string };
+export type TransakFundingConfig = { provider?: "transak"; environment: "staging"; productionEnabled: false; configured: boolean; countries: { country: "US" | "CA"; currency: "USD" | "CAD"; buyEnabled: boolean; sellEnabled: boolean }[]; notice: string };
 export type ShoppingListItem = { name: string; qty: number };
 export type ShoppingList = { id: string; version?: number; name: string; items: ShoppingListItem[]; createdAt: string; updatedAt: string };
+export type StripeFundingConfig = { provider: "stripe"; environment: "test"; configured: boolean; usdPerCad: string; minAmountCad: number; maxAmountCad: number; mintEnabled: boolean };
+export type StripeFundingRequest = { id: string; provider: "stripe"; status: "created" | "checkout_ready" | "paid" | "confirmed" | "expired"; amountCad: string; usdcAmount: string; wallet: string; sessionId?: string; txSignature?: string; createdAt: string; updatedAt: string };
+export type FundingConfig = TransakFundingConfig | StripeFundingConfig;
+
 export const api = {
   shoppingListStatus: () => req<{ temporary: boolean }>("/shopping-lists/status"),
   shoppingLists: () => req<ShoppingList[]>("/shopping-lists"),
@@ -151,6 +155,10 @@ export const api = {
   draftShoppingList: (id: string, version: number, pouchId?: string) => post<Order>(`/shopping-lists/${encodeURIComponent(id)}/draft`, { version, pouchId }),
   products: (merchantId: string) => req<Product[]>(`/merchants/${encodeURIComponent(merchantId)}/products`),
   editOrder: (id: string, version: number, lines: { index: number; qty: number; productId?: string }[]) => req<Order>(`/orders/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ version, lines }) }),
+  prepareDemoCheckout: (id: string, version: number) => post<Order>(`/orders/${encodeURIComponent(id)}/demo-checkout`, { version }),
+  stripeCheckout: (body: { amountCad: string; idempotencyKey: string }) => post<{ request: StripeFundingRequest; url?: string }>("/funding/stripe/checkout", body),
+  stripeFunding: (id: string, signal?: AbortSignal) => req<StripeFundingRequest>(`/funding/stripe/${encodeURIComponent(id)}`, { signal }),
+  stripeHistory: () => req<StripeFundingRequest[]>("/funding/stripe"),
   fundingConfig: () => req<FundingConfig>("/funding/config"),
   fundingRequests: () => req<FundingRequest[]>("/funding"),
   startFunding: (body: { country: "US" | "CA"; direction: "BUY" | "SELL"; amount: string; idempotencyKey: string }) => post<{ request: FundingRequest; widgetUrl?: string }>("/funding", body),

@@ -1,3 +1,4 @@
+import { validateDemoCheckout } from "./demoCheckout.js";
 import { consumeAiBudget } from "../security/rateLimit.js";
 import { validateOrderLines } from "./orderValidation.js";
 import { PaymentPending } from "../vault/recovery.js";
@@ -17,6 +18,9 @@ import { VaultRejected, type VaultClient } from "../vault/types.js";
 import type { FundingRepository } from "../funding/repository.js";
 
 export interface Deps {
+  stripeRepository?: import('../stripe/repository.js').StripeRepository;
+  stripeProvider?: import('../stripe/provider.js').StripeProvider;
+  stripeMint?: (request: import('../stripe/repository.js').StripeFundingRequest, repository: import('../stripe/repository.js').StripeRepository) => Promise<{txSignature:string}>;
   fundingRepository?: FundingRepository;
   store: Store;
   vault: VaultClient;
@@ -75,7 +79,7 @@ export const AUTO_CONFIRM_MATCH = 0.9;
  */
 export function autoConfirmEligible(pouch: Pouch, order: Order): boolean {
   if (!(pouch.confirmAbove > 0) || order.status !== "draft" || order.pouchId !== pouch.id) return false;
-  if (isCheckoutReference(order) || !merchants.some((m) => m.id === order.merchantId)) return false;
+  if (order.fulfillment?.via === "demo" || isCheckoutReference(order) || !merchants.some((m) => m.id === order.merchantId)) return false;
   if (!isAnyStore(pouch) && !pouch.allowedMerchantIds.includes(order.merchantId)) return false;
   if (!(order.total > 0) || order.total > pouch.confirmAbove) return false;
   if (pouch.frozen || order.total > pouch.maxPerOrder || order.total > pouch.balance || pouch.spentToday + order.total > pouch.dailyLimit) return false;
@@ -281,9 +285,16 @@ export async function confirmOrder(deps: Deps, ownerEmail: string, id: string, e
     // Auto-pay: decide under the lock on the pouch and order as they are now; no longer eligible stays a draft.
     if (opts.auto && order.status === "draft" && !autoConfirmEligible(pouch, order)) return order;
     const merchant = getMerchant(order.merchantId);
+    const demo = order.fulfillment?.via === "demo";
+    let payTo = merchant?.payTo;
+    if (demo) {
+      const operation = order.status === "paying" ? await deps.store.getOperation(`pay:${order.id}`) : undefined;
+      if (operation?.kind === "pay" && operation.pouchId === order.pouchId) payTo = order.fulfillment?.demo?.payTo;
+      else payTo = await validateDemoCheckout(deps,order);
+    }
     if (order.status === "draft" && !isAnyStore(pouch) && !pouch.allowedMerchantIds.includes(order.merchantId)) throw new HttpError(422,"This pouch no longer allows this store. Review its store rules before paying.","MerchantNotAllowed");
-    if (isCheckoutReference(order) || !merchants.some(m=>m.id===order.merchantId)) throw new HttpError(422, "This is a search estimate, not a payable quote. Check the current price and complete checkout with the retailer. Solpouch has not placed an order.", "WebCheckoutRequired");
-    if (!merchant) throw new HttpError(404,"Merchant not found");
+    if (!demo && (isCheckoutReference(order) || !merchants.some(m=>m.id===order.merchantId))) throw new HttpError(422, "This is a search estimate, not a payable quote. Check the current price and complete checkout with the retailer. Solpouch has not placed an order.", "WebCheckoutRequired");
+    if (!payTo) throw new HttpError(404,"Merchant not found");
     // Once paying, recover the original signed transaction even if rules changed later.
     if (order.status === "draft") {
       if (order.total <= 0 || validateOrderLines(order.lines) !== order.total) throw new HttpError(422,"Order total does not match its items");
@@ -294,7 +305,7 @@ export async function confirmOrder(deps: Deps, ownerEmail: string, id: string, e
     }
     let txSignature: string;
     try {
-      ({txSignature}=await deps.vault.pay(pouch,merchant.payTo,order.total,order.id));
+      ({txSignature}=await deps.vault.pay(pouch,payTo,order.total,order.id));
     } catch(e) {
       if(e instanceof VaultRejected) {
         await deps.store.saveOrder({...order,status:"rejected",rejectReason:e.code});

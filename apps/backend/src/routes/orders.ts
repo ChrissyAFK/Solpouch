@@ -1,3 +1,4 @@
+import { prepareDemoCheckout } from "../services/demoCheckout.js";
 import { editDraft, editDraftBody } from "../services/shopping.js";
 import { createInstacartList, trustedInstacartUrl } from "../services/instacart.js";
 import { HttpError } from "../services/orders.js";
@@ -29,6 +30,7 @@ export function orderRoutes(deps: Deps) {
     const order = await deps.store.withPouchLock(initial.pouchId, async () => {
       const order = await getOwnedOrder(deps, initial.id, email);
       if (order.status !== "draft") throw new HttpError(409, "Only an unpaid draft can be sent to Instacart.");
+      if (order.fulfillment?.via === "demo") throw new HttpError(409,"Demo quotes cannot become retailer checkout links.");
       const saved = order.fulfillment;
       if (saved?.via === "instacart" && saved.linkStatus === "ready" && trustedInstacartUrl(saved.checkoutUrl) && Date.parse(saved.linkExpiresAt ?? "") > Date.now()) return order;
       const lines = order.lines.filter(line => line.product && line.qty > 0).map(line => ({ name: line.product!.name, quantity: line.qty }));
@@ -36,6 +38,11 @@ export function orderRoutes(deps: Deps) {
       return deps.store.saveOrder({ ...order, fulfillment: { via: "instacart", label: "Instacart shopping list", ...link } });
     });
     return c.json(order);
+  });
+
+  app.post("/:id/demo-checkout", async c => {
+    const body = z.object({version:z.number().int().positive()}).strict().parse(await c.req.json());
+    return c.json(await prepareDemoCheckout(deps,c.get("user").email,c.req.param("id"),body.version));
   });
 
   app.patch("/:id", async c => c.json(await editDraft(deps,c.get("user").email,c.req.param("id"),editDraftBody.parse(await c.req.json()))));

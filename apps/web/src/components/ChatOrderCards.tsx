@@ -1,4 +1,5 @@
 "use client";
+import { DemoCheckoutSummary } from "./DemoCheckoutSummary";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isCheckoutReference, orderCurrency, toUsdc, type Order } from "@solpouch/shared";
@@ -31,12 +32,12 @@ export function ChatOrderCards({ refreshKey }: { refreshKey: number }) {
   }, [sessionKey]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; sequence.current++; }; }, []);
   useEffect(() => { if (sessionKey) void load(); }, [load, refreshKey, sessionKey]);
-  async function confirm(order: Order) {
-    if (!current() || busy || isCheckoutReference(order)) return;
+  async function confirm(order: Order, prepareDemo = false) {
+    if (!current() || busy || (isCheckoutReference(order) && !prepareDemo)) return;
     setBusy(order.id);
     setError(null);
     try {
-      const result = await api.confirm(order.id, order.version ?? 0);
+      const result = prepareDemo ? await api.prepareDemoCheckout(order.id, order.version ?? 0) : await api.confirm(order.id, order.version ?? 0);
       if (!current()) return;
       sequence.current++;
       setOrders(list => list.map(item => item.id === result.id ? result : item));
@@ -66,10 +67,12 @@ export function ChatOrderCards({ refreshKey }: { refreshKey: number }) {
             <span>{order.status === "paying" ? "Payment confirmation pending" : order.status}</span>
             <ul>{order.lines.map((line, index) => <li key={index}>{line.qty} × {line.product?.name ?? line.requested}{line.substitution ? " · substitution" : ""}{line.note ? ` — ${line.note}` : ""}</li>)}</ul>
             <b>{total} {currency}</b>
+            <DemoCheckoutSummary order={order} />
+            {reference && order.status === "draft" && orderCurrency(order) === "CAD" && <button type="button" disabled={!!busy || order.total <= 0} onClick={() => void confirm(order, true)}>Prepare devnet demo checkout</button>}
             {reference && <p>Check the retailer’s price and complete checkout there. No retailer purchase is confirmed.</p>}
             <Link href={`/order?order=${encodeURIComponent(order.id)}`}>Review cart and receipt</Link>
             {reference && order.fulfillment?.checkoutUrl && /^https?:\/\//i.test(order.fulfillment.checkoutUrl) && <a href={order.fulfillment.checkoutUrl} target="_blank" rel="noopener noreferrer">Open retailer checkout ↗</a>}
-            {!reference && (order.status === "draft" || order.status === "paying") && <button type="button" disabled={!!busy || order.total <= 0} onClick={() => void confirm(order)}>{busy === order.id ? "Checking…" : order.status === "paying" ? "Check payment status" : `Approve ${total} USDC & pay`}</button>}
+            {!reference && (order.status === "draft" || order.status === "paying") && <button type="button" disabled={!!busy || order.total <= 0} onClick={() => void confirm(order)}>{busy === order.id ? "Checking…" : order.status === "paying" ? "Check payment status" : order.fulfillment?.via === "demo" ? `Pay demo checkout · ${toUsdc(order.total).toFixed(6)} test-USDC` : `Approve ${total} USDC & pay`}</button>}
           </article>
         );
       })}
