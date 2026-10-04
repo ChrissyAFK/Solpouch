@@ -145,6 +145,12 @@ describe("bug 6: web search timeout", () => {
   });
 });
 
+describe("live bug F: a product that implies a store stays an item", () => {
+  it("parse prompt keeps named products as items even when they imply the store", () => {
+    expect(PARSE_PROMPT).toMatch(/"Big Mac meal".*items.*Big Mac meal/s);
+  });
+});
+
 describe("live bugs A-D", () => {
   it("A: store plus cap with no items lets the search choose", async () => {
     m.parse.mockImplementation(() => ({ store: "McDonald's", items: [] }));

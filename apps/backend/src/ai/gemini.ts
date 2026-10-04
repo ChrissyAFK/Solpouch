@@ -22,6 +22,7 @@ Return JSON: { "pouchHint": string|null, "store": string|null, "service": string
 - "store" is the shop, restaurant or brand the user names (e.g. "McDonald's", "Tim Hortons", "Walmart"), else null.
 - "service" is the delivery app the user names (e.g. "Uber Eats", "DoorDash"), else null.
 - If the user names a store but no specific items ("a McDonald's order"), return an empty items array.
+- Any product the user names is always an item, even when it implies the store: "Big Mac meal" gives items [{"requested": "Big Mac meal", "qty": 1}] with store "McDonald's".
 - "requested" is the product in plain words, without quantity or filler (e.g. "8 foot 2x4 stud", "oat milk", "pad thai").
 - "qty" is how many units the user wants (default 1). "ten boxes of screws" is qty 10.
 - qty counts the units as sold: "2 dozen eggs" is qty 2 of "dozen eggs" (not 24 eggs), "a litre of milk" is qty 1.
