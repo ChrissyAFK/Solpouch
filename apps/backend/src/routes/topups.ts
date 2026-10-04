@@ -14,9 +14,9 @@ const startBody = z.object({
   reason: z.string().trim().max(300).optional(),
 });
 
-/** TOPUP_COOLDOWN_SECONDS (default 60). Throws a 503 when misconfigured. */
+/** TOPUP_COOLDOWN_SECONDS (default 5). Throws a 503 when misconfigured. */
 export function topupCooldownSeconds(): number {
-  const configured = process.env.TOPUP_COOLDOWN_SECONDS ?? "60";
+  const configured = process.env.TOPUP_COOLDOWN_SECONDS ?? "5";
   const v = Number(configured);
   if (!configured.trim() || !Number.isSafeInteger(v) || v < 0) {
     throw new HttpError(503, "Top-ups are temporarily unavailable. Please try again later.");
