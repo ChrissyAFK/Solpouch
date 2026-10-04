@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS pouches (
 ALTER TABLE pouches ADD COLUMN IF NOT EXISTS balance     bigint NOT NULL DEFAULT 0;
 ALTER TABLE pouches ADD COLUMN IF NOT EXISTS spent_today bigint NOT NULL DEFAULT 0;
 ALTER TABLE pouches ADD COLUMN IF NOT EXISTS spent_day   date;
+ALTER TABLE pouches ADD COLUMN IF NOT EXISTS spent_since timestamptz;
 ALTER TABLE pouches ADD COLUMN IF NOT EXISTS owner_email text;
 CREATE INDEX IF NOT EXISTS pouches_owner_email_idx ON pouches (owner_email);
 

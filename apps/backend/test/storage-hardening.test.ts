@@ -182,4 +182,11 @@ describe("Postgres boundary checks (mocked connections; no live database)", () =
     row.spent_day = new Date("2000-01-01");
     expect((await store.getPouch("p"))?.spentToday).toBe(0);
   });
+  it("uses the rolling 24h window when spent_since is set, ignoring the calendar day", async () => {
+    const row = { id: "p", name: "P", address: "a", balance: "10", max_per_order: "20", daily_limit: "30", spent_today: "9", spent_day: new Date("2000-01-01"), spent_since: new Date(Date.now() - 23 * 3600 * 1000), confirm_above: "0", allowed_merchant_ids: [], frozen: false, version: "0" };
+    const store = postgresFixture({ query: vi.fn(async () => ({ rows: [row] })) });
+    expect((await store.getPouch("p"))?.spentToday).toBe(9);
+    row.spent_since = new Date(Date.now() - 25 * 3600 * 1000);
+    expect((await store.getPouch("p"))?.spentToday).toBe(0);
+  });
 });

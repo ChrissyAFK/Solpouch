@@ -4,7 +4,7 @@ import { requestDeps } from "../security/access.js";
 import { z } from "zod";
 import { toUsdc, type Order } from "@solpouch/shared";
 import { getMerchant } from "../merchants/index.js";
-import { cancelOrder, confirmOrder, createDraft, HttpError, type Deps } from "../services/orders.js";
+import { cancelOrder, confirmOrder, createDraft, HttpError, needsConfirmation, type Deps } from "../services/orders.js";
 
 /**
  * ElevenLabs server-tool webhook.
@@ -51,7 +51,10 @@ export function voiceRoutes(_baseDeps: Deps) {
         const b = requestBody.parse(body);
         try {
           const order = await createDraft(deps, b.request, b.pouchId);
-          return c.json({ say: readback(order), orderId: order.id, total: usd(order.total), needsConfirmation: true });
+          const pouch = await deps.store.getPouch(order.pouchId);
+          const ask = !pouch || needsConfirmation(pouch, order.total);
+          const say = ask ? readback(order) : `${readback(order)} This is under this pouch's ask-first amount, so I can place it right away if you want.`;
+          return c.json({ say, orderId: order.id, total: usd(order.total), needsConfirmation: ask });
         } catch (e) {
           // Speakable failure instead of an error response the agent cannot read out.
           if (e instanceof HttpError) return c.json({ say: e.message, needsConfirmation: false, ...(e.code ? { code: e.code } : {}) });
@@ -62,7 +65,9 @@ export function voiceRoutes(_baseDeps: Deps) {
         const { orderId } = orderIdBody.parse(body);
         // Stop the model confirming in the same breath as creating: the user must hear the read-back first.
         const draft = await deps.store.getOrder(orderId);
-        if (draft?.status === "draft" && Date.now() - Date.parse(draft.createdAt) < VOICE_CONFIRM_MIN_AGE_MS) {
+        const draftPouch = draft?.status === "draft" ? await deps.store.getPouch(draft.pouchId) : undefined;
+        const mustAsk = !draftPouch || needsConfirmation(draftPouch, draft!.total);
+        if (mustAsk && draft?.status === "draft" && Date.now() - Date.parse(draft.createdAt) < VOICE_CONFIRM_MIN_AGE_MS) {
           return c.json({ say: "Please listen to the read-back first, then say yes again to place the order.", status: "draft", needsConfirmation: true });
         }
         try {

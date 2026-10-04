@@ -2,13 +2,25 @@ import { requestDeps } from "../security/access.js";
 import { z } from "zod";
 import { Hono } from "hono";
 import type { SpendPoint } from "@solpouch/shared";
-import { type Deps } from "../services/orders.js";
+import { HttpError, type Deps } from "../services/orders.js";
 
 export function statsRoutes(_baseDeps: Deps) {
   const app = new Hono();
   app.get("/spend", async (c) => {
     const bucket = z.enum(["hour", "day"]).parse(c.req.query("bucket") ?? "day");
-    const orders = (await requestDeps(c).store.listOrders(c.req.query("pouchId"))).filter((o) => o.status === "paid");
+    const store = requestDeps(c).store;
+    const pouchId = c.req.query("pouchId");
+    // The request store only lists the signed-in owner's pouches, so this is the owner scope.
+    const owned = (await store.listPouches()).map((p) => p.id);
+    if (pouchId && !owned.includes(pouchId)) throw new HttpError(404, "Pouch not found");
+    // A failing time-series query must not take the chart down: fall through to the orders-based numbers.
+    const series = await store.spendSeries(pouchId ? [pouchId] : owned, bucket, new Date(0).toISOString()).catch((e) => {
+      console.warn(`[stats] spendSeries failed: ${e instanceof Error ? e.message : e}`);
+      return [] as SpendPoint[];
+    });
+    if (series.length) return c.json(series);
+    // Time-series table not backfilled yet: compute from paid orders.
+    const orders = (await store.listOrders(pouchId)).filter((o) => o.status === "paid");
     const points = new Map<string, SpendPoint>();
     for (const o of orders) {
       const d = new Date(o.createdAt);

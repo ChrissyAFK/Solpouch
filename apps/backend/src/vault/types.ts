@@ -9,7 +9,7 @@ export class VaultRejected extends Error {
   }
 }
 
-export type VaultState = Pick<Pouch, "balance" | "spentToday" | "frozen" | "maxPerOrder" | "dailyLimit" | "allowedMerchantIds">;
+export type VaultState = Pick<Pouch, "balance" | "spentToday" | "frozen" | "maxPerOrder" | "dailyLimit" | "allowedMerchantIds"> & { /** ISO start of the rolling 24h spend window, when known. */ spentSince?: string };
 
 export interface VaultClient {
   /** `stored` is the mirrored pouch, used to map the shared checkout key back to web:/any-store entries. */

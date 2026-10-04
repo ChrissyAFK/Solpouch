@@ -32,6 +32,10 @@ const updateBody = z.object({
 }).strict().refine((body) => Object.values(body).some((value) => value !== undefined), "Provide a rule to update");
 
 
+function assertConfirmAbove(confirmAbove: number, maxPerOrder: number) {
+  if (confirmAbove > maxPerOrder) throw new HttpError(400, "The ask-first amount cannot be above the per-order limit");
+}
+
 async function get(deps: Deps, id: string) {
   const pouch = await deps.store.getPouch(id);
   if (!pouch) throw new HttpError(404, "Pouch not found");
@@ -46,6 +50,7 @@ export function pouchRoutes(_baseDeps: Deps) {
     const deps = requestDeps(c);
     const email = c.get("email");
     const body = createBody.parse(await c.req.json());
+    assertConfirmAbove(body.confirmAbove ?? 0, body.maxPerOrder);
     return deps.store.withPouchLock(`owner:${email}`, async () => {
       if ((await deps.store.listPouches()).length >= 50) throw new HttpError(409, "Pouch limit reached (50)");
       const pouch: StoredPouch = {
@@ -75,6 +80,7 @@ export function pouchRoutes(_baseDeps: Deps) {
     await get(deps, id);
     return deps.store.withPouchLock(id, async () => {
       const pouch = await get(deps, id);
+      assertConfirmAbove(body.confirmAbove ?? pouch.confirmAbove, body.maxPerOrder ?? pouch.maxPerOrder);
       await deps.vault.updateRules({ ...pouch, ...updates });
       // The vault adapter may have saved a refreshed balance/version while applying rules.
       const latest = await get(deps, id);

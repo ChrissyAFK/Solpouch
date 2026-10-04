@@ -1,6 +1,6 @@
-import { toMicros, type Order, type Pouch, type TopUp } from "@solpouch/shared";
+import { toMicros, type Order, type Pouch, type SpendPoint, type TopUp } from "@solpouch/shared";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { StoreConflictError, sameOperation, validateRateLimit, type Store, type StoredPouch, type UserProfile, type VaultOperation, type AuthChallenge, type UserPatch } from "./types.js";
+import { StoreConflictError, sameOperation, validateRateLimit, spendWindowStart, windowedSpend, type Store, type StoredPouch, type UserProfile, type VaultOperation, type AuthChallenge, type UserPatch, type PaymentRecord, type PriceRecord } from "./types.js";
 
 export function fakeAddress(): string {
   const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -91,15 +91,49 @@ export class MemoryStore implements Store {
   }
   async listPouches(ownerEmail?: string) {
     const all = [...this.pouches.values()];
-    return structuredClone(ownerEmail ? all.filter((p) => p.ownerEmail === ownerEmail) : all);
+    return all.filter((p) => !ownerEmail || p.ownerEmail === ownerEmail).map((p) => this.read(p)!);
   }
-  async getPouch(id: string) { return structuredClone(this.pouches.get(id)); }
+  /** Same read rule as Postgres: a lapsed rolling 24h spend window reads as zero. */
+  private read(p: StoredPouch | undefined): StoredPouch | undefined {
+    if (!p) return undefined;
+    const c = structuredClone(p);
+    if (c.spentSince && windowedSpend(c.spentToday, c.spentSince) === 0) { c.spentToday = 0; delete c.spentSince; }
+    return c;
+  }
+  async getPouch(id: string) { return this.read(this.pouches.get(id)); }
   async savePouch(p: StoredPouch) {
     const prev = this.pouches.get(p.id);
-    return this.save(this.pouches, p.ownerEmail === undefined && prev?.ownerEmail ? { ...p, ownerEmail: prev.ownerEmail } : p);
+    const next = p.ownerEmail === undefined && prev?.ownerEmail ? { ...p, ownerEmail: prev.ownerEmail } : { ...p };
+    const since = spendWindowStart(next);
+    if (since) next.spentSince = since; else delete next.spentSince;
+    return this.save(this.pouches, next);
   }
   async listOrders(pouchId?: string) {
     return structuredClone([...this.orders.values()].filter((o) => !pouchId || o.pouchId === pouchId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+  }
+  private payments: PaymentRecord[] = [];
+  private prices = new Map<string, PriceRecord>();
+  async recordPayment(p: PaymentRecord) {
+    if (this.payments.some((x) => x.txSignature === p.txSignature)) return;
+    this.payments.push({ ...p });
+  }
+  async recordPrices(rows: PriceRecord[]) {
+    for (const r of rows) { const k = `${r.merchantId}|${r.productId}|${r.time}`; if (!this.prices.has(k)) this.prices.set(k, { ...r }); }
+  }
+  async spendSeries(pouchIds: string[], bucket: "hour" | "day", since: string): Promise<SpendPoint[]> {
+    const ids = new Set(pouchIds);
+    const from = Date.parse(since);
+    const points = new Map<string, SpendPoint>();
+    for (const p of this.payments) {
+      if (!ids.has(p.pouchId) || Date.parse(p.time) < from) continue;
+      const d = new Date(p.time);
+      if (bucket === "day") d.setUTCHours(0, 0, 0, 0); else d.setUTCMinutes(0, 0, 0);
+      const key = `${p.pouchId}|${d.toISOString()}`;
+      const pt = points.get(key) ?? { bucket: d.toISOString(), pouchId: p.pouchId, spent: 0, orders: 0 };
+      pt.spent += p.amount; pt.orders += 1;
+      points.set(key, pt);
+    }
+    return [...points.values()].sort((a, b) => a.bucket.localeCompare(b.bucket));
   }
   async getOrder(id: string) { return structuredClone(this.orders.get(id)); }
   async saveOrder(o: Order) { return this.save(this.orders, o); }

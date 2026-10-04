@@ -60,6 +60,12 @@ export function PouchForm({
   const [dailyLimit, setDaily] = useState(
     initial ? String(toUsdc(initial.dailyLimit)) : "",
   );
+  const [askMode, setAskMode] = useState<"every" | "above">(
+    initial && initial.confirmAbove > 0 ? "above" : "every",
+  );
+  const [confirmAbove, setConfirmAbove] = useState(
+    initial && initial.confirmAbove > 0 ? String(toUsdc(initial.confirmAbove)) : "",
+  );
   const [allowed, setAllowed] = useState<string[]>(
     initial?.allowedMerchantIds ?? [],
   );
@@ -102,6 +108,21 @@ export function PouchForm({
           setError("Enter valid, non-negative spending limits.");
           return;
         }
+        const askAmount = askMode === "above" ? Number(confirmAbove) : 0;
+        if (
+          askMode === "above" &&
+          (!confirmAbove.trim() ||
+            !Number.isFinite(askAmount) ||
+            askAmount <= 0 ||
+            !Number.isSafeInteger(toMicros(askAmount)))
+        ) {
+          setError("Enter an amount above zero for Ask before paying.");
+          return;
+        }
+        if (toMicros(askAmount) > toMicros(amounts[0])) {
+          setError("The ask-first amount cannot be above the per-order limit.");
+          return;
+        }
         if (withName && !name.trim()) {
           setError("Give your pouch a name.");
           return;
@@ -116,7 +137,7 @@ export function PouchForm({
             name: name.trim(),
             maxPerOrder: toMicros(amounts[0]),
             dailyLimit: toMicros(amounts[1]),
-            confirmAbove: initial?.confirmAbove ?? 0,
+            confirmAbove: toMicros(askAmount),
             allowedMerchantIds: mode === "any" ? [] : allowed,
           });
         } catch (err) {
@@ -186,6 +207,58 @@ export function PouchForm({
             </p>
           </div>
         </div>
+        <fieldset>
+          <legend className={label}>Ask before paying</legend>
+          <div
+            role="radiogroup"
+            aria-label="Ask before paying"
+            className="mb-3 inline-flex rounded border border-[var(--line-strong)] bg-[var(--surface)] p-1"
+          >
+            {(
+              [
+                ["every", "Every order"],
+                ["above", "Only above $X"],
+              ] as const
+            ).map(([val, text]) => (
+              <button
+                key={val}
+                type="button"
+                role="radio"
+                aria-checked={askMode === val}
+                onClick={() => setAskMode(val)}
+                className={`min-h-10 rounded px-4 text-sm font-medium transition-colors ${askMode === val ? "bg-[var(--solana-purple)] text-white" : "text-[var(--muted)] hover:text-[var(--ink)]"}`}
+              >
+                {text}
+              </button>
+            ))}
+          </div>
+          {askMode === "above" ? (
+            <div>
+              <label className={label} htmlFor={`${id}-ask`}>
+                Ask above · USDC
+              </label>
+              <input
+                id={`${id}-ask`}
+                className={input}
+                type="number"
+                min="0"
+                step="0.01"
+                inputMode="decimal"
+                placeholder="10.00"
+                value={confirmAbove}
+                onChange={(e) => setConfirmAbove(e.target.value)}
+              />
+              <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+                Orders at or below this amount can be placed without a separate
+                confirmation.
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-[var(--muted)]">
+              You are asked before every order.
+            </p>
+          )}
+        </fieldset>
         <fieldset>
           <legend className={label}>Allowed stores</legend>
           <div
@@ -319,7 +392,9 @@ export function PouchForm({
         </fieldset>
       </fieldset>
       <div className="rounded bg-[var(--surface-raised)] px-4 py-3 text-xs leading-5 text-[var(--muted)]">
-        Every order requires approval before payment.
+        {askMode === "above"
+          ? "Orders above your ask-first amount require approval before payment."
+          : "Every order requires approval before payment."}
       </div>
       <button
         className={`${btnPrimary} w-full sm:w-auto`}

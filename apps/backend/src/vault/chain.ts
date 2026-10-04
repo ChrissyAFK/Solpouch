@@ -318,7 +318,9 @@ export class ChainVaultClient implements VaultClient {
     const allowedMerchantIds = mapAllowedKeys(acct.allowedMerchants.map((key) => key.toBase58()), this.payToOf, stored);
     const balance = Number(vault.amount);
     if (!Number.isSafeInteger(balance)) throw new Error("Chain balance exceeds supported precision");
+    const dayStart = acct.dayStart.toNumber();
     return { balance, spentToday: expired ? 0 : acct.spentToday.toNumber(), frozen: acct.frozen,
+      ...(dayStart > 0 && !expired ? { spentSince: new Date(dayStart * 1000).toISOString() } : {}),
       maxPerOrder: acct.maxPerOrder.toNumber(), dailyLimit: acct.dailyLimit.toNumber(), allowedMerchantIds };
   }
 

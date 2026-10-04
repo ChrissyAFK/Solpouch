@@ -34,6 +34,18 @@ if (process.env.VAULT_MODE === "chain") {
   }
   await chainVault.checkAgentBalance().catch((e) => console.warn(`[startup] Could not read the agent SOL balance: ${e instanceof Error ? e.message : e}`));
   vault = new SyncedVaultClient(vault, store);
+
+  // Feeds the Tiger Data payments table: backfills paid orders, then follows the program's PaymentMade events.
+  // Read-only on chain, and it must never hold up or take down the API, so it is not awaited.
+  const { startIndexer } = await import("./indexer.js");
+  const { Connection, PublicKey } = await import("@solana/web3.js");
+  const { default: idlJson } = await import("./vault/idl/solpouch_vault.json", { with: { type: "json" } });
+  void startIndexer({
+    store,
+    connection: new Connection(process.env.SOLANA_RPC_URL || "https://api.devnet.solana.com", "confirmed"),
+    programId: new PublicKey(process.env.VAULT_PROGRAM_ID ?? ""),
+    idl: idlJson as unknown as import("@coral-xyz/anchor").Idl,
+  }).catch((e) => console.warn(`[indexer] not started: ${e instanceof Error ? e.message : e}`));
 }
 const app = createApp({ store, vault });
 

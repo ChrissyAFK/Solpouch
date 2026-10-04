@@ -610,6 +610,12 @@ export default function PouchDetail() {
             <dd>{usd(toUsdc(pouch.maxPerOrder))}</dd>
             <dt className="text-[var(--muted)]">Daily</dt>
             <dd>{usd(toUsdc(pouch.dailyLimit))}</dd>
+            <dt className="text-[var(--muted)]">Ask first</dt>
+            <dd className="font-sans">
+              {pouch.confirmAbove > 0
+                ? `Only above ${usd(toUsdc(pouch.confirmAbove))}`
+                : "Every order"}
+            </dd>
             <dt className="text-[var(--muted)]">Stores</dt>
             <dd className="font-sans">
               {storesText(pouch.allowedMerchantIds, mname)}

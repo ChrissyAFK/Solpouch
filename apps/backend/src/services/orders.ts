@@ -4,6 +4,7 @@ import { findOnline } from "../ai/findOnline.js";
 import { catalogFit, matchItems, parseRequest } from "../ai/gemini.js";
 import { getCatalog, getMerchant, merchants, registerWebMerchant } from "../merchants/index.js";
 import { buildFulfillment, checkoutPayTo } from "./fulfillment.js";
+import { recordPaidOrder } from "./metrics.js";
 import type { GoogleUser } from "../auth/google.js";
 import type { Store } from "../store/types.js";
 import { PaymentPending } from "../vault/recovery.js";
@@ -14,6 +15,11 @@ export interface Deps {
   vault: VaultClient;
   /** Override Google ID token verification (tests). */
   verifyGoogle?: (credential: string) => Promise<GoogleUser>;
+}
+
+/** confirmAbove: 0 = ask before every order; N > 0 = orders totalling N or less need no separate confirmation. */
+export function needsConfirmation(pouch: Pick<Pouch, "confirmAbove">, total: number): boolean {
+  return pouch.confirmAbove === 0 || total > pouch.confirmAbove;
 }
 
 export class HttpError extends Error {
@@ -214,7 +220,9 @@ export async function confirmOrder(deps: Deps, id: string): Promise<Order> {
       throw new HttpError(503, "Payment is not confirmed yet. Retry this order to check its status.", "PaymentPending");
     }
     // A persistence failure here leaves paying; the journal recovers the same signature on retry.
-    return deps.store.saveOrder({ ...order, status: "paid", txSignature });
+    const paid = await deps.store.saveOrder({ ...order, status: "paid", txSignature });
+    await recordPaidOrder(deps.store, paid);
+    return paid;
   });
 }
 

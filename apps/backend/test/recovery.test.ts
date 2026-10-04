@@ -152,7 +152,7 @@ describe("payment service recovery", () => {
       payToOf: (id: string) => getMerchant(id)?.payTo,
       program: { account: { pouch: { fetch: vi.fn().mockResolvedValue(account) } } },
     }) as ChainVaultClient;
-    expect(await fake.getState("uber-eats")).toEqual({ balance: 10, spentToday: 2, frozen: true, maxPerOrder: 3, dailyLimit: 4, allowedMerchantIds: ["thai-express"] });
+    expect(await fake.getState("uber-eats")).toEqual({ balance: 10, spentToday: 2, spentSince: new Date(account.dayStart.toNumber() * 1000).toISOString(), frozen: true, maxPerOrder: 3, dailyLimit: 4, allowedMerchantIds: ["thai-express"] });
     // An unknown key is skipped with a warning instead of breaking the listing.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     account.allowedMerchants = [Keypair.generate().publicKey];

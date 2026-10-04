@@ -2,9 +2,9 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import type { Order, TopUp } from "@solpouch/shared";
+import type { Order, SpendPoint, TopUp } from "@solpouch/shared";
 import { HttpError } from "../services/orders.js";
-import { StoreConflictError, sameOperation, validateRateLimit, type Store, type StoredPouch, type UserProfile, type VaultOperation, type AuthChallenge, type UserPatch } from "./types.js";
+import { StoreConflictError, sameOperation, validateRateLimit, spendWindowStart, windowedSpend, type Store, type StoredPouch, type UserProfile, type VaultOperation, type AuthChallenge, type UserPatch, type PaymentRecord, type PriceRecord } from "./types.js";
 
 const iso = (v: Date | string) => (v instanceof Date ? v.toISOString() : new Date(v).toISOString());
 type Row = Record<string, any>;
@@ -14,8 +14,10 @@ function localDay(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 function toPouch(r: Row): StoredPouch {
-  const fresh = r.spent_day instanceof Date && localDay(r.spent_day) === localDay(new Date());
-  return { id: r.id, address: r.address, name: r.name, balance: Number(r.balance), maxPerOrder: Number(r.max_per_order), dailyLimit: Number(r.daily_limit), spentToday: fresh ? Number(r.spent_today) : 0, confirmAbove: Number(r.confirm_above), allowedMerchantIds: structuredClone(r.allowed_merchant_ids), frozen: r.frozen, version: Number(r.version), ...(r.owner_email ? { ownerEmail: r.owner_email as string } : {}) };
+  // Rows with a window start follow the chain's rolling 24h rule; older rows fall back to the calendar day.
+  const since = r.spent_since ? iso(r.spent_since) : undefined;
+  const fresh = since ? windowedSpend(1, since) > 0 : r.spent_day instanceof Date && localDay(r.spent_day) === localDay(new Date());
+  return { id: r.id, address: r.address, name: r.name, balance: Number(r.balance), maxPerOrder: Number(r.max_per_order), dailyLimit: Number(r.daily_limit), spentToday: fresh ? Number(r.spent_today) : 0, ...(since && fresh ? { spentSince: since } : {}), confirmAbove: Number(r.confirm_above), allowedMerchantIds: structuredClone(r.allowed_merchant_ids), frozen: r.frozen, version: Number(r.version), ...(r.owner_email ? { ownerEmail: r.owner_email as string } : {}) };
 }
 function toOrder(r: Row): Order {
   return { id: r.id, pouchId: r.pouch_id, merchantId: r.merchant_id, request: r.request, lines: structuredClone(r.lines), total: Number(r.total), status: r.status, createdAt: iso(r.created_at), version: Number(r.version), ...(r.reject_reason ? { rejectReason: r.reject_reason } : {}), ...(r.tx_signature ? { txSignature: r.tx_signature } : {}), ...(r.store ? { store: structuredClone(r.store) } : {}), ...(r.fulfillment ? { fulfillment: structuredClone(r.fulfillment) } : {}) };
@@ -162,9 +164,27 @@ export class PostgresStore implements Store {
   async getPouch(id: string) { const { rows } = await this.query("SELECT * FROM pouches WHERE id=$1", [id]); return rows[0] ? toPouch(rows[0]) : undefined; }
   async savePouch(p: StoredPouch) {
     // owner_email is only written when set, so updates without an owner keep the existing one.
-    return toPouch(await this.save("pouches", p, { address: p.address, name: p.name, balance: p.balance, max_per_order: p.maxPerOrder, daily_limit: p.dailyLimit, spent_today: p.spentToday, spent_day: localDay(new Date()), confirm_above: p.confirmAbove, allowed_merchant_ids: p.allowedMerchantIds, frozen: p.frozen, ...(p.ownerEmail ? { owner_email: p.ownerEmail } : {}) }));
+    return toPouch(await this.save("pouches", p, { address: p.address, name: p.name, balance: p.balance, max_per_order: p.maxPerOrder, daily_limit: p.dailyLimit, spent_today: p.spentToday, spent_day: localDay(new Date()), spent_since: spendWindowStart(p) ?? null, confirm_above: p.confirmAbove, allowed_merchant_ids: p.allowedMerchantIds, frozen: p.frozen, ...(p.ownerEmail ? { owner_email: p.ownerEmail } : {}) }));
   }
   async listOrders(pouchId?: string) { return (await this.query(`SELECT * FROM orders ${pouchId ? "WHERE pouch_id=$1 " : ""}ORDER BY created_at DESC`, pouchId ? [pouchId] : undefined)).rows.map(toOrder); }
+  async recordPayment(p: PaymentRecord) {
+    // The primary key includes time, and the app and the indexer stamp different times, so dedupe on tx_signature.
+    await this.query(
+      "INSERT INTO payments (time, pouch_id, merchant_id, order_id, amount, tx_signature) SELECT $1, $2, $3, $4, $5, $6 WHERE NOT EXISTS (SELECT 1 FROM payments WHERE tx_signature = $6) ON CONFLICT DO NOTHING",
+      [p.time, p.pouchId, p.merchantId, p.orderId, p.amount, p.txSignature],
+    );
+  }
+  async recordPrices(rows: PriceRecord[]) {
+    for (const r of rows) await this.query("INSERT INTO prices (time, merchant_id, product_id, unit_price, in_stock) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING", [r.time, r.merchantId, r.productId, r.unitPrice, r.inStock]);
+  }
+  async spendSeries(pouchIds: string[], bucket: "hour" | "day", since: string): Promise<SpendPoint[]> {
+    if (!pouchIds.length) return [];
+    const { rows } = await this.query(
+      `SELECT time_bucket($1::interval, time) AS bucket, pouch_id, sum(amount)::bigint AS spent, count(*)::int AS orders FROM payments WHERE pouch_id = ANY($2::text[]) AND time >= $3 GROUP BY 1, 2 ORDER BY 1, 2`,
+      [bucket === "day" ? "1 day" : "1 hour", pouchIds, since],
+    );
+    return rows.map((r: Row) => ({ bucket: iso(r.bucket), pouchId: r.pouch_id, spent: Number(r.spent), orders: Number(r.orders) }));
+  }
   async getOrder(id: string) { const { rows } = await this.query("SELECT * FROM orders WHERE id=$1 ORDER BY created_at DESC LIMIT 1", [id]); return rows[0] ? toOrder(rows[0]) : undefined; }
   async saveOrder(o: Order) { return toOrder(await this.save("orders", o, { created_at: o.createdAt, pouch_id: o.pouchId, merchant_id: o.merchantId, request: o.request, lines: JSON.stringify(o.lines), total: o.total, status: o.status, reject_reason: o.rejectReason ?? null, tx_signature: o.txSignature ?? null, store: o.store ? JSON.stringify(o.store) : null, fulfillment: o.fulfillment ? JSON.stringify(o.fulfillment) : null })); }
   async getTopUp(id: string) { const { rows } = await this.query("SELECT * FROM topups WHERE id=$1 ORDER BY created_at DESC LIMIT 1", [id]); return rows[0] ? toTopUp(rows[0]) : undefined; }

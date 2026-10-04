@@ -56,7 +56,13 @@ Fixes from the whole-project audit. Checks: backend 153 tests and typecheck, web
 - Web: order page picks up voice-created drafts, top-up cooldown tolerates clock skew, chat widget Talk works after typing and sign-out ends the session. The ElevenLabs audio worklets were tested under the production CSP in headless Chrome and load fine (`apps/web/test/worklet-csp.browser.mjs`, needs `PLAYWRIGHT_MODULE`).
 - Vault program (source only, NOT redeployed): rejects zero amounts, the AI key as an allowed merchant and duplicate merchants (errors 6009-6011); `close_pouch` sweeps leftover tokens to a new `owner_token` account. After a redeploy, regenerate the IDL (`apps/backend/src/vault/idl`), since the `close_pouch` entry there still describes the deployed version.
 
-Still open from the audit: `spentToday` in Postgres resets by calendar day while the chain uses a rolling 24 hours; `confirmAbove` is not enforced; the indexer is a stub; `apps/web/test/auth-voice.browser.mjs` still drives the old wallet-login flow. The production backend runs `tsx watch` from this checkout, so saving a backend file reloads the live API.
+Second pass (branch `fix/audit-2`, built in the `Solpouch-fix` worktree; backend 164 tests, typechecks and CSP test pass; the new SQL has not run against a real Timescale database and nothing was checked in a browser):
+
+- Indexer (`apps/backend/src/indexer.ts`, started in chain mode from `src/index.ts`): backfills paid orders into the Tiger `payments` hypertable, then follows the program's `PaymentMade` logs, including payments sent from outside the app. A paid order also writes `payments` and `prices` rows directly. `GET /stats/spend` reads `payments` with `time_bucket` and falls back to the orders table when the series is empty or the query fails.
+- `spentToday` follows the chain's rolling 24 hours (`pouches.spent_since`, additive column).
+- `confirmAbove`: 0 asks before every order; above 0, orders at or under it skip the 4-second voice wait (still a separate confirm call, nothing auto-pays). The pouch form has an "Ask before paying" field. `voice/prompt.md` gained one sentence; the live ElevenLabs agent prompt has not been re-synced.
+
+Still open from the audit: `apps/web/test/auth-voice.browser.mjs` still drives the old wallet-login flow. The production backend runs `tsx watch` from this checkout, so saving a backend file reloads the live API.
 
 ## Not done yet
 
@@ -64,7 +70,6 @@ Still open from the audit: `spentToday` in Postgres resets by calendar day while
 - Production multi-wallet transaction signing and authenticated voice provider binding remain to be built.
 
 - A permanent tunnel on solpouch.tech (the quick tunnel URL changes on restart).
-- Indexer is a stub; `confirmAbove` is stored but not used for auto-confirm.
 - `scripts/chain-smoke.ts` and `scripts/db-check.ts` are manual checks; `test/postgres.test.ts` runs only with `TEST_DATABASE_URL`.
 
 ## Run it

@@ -25,11 +25,11 @@ const thai = getMerchant("thai-express")!.payTo;
 const builders = getMerchant("burnaby-builders")!.payTo;
 const $ = toMicros;
 
-let clock = 1_000_000;
+let clock = Date.now();
 let store: MemoryStore;
 let vault: MockVaultClient;
 beforeEach(async () => {
-  clock = 1_000_000;
+  clock = Date.now();
   store = new MemoryStore(ownedSeed());
   await store.saveUser({ email: TEST_USER, wallet: "linked-test-wallet", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
   vault = new MockVaultClient(store, (id) => getMerchant(id)?.payTo, () => clock);

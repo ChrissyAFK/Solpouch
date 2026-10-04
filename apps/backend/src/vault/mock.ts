@@ -65,6 +65,7 @@ export class MockVaultClient implements VaultClient {
     if (amount > p.balance) throw new VaultRejected("InsufficientFunds");
     p.balance -= amount;
     p.spentToday += amount;
+    p.spentSince = new Date(this.dayStart.get(p.id)!).toISOString();
     await this.store.savePouch(p);
     const txSignature = sig();
     this.outcomes.set(key, txSignature);
