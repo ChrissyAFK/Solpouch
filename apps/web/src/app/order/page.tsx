@@ -123,6 +123,8 @@ function OrderWorkspace() {
   const [pouchId, setPouchId] = useState("");
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [question, setQuestion] = useState<string | null>(null);
+  const requestInput = useRef<HTMLTextAreaElement>(null);
   const [busy, setBusy] = useState(false);
   const [cartDirty, setCartDirty] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -250,12 +252,14 @@ function OrderWorkspace() {
     const current = () => currentSession() && version === loadVersion.current;
     setBusy(true);
     setError(null);
+    setQuestion(null);
     try {
       const created = await api.createOrder(
         { request: text, pouchId: pid },
         { autoPay },
       );
       if (!current()) return;
+      setQuestion(null);
       setOrder(created);
       if (created.autoPayError) setError(created.autoPayError.message);
       if (created.status !== "draft") {
@@ -270,7 +274,12 @@ function OrderWorkspace() {
         `/order?order=${encodeURIComponent(created.id)}`,
       );
     } catch (e) {
-      if (current()) setError(errMsg(e));
+      if (!current()) return;
+      if ((e as { code?: string })?.code === "NeedClarification") {
+        setQuestion(errMsg(e));
+        setRequest(text.replace(/[.\s]+$/, "") + ". ");
+        requestInput.current?.focus();
+      } else setError(errMsg(e));
     } finally {
       if (current()) setBusy(false);
     }
@@ -405,6 +414,7 @@ function OrderWorkspace() {
                   </label>
                   <textarea
                     id="req"
+                    ref={requestInput}
                     className={`${input} resize-y !p-4 !text-lg`}
                     rows={5}
                     required
@@ -468,6 +478,12 @@ function OrderWorkspace() {
                     )}
                   </div>
                 </div>
+                {question && (
+                  <div className={s.checkBox} role="status">
+                    <strong>One question · </strong>
+                    {question} Add the answer to your request and send it again.
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center justify-between gap-4 border-t border-[var(--line-strong)] pt-5">
                   <p className="max-w-64 text-xs leading-relaxed text-[var(--muted)]">
                     You approve the order before it is paid, unless the pouch pays small exact matches automatically.
@@ -612,6 +628,7 @@ function OrderWorkspace() {
                     const exact =
                       !!line.product &&
                       !line.substitution &&
+                      !line.product.estimated &&
                       line.matchScore >= 0.9;
                     return (
                       <article key={i} className={s.line}>
@@ -648,7 +665,7 @@ function OrderWorkspace() {
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                               <path d="M3 8.5l3.2 3L13 4.5" />
                             </svg>
-                            Exact
+                            {line.product?.url ? "Price confirmed on the store's page" : "Exact"}
                           </span>
                         ) : (
                           <div className={s.checkBox}>
