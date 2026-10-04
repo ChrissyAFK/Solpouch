@@ -40,7 +40,7 @@ export function writeCookie(c: Context, token: string) {
 }
 export function clearCookie(c: Context) { deleteCookie(c, COOKIE, { path: '/' }); }
 export function requireVoiceSecret(c: Context) {
-  const expected = process.env.VOICE_WEBHOOK_SECRET;
+  const expected = process.env.VOICE_WEBHOOK_SECRET || process.env.ELEVENLABS_TOOL_SECRET;
   const provided = c.req.header('X-Solpouch-Secret') ?? '';
   if (!expected) throw new HttpError(503, 'Voice tools are not configured');
   const a = Buffer.from(expected), b = Buffer.from(provided);

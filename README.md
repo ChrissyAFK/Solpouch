@@ -2,7 +2,7 @@
 
 **Budget pouches your AI shops from, and can't refill.**
 
-Backend hardening is documented in [BACKEND-HARDENING.md](BACKEND-HARDENING.md): wallet sign-in and explicit ownership are required; chain mode is a single-owner devnet demo. Direct voice sessions are disabled until secure session binding is integrated.
+Backend hardening is documented in [BACKEND-HARDENING.md](BACKEND-HARDENING.md): wallet sign-in and explicit ownership are required; chain mode is a single-owner devnet demo. Voice supports signed, wallet-scoped sessions once provider tool headers are configured; the live sign-in integration is pending the collaborator’s source.
 
 Split your money into pouches (Uber Eats, groceries, fun money, job-site supplies), each held by our own Solana program with its own limits. Tell Solpouch what you need, by voice or text. It finds the items, shows you exactly what it found, and buys only after you confirm. When a pouch is empty, it's empty: the AI can't top it up, and neither can you without deliberately going to the app and adding money.
 

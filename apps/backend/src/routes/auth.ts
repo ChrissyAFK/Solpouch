@@ -30,9 +30,38 @@ export function authRoutes(deps: Deps, origins: string[]) {
   });
   app.get('/session', async c => c.json({ wallet: (await session(c, deps.store)).wallet }));
   app.post('/logout', async c => { const token = bearer(c) ?? getCookie(c, COOKIE); if (token) await deps.store.deleteSession(hashToken(token)); clearCookie(c); return c.json({ ok: true }); });
+  const voiceConfigured = () => Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_AGENT_ID && (process.env.VOICE_WEBHOOK_SECRET || process.env.ELEVENLABS_TOOL_SECRET) && process.env.ELEVENLABS_SECURE_TOOLS_CONFIGURED === 'true');
+  app.get('/voice-status', async c => {
+    await session(c, deps.store);
+    return c.json({ enabled: voiceConfigured() });
+  });
+  app.post('/voice-session', async c => {
+    const current = await session(c, deps.store);
+    if (process.env.VAULT_MODE === 'chain' && current.wallet !== deps.vault.authorizedOwner) throw new HttpError(403, 'This devnet demo supports only its configured owner wallet');
+    if (!voiceConfigured()) throw new HttpError(503, 'Voice is not configured. You can still use the text helper');
+    let signedUrl: string;
+    try {
+      const url = new URL('https://api.elevenlabs.io/v1/convai/conversation/get-signed-url');
+      url.searchParams.set('agent_id', process.env.ELEVENLABS_AGENT_ID!);
+      const response = await fetch(url, { headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY! }, signal: AbortSignal.timeout(10000) });
+      if (!response.ok) throw new Error('Provider unavailable');
+      const data = await response.json() as { signed_url?: unknown };
+      if (typeof data.signed_url !== 'string') throw new Error('Missing URL');
+      const parsed = new URL(data.signed_url);
+      if (parsed.protocol !== 'wss:' || parsed.hostname !== 'api.elevenlabs.io' || parsed.pathname !== '/v1/convai/conversation' || (parsed.port && parsed.port !== '443') || parsed.username || parsed.password) throw new Error('Invalid URL');
+      signedUrl = parsed.href;
+    } catch {
+      throw new HttpError(503, 'Voice could not connect. Try again or use the text helper');
+    }
+    // Recheck after the external request so logout during setup cannot mint credentials.
+    const active = await session(c, deps.store);
+    if (active.tokenHash !== current.tokenHash) throw new HttpError(401, 'Your session changed. Sign in again');
+    const issued = await issueSession(deps.store, current.wallet, 'voice', current.tokenHash);
+    return c.json({ signedUrl, token: issued.token, expiresAt: issued.expiresAt });
+  });
   app.post('/voice-token', async c => {
     const current = await session(c, deps.store);
-    if (!process.env.VOICE_WEBHOOK_SECRET) throw new HttpError(503, 'Voice tools are not configured');
+    if (!voiceConfigured()) throw new HttpError(503, 'Voice tools are not configured');
     return c.json(await issueSession(deps.store, current.wallet, 'voice', current.tokenHash));
   });
   return app;

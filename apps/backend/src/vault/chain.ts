@@ -121,7 +121,7 @@ export class ChainVaultClient implements VaultClient {
   }
 
   private async assertDevnet() {
-    if (await this.connection.getGenesisHash() !== "EtWTRABZaYq6iMfeYKouRu166VU2xqa1") {
+    if (await this.connection.getGenesisHash() !== "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG") {
       throw new Error("Chain signing is restricted to Solana devnet");
     }
   }

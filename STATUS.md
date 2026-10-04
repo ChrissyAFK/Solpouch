@@ -6,7 +6,7 @@ Dashboard redesign from `codex/dashboard-design` is merged into `scaffold` (not 
 
 Wallet sign-in, server-side ownership, scoped voice credentials, versioned storage, shared rate limits, verified database TLS, read-only startup, and journaled payment retries are implemented. See [BACKEND-HARDENING.md](BACKEND-HARDENING.md) for migration and recovery steps. Existing pouches stay hidden until an operator assigns their verified owner. This is a devnet, single-owner chain adapter; it does not implement production multi-wallet signing.
 
-Local automated checks pass for auth, isolation, concurrency and simulated failure/restart recovery. Real database migration/restart and funded devnet verification remain outstanding. Direct ElevenLabs UI sessions are disabled pending secure conversation binding; authenticated text chat remains available. The domain deployment is unchanged by this branch.
+Local automated checks pass for auth, isolation, concurrency and simulated failure/restart recovery. Ten real PostgreSQL relational integration checks now pass, including a database process restart; Timescale-specific migration and funded devnet verification remain outstanding. Authenticated ElevenLabs text/Talk session support is implemented behind the provider-configuration gate; live identity integration awaits the collaborator’s deployed source. The domain deployment is unchanged by this branch.
 
 The historical integration notes below describe the earlier deployment, not the hardened branch's runtime verification.
 

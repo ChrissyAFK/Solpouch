@@ -66,6 +66,21 @@ describe("durable signed transaction recovery", () => {
     expect(save).not.toHaveBeenCalled();
   });
 
+  it("accepts the complete official devnet genesis hash for journal recovery", async () => {
+    // solana-labs/solana sdk/src/genesis_config.rs; confirmed against public devnet RPC.
+    const entry = { ...operation, id: "topup:devnet-check", kind: "topup" as const };
+    await store.saveOperation(entry);
+    const fake = Object.assign(Object.create(ChainVaultClient.prototype), {
+      connection: {
+        getGenesisHash: vi.fn().mockResolvedValue("EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"),
+        getSignatureStatuses: vi.fn().mockResolvedValue({ value: [{ err: null, confirmationStatus: "confirmed" }] }),
+      },
+      owner: Keypair.generate(), mint: Keypair.generate().publicKey,
+      programId: Keypair.generate().publicKey, store,
+    }) as ChainVaultClient;
+    await expect(fake.topUp(entry.pouchId, 1, "devnet-check")).resolves.toEqual({ txSignature: entry.txSignature });
+  });
+
   it("persists before broadcast and reuses identical bytes after a lost response", async () => {
     const rpc = transport();
     const prepare = vi.fn().mockResolvedValue(operation);

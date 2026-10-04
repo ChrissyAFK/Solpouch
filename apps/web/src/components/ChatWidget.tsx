@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { ConversationProvider, useConversation } from "@elevenlabs/react";
 import { useEffect, useRef, useState } from "react";
 import { authFetch, BACKEND_URL } from "@/lib/api";
 import styles from "./ChatWidget.module.css";
@@ -25,6 +26,9 @@ function ChatIcon() {
   );
 }
 export function ChatWidget() {
+  return <ConversationProvider><ChatPanel /></ConversationProvider>;
+}
+function ChatPanel() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
@@ -39,6 +43,142 @@ export function ChatWidget() {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sequence = useRef(0);
   const busy = useRef(false);
+
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [voiceMode, setVoiceMode] = useState<"text" | "voice" | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const voiceEpoch = useRef(0);
+  const mounted = useRef(true);
+  const active = useRef(false);
+  const voiceBusy = useRef(false);
+  const lastTyped = useRef<string | null>(null);
+  const expiry = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const agentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connection = useRef<{ resolve(): void; reject(error: Error): void } | null>(null);
+  const agent = useConversation({
+    onConnect: () => {
+      if (!mounted.current || !active.current) { endAgent(); return; }
+      connection.current?.resolve();
+      connection.current = null;
+    },
+    onMessage: ({ message, role }) => {
+      if (!mounted.current || !active.current) return;
+      if (role === "user" && message === lastTyped.current) { lastTyped.current = null; return; }
+      setMessages(m => [...m, { role: role === "user" ? "user" : "assistant", content: message }]);
+      if (role === "agent") { if (agentTimer.current) clearTimeout(agentTimer.current); busy.current = false; setPending(false); }
+    },
+    onDisconnect: () => {
+      if (!active.current && !connection.current) return;
+      connection.current?.reject(new Error("The agent disconnected"));
+      connection.current = null;
+      if (expiry.current) clearTimeout(expiry.current);
+      expiry.current = null;
+      if (agentTimer.current) clearTimeout(agentTimer.current);
+      active.current = false;
+      if (mounted.current) { setVoiceMode(null); busy.current = false; setPending(false); }
+    },
+    onError: () => {
+      if (!active.current && !connection.current) return;
+      connection.current?.reject(new Error("The agent could not connect"));
+      connection.current = null;
+      if (expiry.current) clearTimeout(expiry.current);
+      expiry.current = null;
+      if (agentTimer.current) clearTimeout(agentTimer.current);
+      active.current = false;
+      endAgent();
+      if (mounted.current) {
+        setVoiceMode(null); busy.current = false; setPending(false);
+        setNotice("The agent disconnected. You can retry or use the text helper.");
+      }
+    },
+  });
+  const agentRef = useRef(agent);
+  agentRef.current = agent;
+  function endAgent() { try { agentRef.current.endSession(); } catch { /* Already ended. */ } }
+  function stopAgent() {
+    connection.current?.reject(new Error("Connection cancelled"));
+    connection.current = null;
+    voiceEpoch.current++;
+    active.current = false;
+    if (expiry.current) clearTimeout(expiry.current);
+    if (agentTimer.current) clearTimeout(agentTimer.current);
+    endAgent();
+    if (mounted.current) { setVoiceMode(null); setConnecting(false); busy.current = false; setPending(false); }
+  }
+  async function startAgent(kind: "text" | "voice") {
+    if (voiceBusy.current) throw new Error("The agent is already connecting. Try again shortly.");
+    voiceBusy.current = true;
+    const revision = ++voiceEpoch.current;
+    setConnecting(true);
+    try {
+      if (kind === "voice") {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+      }
+      if (!mounted.current || revision !== voiceEpoch.current) throw new Error("Connection cancelled");
+      const response = await authFetch(`${BACKEND_URL}/auth/voice-session`, { method: "POST", signal: AbortSignal.timeout(15000) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Voice could not connect");
+      if (!mounted.current || revision !== voiceEpoch.current) throw new Error("Connection cancelled");
+      const remaining = Date.parse(data.expiresAt) - Date.now();
+      if (!Number.isFinite(remaining) || remaining <= 0 || remaining > 5 * 60000 || typeof data.token !== "string" || typeof data.signedUrl !== "string") throw new Error("Invalid voice session");
+      active.current = true;
+      expiry.current = setTimeout(() => {
+        stopAgent();
+        if (mounted.current) setNotice("Your five-minute agent session ended. Start again to continue.");
+      }, remaining);
+      agentTimer.current = setTimeout(() => {
+        stopAgent();
+        if (mounted.current) setNotice("The agent connection timed out. Try again or use the text helper.");
+      }, 15000);
+      await new Promise<void>((resolve, reject) => {
+        connection.current = { resolve, reject };
+        agentRef.current.startSession({
+        signedUrl: data.signedUrl,
+        connectionType: "websocket",
+        textOnly: kind === "text",
+        dynamicVariables: { secret__solpouch_voice_token: `Bearer ${data.token}` },
+        });
+      });
+      if (!mounted.current || revision !== voiceEpoch.current || !active.current) {
+        endAgent();
+        throw new Error("Connection cancelled");
+      }
+      if (agentTimer.current) clearTimeout(agentTimer.current);
+      setVoiceMode(kind);
+    } catch (cause) {
+      active.current = false;
+      if (expiry.current) clearTimeout(expiry.current);
+      expiry.current = null;
+      if (agentTimer.current) clearTimeout(agentTimer.current);
+      connection.current = null;
+      endAgent();
+      throw cause;
+    } finally {
+      voiceBusy.current = false;
+      if (mounted.current) setConnecting(false);
+    }
+  }
+  async function talk() {
+    if (active.current || connecting) { sequence.current++; stopAgent(); return; }
+    setNotice(null);
+    try { await startAgent("voice"); }
+    catch (cause) { if (mounted.current) setNotice(cause instanceof Error ? cause.message : "Voice could not connect. Use the text helper."); }
+  }
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; stopAgent(); };
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    void authFetch(`${BACKEND_URL}/auth/voice-status`, { signal: controller.signal, cache: "no-store" })
+      .then(async response => response.ok ? response.json() : { enabled: false })
+      .then(data => { if (!controller.signal.aborted) setVoiceEnabled(data.enabled === true); })
+      .catch(() => { if (!controller.signal.aborted) setVoiceEnabled(false); });
+    return () => controller.abort();
+  }, [open]);
 
   useEffect(
     () => () => {
@@ -81,10 +221,15 @@ export function ChatWidget() {
   }, [messages, pending, error, open]);
 
   function close() {
+    sequence.current++;
+    request.current?.abort();
+    if (timer.current) clearTimeout(timer.current);
+    stopAgent();
     setOpen(false);
     launcher.current?.focus();
   }
   function clear() {
+    stopAgent();
     sequence.current++;
     request.current?.abort();
     if (timer.current) clearTimeout(timer.current);
@@ -98,7 +243,7 @@ export function ChatWidget() {
   }
   async function send(content?: string, retry?: Message[]) {
     const text = (content ?? draft).trim();
-    if (busy.current || (!retry && !text)) return;
+    if (busy.current || connecting || (!retry && !text)) return;
     const next = retry ?? [
       ...messages,
       { role: "user" as const, content: text.slice(0, 2000) },
@@ -111,6 +256,23 @@ export function ChatWidget() {
     setRetryMessages(null);
     setPending(true);
     busy.current = true;
+    const sendRevision = sequence.current;
+    if (voiceEnabled && !retry) {
+      try {
+        if (!active.current) await startAgent("text");
+        if (!mounted.current || !active.current) return;
+        lastTyped.current = text;
+        agentRef.current.sendUserMessage(text);
+        agentTimer.current = setTimeout(() => {
+          stopAgent();
+          if (mounted.current) setNotice("The agent reply timed out. Check your orders before repeating a payment request.");
+        }, 45000);
+        return;
+      } catch {
+        if (!mounted.current || sendRevision !== sequence.current) return;
+        setNotice("The agent could not connect. Using the read-only text helper.");
+      }
+    }
     await askGemini(next);
   }
   async function askGemini(next: Message[]) {
@@ -202,7 +364,7 @@ export function ChatWidget() {
             <div>
               <h2>Ask Solpouch</h2>
               <span className={styles.mode}>
-                {mode === "checking"
+                {voiceMode ? (voiceMode === "voice" ? "Voice connected" : "Agent connected") : mode === "checking"
                   ? "Checking connection…"
                   : mode === "demo"
                     ? "Demo helper"
@@ -230,6 +392,13 @@ export function ChatWidget() {
               </button>
             </div>
           </header>
+          <div className={styles.voiceBar}>
+            <button type="button" disabled={!voiceEnabled || (!connecting && !active.current && pending)} onClick={() => void talk()}>
+              {connecting ? "Cancel connection" : voiceMode ? "End agent session" : "Talk"}
+            </button>
+            <span>{voiceEnabled ? "Agent sessions last five minutes." : "Voice unavailable. The text helper is available."}</span>
+          </div>
+          {notice && <p className={styles.notice} role="status">{notice}</p>}
           <div
             className={styles.history}
             ref={history}
@@ -335,12 +504,12 @@ export function ChatWidget() {
             />
             <div className={styles.composerBottom}>
               <span id="solpouch-chat-help">Shift + Enter for a new line</span>
-              <button type="submit" disabled={pending || !draft.trim()}>
+              <button type="submit" disabled={pending || connecting || !draft.trim()}>
                 {pending ? "Sending…" : "Send"}
               </button>
             </div>
             <p className={styles.boundary}>
-              Chat cannot move funds or place orders. Voice is not available yet.
+              {voiceEnabled ? "The agent can use your pouch tools. Payments must stay within your pouch rules." : "The text helper cannot move funds or place orders."}
               {mode === "demo" && " Limited preset replies; live AI is not connected."}
             </p>
           </form>
