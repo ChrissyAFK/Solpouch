@@ -6,7 +6,10 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/backend/package.json apps/backend/
 COPY packages/shared/package.json packages/shared/
-RUN pnpm install --frozen-lockfile --filter "@solpouch/backend..."
+# bufferutil/utf-8-validate have no arm64 prebuilds, so node-gyp compiles them; the tools go away in the same layer.
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
+ && pnpm install --frozen-lockfile --filter "@solpouch/backend..." \
+ && apt-get purge -y python3 make g++ && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 COPY tsconfig.base.json tsconfig.json ./
 COPY apps/backend apps/backend
 COPY packages/shared packages/shared
