@@ -1,51 +1,38 @@
-# Solpouch on one server: Caddy terminates TLS and proxies to the web and API images from ghcr.
-# Run from this folder: docker compose up -d   (see docs/DEPLOY.md)
+# Solpouch on the shared VPS. The server's existing Caddy (shared-automation-proxy-1) owns 80/443
+# and reaches these containers over its trading-os-edge network; nothing is published on the host.
+# Run from ~/solpouch: docker compose up -d   (see docs/DEPLOY.md)
+name: solpouch
+
 services:
   api:
     image: ghcr.io/chrissyafk/solpouch-api:${TAG:-latest}
     restart: unless-stopped
     env_file: .env
     environment:
-      # Only Caddy (fixed address below) may set the client IP the rate limiter sees.
-      TRUSTED_PROXY_IPS: 172.30.0.2
+      # Only the shared Caddy may set the client IP the rate limiter sees. PROXY_IP is its address on
+      # trading-os-edge, set in .env. If it changes, every client shares one rate-limit bucket until fixed.
+      TRUSTED_PROXY_IPS: ${PROXY_IP:?set PROXY_IP in .env}
       TRUSTED_PROXY_HEADER: x-forwarded-for
     volumes:
       # Keypairs: the backend reads .keys/owner.json and .keys/agent.json from /app.
       - ./keys:/app/.keys:ro
       # Postgres CA: set DATABASE_CA_CERT=/app/certs/timescale-ca.pem in .env.
       - ./certs:/app/certs:ro
+    mem_limit: 768m
     networks:
       edge:
-        ipv4_address: 172.30.0.3
+        # Unique names so they can't clash with other stacks' "api" or "web" on the shared network.
+        aliases: [solpouch-api]
 
   web:
     image: ghcr.io/chrissyafk/solpouch-web:${TAG:-latest}
     restart: unless-stopped
+    mem_limit: 512m
     networks:
       edge:
-        ipv4_address: 172.30.0.4
-
-  caddy:
-    image: caddy:2
-    restart: unless-stopped
-    ports: ["80:80", "443:443"]
-    environment:
-      API_HOST: ${API_HOST:-api.solpouch.tech}
-      WEB_HOST: ${WEB_HOST:-solpouch.tech}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on: [api, web]
-    networks:
-      edge:
-        ipv4_address: 172.30.0.2
+        aliases: [solpouch-web]
 
 networks:
   edge:
-    ipam:
-      config: [{ subnet: 172.30.0.0/24 }]
-
-volumes:
-  caddy_data: {}
-  caddy_config: {}
+    external: true
+    name: trading-os-edge

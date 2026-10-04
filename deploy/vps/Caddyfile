@@ -1,10 +1,12 @@
-# Caddy gets and renews certificates itself once DNS for these hosts points at this server.
-{$API_HOST} {
+# Site blocks to append to the shared proxy's Caddyfile (/opt/trading-os/infra/shared/Caddyfile).
+# Caddy gets and renews certificates itself once DNS for these hosts points at the server.
+# For the smoke test use api-next.solpouch.tech and next.solpouch.tech, www.next.solpouch.tech instead.
+api.solpouch.tech {
 	encode gzip
-	reverse_proxy api:8787
+	reverse_proxy solpouch-api:8787
 }
 
-{$WEB_HOST}, www.{$WEB_HOST} {
+solpouch.tech, www.solpouch.tech {
 	encode gzip
-	reverse_proxy web:3000
+	reverse_proxy solpouch-web:3000
 }

@@ -4,13 +4,18 @@ Today solpouch.tech runs on Tariq's laptop: `restart-prod.ps1` starts the backen
 `next start` (`:3019`), and a Cloudflare tunnel maps `api.solpouch.tech` and `solpouch.tech` to them.
 Postgres is already hosted (Tiger Data, AWS us-east-1), so only the two Node processes move.
 
-The target is a teammate's VPS running everything in Docker (`deploy/vps/`):
+The target is a teammate's VPS (`tariq@5.78.87.188`, x86_64, Ubuntu 24.04, about 2 GB RAM free).
+It already runs a shared Caddy, `shared-automation-proxy-1`, that owns ports 80/443 and reads
+`/opt/trading-os/infra/shared/Caddyfile`. Solpouch adds two containers (`deploy/vps/compose.yaml`) on that
+proxy's `trading-os-edge` network and publishes no host ports (8787 and 3000 are already taken):
 
-| Container | Image | Serves |
+| Container | Image | Proxy reaches it as |
 |---|---|---|
-| `caddy` | `caddy:2` | TLS on 80/443 for `solpouch.tech`, `www.solpouch.tech`, `api.solpouch.tech` |
-| `web` | `ghcr.io/chrissyafk/solpouch-web` | Next.js (`Dockerfile.web`) |
-| `api` | `ghcr.io/chrissyafk/solpouch-api` | backend (`Dockerfile`) |
+| `web` | `ghcr.io/chrissyafk/solpouch-web` (`Dockerfile.web`) | `solpouch-web:3000` |
+| `api` | `ghcr.io/chrissyafk/solpouch-api` (`Dockerfile`) | `solpouch-api:8787` |
+
+The site blocks for the shared Caddyfile are in `deploy/vps/Caddyfile`. Editing that file and reloading the
+proxy is the teammate's call, since other projects share it.
 
 Both images are built for amd64 and arm64 by `.github/workflows/docker.yml` on every push to `main`.
 The web image bakes in the public client IDs from the repo variables `NEXT_PUBLIC_GOOGLE_CLIENT_ID`
@@ -31,24 +36,32 @@ after the server's `api` container is stopped.
 
 ## 1. Prepare the server
 
-Needs: Debian/Ubuntu, about 1.5 GB free RAM, ports 80 and 443 free, and an SSH login in the `docker` group.
-If the server already runs nginx or Caddy on 80/443, drop the `caddy` service, publish `api` on
-`127.0.0.1:8787` and `web` on `127.0.0.1:3000`, and add the three hostnames to the existing proxy instead.
-
 ```bash
-scp deploy/vps/setup.sh deploy/vps/compose.yaml deploy/vps/Caddyfile solpouch@<IP>:
-ssh solpouch@<IP> 'bash setup.sh && mv compose.yaml Caddyfile solpouch/'
+ssh tariq@5.78.87.188 'mkdir -p ~/solpouch/keys ~/solpouch/certs'
+scp deploy/vps/compose.yaml tariq@5.78.87.188:solpouch/
+# The proxy's address on trading-os-edge, for the rate limiter's trusted-proxy check:
+ssh tariq@5.78.87.188 "docker inspect shared-automation-proxy-1 --format '{{(index .NetworkSettings.Networks \"trading-os-edge\").IPAddress}}'"
 ```
+
+The server has no swap; 2 GB of it keeps a memory spike from killing containers
+(`sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`,
+plus `/swapfile none swap sw 0 0` in `/etc/fstab`). Ask the teammate first.
+
+A `solpouch-smoke` stack (`/opt/solpouch`) already runs there. If it uses the real database, it must be
+stopped before the cutover (rule above).
 
 ## 2. Smoke test with a safe config
 
 Mock vault and memory store, so no payout risk. In Cloudflare DNS add `api-next` and `next`
-(plus `www.next`) → A → `<IP>`, **DNS only** (grey cloud) so Caddy can get certificates. Then:
+(plus `www.next`) → A → `5.78.87.188`, **DNS only** (grey cloud) so Caddy can get certificates.
+The teammate appends `deploy/vps/Caddyfile` to the shared Caddyfile with the hosts swapped to
+`api-next.solpouch.tech` and `next.solpouch.tech, www.next.solpouch.tech`, then reloads the proxy
+(`docker exec shared-automation-proxy-1 caddy reload --config /etc/caddy/Caddyfile`). Then:
 
 ```bash
-ssh solpouch@<IP>
-cd ~/solpouch && printf 'SESSION_SECRET=%s\n' "$(openssl rand -hex 32)" > .env
-API_HOST=api-next.solpouch.tech WEB_HOST=next.solpouch.tech docker compose up -d
+ssh tariq@5.78.87.188
+cd ~/solpouch && printf 'SESSION_SECRET=%s\nPROXY_IP=<proxy IP>\n' "$(openssl rand -hex 32)" > .env
+docker compose up -d
 curl https://api-next.solpouch.tech/health     # 200
 curl -I https://next.solpouch.tech/            # 200 (sign-in won't work on this host, expected)
 ```
@@ -57,9 +70,9 @@ curl -I https://next.solpouch.tech/            # 200 (sign-in won't work on this
 
 1. Copy the real backend config and keypairs:
    ```bash
-   scp Solpouch/.env solpouch@<IP>:solpouch/.env
-   scp Solpouch/.keys/owner.json Solpouch/.keys/agent.json solpouch@<IP>:solpouch/keys/
-   scp Solpouch/certs/timescale-ca.pem solpouch@<IP>:solpouch/certs/
+   scp Solpouch/.env tariq@5.78.87.188:solpouch/.env
+   scp Solpouch/.keys/owner.json Solpouch/.keys/agent.json tariq@5.78.87.188:solpouch/keys/
+   scp Solpouch/certs/timescale-ca.pem tariq@5.78.87.188:solpouch/certs/
    ```
    On the server, make the files readable only by the container user (uid 1000) and fix the paths:
    ```bash
@@ -67,15 +80,18 @@ curl -I https://next.solpouch.tech/            # 200 (sign-in won't work on this
    chmod 600 .env && chmod 644 certs/* && chmod 600 keys/*
    docker run --rm -v "$PWD/keys:/k" alpine chown 1000:1000 /k/owner.json /k/agent.json
    sed -i -e '/^TRUSTED_PROXY_/d' -e 's#^DATABASE_CA_CERT=.*#DATABASE_CA_CERT=/app/certs/timescale-ca.pem#' .env
+   echo 'PROXY_IP=<proxy IP>' >> .env
    ```
    `OWNER_KEYPAIR_PATH`/`AGENT_KEYPAIR_PATH` stay `.keys/...` (resolved from `/app`). Leave
    `.keys/checkout.json` and `.keys/android/` on the laptop: the backend doesn't read them.
 2. **Stop the laptop backend and web** by PID (never by process name), and disable the
    "Solpouch Tunnel" scheduled task so it doesn't restart.
-3. In Cloudflare DNS, replace the tunnel records for `@`, `www` and `api` with A → `<IP>`, DNS only.
+3. In Cloudflare DNS, replace the tunnel records for `@`, `www` and `api` with A → `5.78.87.188`, DNS only.
    Delete the `next`, `www.next` and `api-next` records.
-4. On the server: `docker compose down && docker compose up -d` (defaults are the real hostnames).
-5. Check:
+4. The teammate switches the Solpouch blocks in the shared Caddyfile to the real hosts (as in
+   `deploy/vps/Caddyfile`) and reloads the proxy.
+5. On the server: `docker compose down && docker compose up -d`.
+6. Check:
    - `https://api.solpouch.tech/health` and `https://solpouch.tech/funding` return 200
    - Google sign-in and the Privy wallet load
    - Voice: "milk and eggs under $15", then "pay for it". Both tool calls succeed and the order shows `paid`
