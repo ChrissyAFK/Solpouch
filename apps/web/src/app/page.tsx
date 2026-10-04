@@ -85,7 +85,7 @@ const FAQ = [
 
 export default function LandingPage() {
   return (
-    <div className={`${styles.page} force-dark`}>
+    <div className={`${styles.page} force-light`}>
       <a href="#main-content" className="skip-link">
         Skip to content
       </a>

@@ -1,11 +1,12 @@
 .header {
   border-bottom: 1px solid var(--line);
+  background: var(--canvas);
 }
 .inner {
   max-width: 1280px;
   margin: 0 auto;
   padding: 0 48px;
-  min-height: 88px;
+  min-height: 72px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -13,38 +14,53 @@
 }
 .brand {
   display: inline-flex;
-  gap: 11px;
+  gap: 10px;
   align-items: center;
   color: var(--ink);
-  font-size: 27px;
+  font-size: 24px;
   font-weight: 700;
-  letter-spacing: -1px;
+  letter-spacing: -0.03em;
+  text-decoration: none;
 }
 .nav {
   display: flex;
-  gap: 32px;
+  gap: 28px;
   align-items: center;
 }
 .nav a {
-  font-size: 13px;
+  font-size: var(--text-sm);
+  font-weight: 500;
   color: var(--muted);
   padding: 12px 0;
-}
-.nav a:hover {
-  color: var(--ink);
+  text-decoration: none;
+  transition: color var(--dur-hover, 160ms) var(--ease-out);
 }
 .nav .launch {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 25px;
-  padding: 12px 17px;
-  border: 1px solid var(--control-border);
+  gap: 12px;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
   color: var(--ink);
+  font-weight: 600;
+  transition:
+    border-color var(--dur-hover, 160ms) var(--ease-out),
+    transform var(--dur-press, 140ms) var(--ease-out);
 }
-.nav .launch:hover {
-  background: var(--btn-hover);
-  border-color: var(--muted);
+.nav .launch:active {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .nav a:hover {
+    color: var(--ink);
+  }
+  .nav .launch:hover {
+    border-color: var(--ink);
+  }
 }
 .toggle {
   display: none;
@@ -73,11 +89,14 @@
     min-height: 40px;
     align-items: center;
     justify-content: center;
-    background: none;
-    border: 1px solid var(--control-border);
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-md);
     color: var(--ink);
-    padding: 8px 11px;
-    font-size: 12px;
+    padding: 8px 12px;
+    font: inherit;
+    font-size: var(--text-sm);
+    font-weight: 600;
   }
   .nav {
     display: none;

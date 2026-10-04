@@ -20,75 +20,87 @@
 /* Hero */
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 520px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 540px);
   align-items: center;
-  gap: 64px;
-  padding-top: 80px;
-  padding-bottom: 96px;
+  gap: 72px;
+  padding-top: 96px;
+  padding-bottom: 112px;
 }
 .hero h1 {
-  margin: 0 0 28px;
+  margin: 0 0 var(--space-5);
   font-size: var(--text-display);
   font-weight: 800;
-  font-stretch: 125%;
-  line-height: 0.98;
-  letter-spacing: -0.03em;
+  line-height: 0.96;
+  letter-spacing: -0.035em;
   text-wrap: balance;
 }
 .hero h1 > span {
-  color: var(--solana-green);
+  color: var(--brand);
 }
 .intro {
-  color: var(--muted);
-  font-size: 18px;
+  color: var(--ink-soft);
+  font-size: var(--text-lg);
   line-height: 1.6;
-  max-width: 52ch;
-  margin: 0 0 32px;
+  max-width: 48ch;
+  margin: 0 0 var(--space-6);
 }
 .actions {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: var(--space-5);
   flex-wrap: wrap;
 }
 .page .primary {
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
-  gap: 32px;
-  padding: 14px 20px;
+  gap: var(--space-5);
+  padding: 0 22px;
   min-height: 52px;
-  border-radius: 12px;
-  color: #fff;
-  background: var(--solana-purple);
-  font-size: 16px;
+  border-radius: var(--r-md);
+  color: var(--brand-ink, #fff);
+  background: var(--brand);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.18) inset, 0 1px 2px rgb(14 16 21 / 0.18);
+  font-size: var(--text-base);
   font-weight: 600;
   text-decoration: none;
-  transition: background-color 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    background-color var(--dur-hover, 160ms) var(--ease-out),
+    transform var(--dur-press, 140ms) var(--ease-out);
 }
-.page .primary:hover {
-  background: #8735e8;
+.page .primary:active {
+  transform: scale(0.97);
 }
 .page .textLink {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   min-height: 44px;
-  font-size: 16px;
+  font-size: var(--text-base);
+  font-weight: 500;
   color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 6px;
+  transition: text-decoration-color var(--dur-hover, 160ms) var(--ease-out);
 }
-.page .textLink:hover {
-  color: var(--solana-green);
+@media (hover: hover) and (pointer: fine) {
+  .page .primary:hover {
+    background: var(--brand-hover);
+  }
+  .page .textLink:hover {
+    text-decoration-color: var(--brand);
+  }
 }
 .page .primary:focus-visible,
 .page .textLink:focus-visible {
-  outline: 2px solid var(--solana-green);
+  outline: 2px solid var(--brand);
   outline-offset: 3px;
 }
 .demoNote {
-  margin: 24px 0 0;
+  margin: var(--space-5) 0 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--text-sm);
   line-height: 1.6;
   max-width: 52ch;
 }

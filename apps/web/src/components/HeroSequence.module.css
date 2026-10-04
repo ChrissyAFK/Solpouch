@@ -7,57 +7,71 @@
   visibility: hidden;
 }
 .tabs {
-  display: flex;
-  gap: 4px;
+  display: inline-flex;
+  gap: 2px;
   flex-wrap: wrap;
+  justify-self: start;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-raised);
 }
 .tab {
-  min-height: 44px;
-  padding: 0 16px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
   background: transparent;
   color: var(--muted);
   font: inherit;
   font-size: var(--text-sm, 14px);
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
+  transition:
+    color var(--dur-hover, 160ms) var(--ease-out),
+    transform var(--dur-press, 140ms) var(--ease-out);
+}
+.tab:active {
+  transform: scale(0.97);
 }
 .tab[aria-selected="true"] {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--canvas);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(14 16 21 / 0.1), 0 0 0 1px var(--line);
 }
 .tab:focus-visible,
 .replay:focus-visible {
-  outline: 2px solid var(--solana-green);
+  outline: 2px solid var(--brand);
   outline-offset: 2px;
 }
+/* The validator: a black readout panel holding the voice line and the receipt */
 .field {
-  background: var(--solana-purple);
-  border-radius: 16px;
+  background: var(--readout);
+  border: 1px solid var(--readout-line, #222733);
+  border-radius: var(--r-lg);
   padding: 24px 24px 0;
   display: grid;
   gap: 20px;
   overflow: hidden;
-  color: #fff;
+  color: var(--readout-ink);
+  box-shadow: 0 24px 48px -24px rgb(14 16 21 / 0.45);
 }
 .voice {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 .wave {
   display: flex;
   align-items: center;
   gap: 3px;
-  height: 36px;
+  height: 32px;
 }
 .wave i {
   flex: 1;
-  max-width: 6px;
+  max-width: 5px;
   height: 100%;
   border-radius: 3px;
-  background: #fff;
+  background: var(--readout-ok);
   transform-origin: center;
 }
 .transcript {
@@ -65,7 +79,8 @@
   min-height: 3.2em;
   font-size: 18px;
   font-weight: 500;
-  line-height: 1.4;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
   max-width: 36ch;
 }
 .rest {
@@ -75,10 +90,10 @@
 /* Receipt */
 .receipt {
   position: relative;
-  background: var(--paper);
-  color: var(--paper-ink);
+  background: #fff;
+  color: #0e1015;
   padding: 20px 22px 32px;
-  border-radius: 6px 6px 0 0;
+  border-radius: var(--r-md) var(--r-md) 0 0;
   font-family: var(--font-mono);
   font-size: 14px;
   font-variant-numeric: tabular-nums;
@@ -93,8 +108,8 @@
   bottom: -1px;
   height: 10px;
   background:
-    linear-gradient(-45deg, transparent 6px, var(--solana-purple) 0) 0 0 / 14px 10px,
-    linear-gradient(45deg, transparent 6px, var(--solana-purple) 0) 0 0 / 14px 10px;
+    linear-gradient(-45deg, transparent 6px, var(--readout) 0) 0 0 / 14px 10px,
+    linear-gradient(45deg, transparent 6px, var(--readout) 0) 0 0 / 14px 10px;
   background-repeat: repeat-x;
 }
 .receiptHead {
@@ -103,7 +118,7 @@
   align-items: baseline;
   gap: 12px;
   padding-bottom: 12px;
-  border-bottom: 1px dashed var(--paper-muted);
+  border-bottom: 1px dashed #5b606b;
 }
 .merchant {
   font-weight: 700;
@@ -111,7 +126,7 @@
   letter-spacing: 0.04em;
 }
 .example {
-  color: var(--paper-muted);
+  color: #5b606b;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -126,7 +141,7 @@
   min-width: 0;
 }
 .qty {
-  color: var(--paper-muted);
+  color: #5b606b;
 }
 .amount {
   text-align: right;
@@ -139,8 +154,9 @@
   margin-top: 8px;
   padding: 8px 10px;
   border-radius: 6px;
-  background: #fde7b8;
+  background: #fbf0d9;
   color: #6b4300;
+  box-shadow: inset 0 0 0 1px #f0d9a8;
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.4;
@@ -158,7 +174,7 @@
   display: flex;
   justify-content: space-between;
   padding-top: 12px;
-  border-top: 1px dashed var(--paper-muted);
+  border-top: 1px dashed #5b606b;
   font-weight: 700;
   font-size: 16px;
 }
@@ -177,7 +193,7 @@
 }
 .check {
   fill: none;
-  stroke: #0a7a4f;
+  stroke: #0a7a4b;
   stroke-width: 2.2;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -190,9 +206,9 @@
 }
 .stamp {
   padding: 6px 14px;
-  border: 2.5px solid #0a7a4f;
-  border-radius: 6px;
-  color: #0a7a4f;
+  border: 2px solid #0a7a4b;
+  border-radius: var(--r-sm);
+  color: #0a7a4b;
   font-weight: 800;
   font-size: 16px;
   text-transform: uppercase;
@@ -208,13 +224,13 @@
   width: 100%;
   font-family: var(--font-sans);
   font-size: 14px;
-  color: var(--paper-muted);
+  color: #5b606b;
 }
 .approveBtn {
   padding: 8px 16px;
-  border-radius: 999px;
-  background: var(--paper-ink);
-  color: var(--paper);
+  border-radius: var(--r-sm);
+  background: #4b2bef;
+  color: #fff;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }

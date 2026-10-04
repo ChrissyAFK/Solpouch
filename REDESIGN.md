@@ -86,7 +86,7 @@ Radii: `--r-sm 8` (inputs, chips) · `--r-md 12` (buttons, panels) · `--r-lg 16
 ## Checklist (in order)
 
 - [x] 1. Foundations: fonts (Hanken Grotesk, Geist Mono), tokens, type scale, base buttons, inputs, focus, motion tokens in `globals.css` + `layout.tsx`
-- [ ] 2. Landing nav + hero (validator hero: fare card + readout restyle of HeroSequence)
+- [x] 2. Landing nav + hero (validator hero: fare card + readout restyle of HeroSequence)
 - [ ] 3. Landing "A pouch for every budget" as fare cards
 - [ ] 4. Landing how it works, boundary, FAQ, closing panel
 - [ ] 5. Footer (shared) and landing nav on mobile
@@ -98,3 +98,4 @@ Radii: `--r-sm 8` (inputs, chips) · `--r-md 12` (buttons, panels) · `--r-lg 16
 
 ## Log
 - 01:17 Item 1: Hanken Grotesk + Geist Mono, light/dark fare-gate tokens with old names aliased, base buttons/inputs/cards/focus/motion tokens. Build passes; /dashboard and /about checked at 1440.
+- 01:27 Item 2: landing now on the light palette; hero headline Hanken 800 at -0.035em, "limit." in brand violet, violet CTA with press scale, underlined text link; nav 72px with a bordered Sign in button; HeroSequence restyled as a validator (segmented tabs, black readout panel, mint voice bars, white receipt tape). Build passes; / checked at 1440 and 390.
