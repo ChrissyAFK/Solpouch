@@ -309,7 +309,7 @@ export default function LandingPage() {
             </nav>
           </div>
           <div className={styles.footerBottom}>
-            <span>© 2026 Solpouch</span>
+            <span>Solpouch</span>
             <p>Budget pouches for USDC on Solana.</p>
             <a href="#main-content">
               Back to top <span aria-hidden="true">↑</span>

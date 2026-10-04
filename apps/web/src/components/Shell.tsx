@@ -194,7 +194,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
               Personal <span>/</span>
               <strong>{pageLabel}</strong>
             </div>
-            <span className="demo-label">Payments on Solana</span>
             {user?.wallet && (
               <span
                 className="num"

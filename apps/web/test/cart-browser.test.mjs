@@ -23,14 +23,16 @@ async function setup(t, orders, before = async () => {}) {
 test('cart payment needs an explicit click and shows the resulting status',async t=>{
  let calls=0;const page=await setup(t,[draft]);
  await page.route('**/orders/cartfixture/confirm',r=>{calls++;return r.fulfill({json:{...draft,status:'paid',txSignature:'mockfixture',paidAt:new Date().toISOString()}});});
+ await page.getByRole('tab',{name:/^Carts/}).click();
  const cards=page.getByRole('region',{name:'Recent carts and payments'});
- await cards.getByText('1 × Eggs',{exact:true}).waitFor();assert.equal(calls,0);
+ await cards.getByText('1 × Eggs · $5.00',{exact:true}).waitFor();assert.equal(calls,0);
  await cards.getByRole('button',{name:'Approve 5.00 USDC & pay',exact:true}).click();
  await cards.getByText('paid',{exact:true}).waitFor();assert.equal(calls,1);
  assert.equal(await cards.getByRole('button',{name:/Approve/}).count(),0);
 });
 test('web references show retailer links and never offer payment',async t=>{
  const page=await setup(t,[{...draft,merchantId:'web:store.example',store:{name:'Store',domain:'store.example'},fulfillment:{via:'instacart',label:'Instacart',checkoutUrl:'https://www.instacart.com/list/fixture'}}]);
+ await page.getByRole('tab',{name:/^Carts/}).click();
  const cards=page.getByRole('region',{name:'Recent carts and payments'});
  await cards.getByText('5.00 CAD estimate',{exact:true}).waitFor();
  assert.equal(await cards.getByRole('button',{name:/Approve/}).count(),0);
@@ -77,6 +79,7 @@ test('demo checkout requires preparation then a separate approval of converted a
  let payments=0;const page=await setup(t,[reference]);
  await page.route('**/orders/cartfixture/demo-checkout',r=>{assert.equal(r.request().postDataJSON().version,4);return r.fulfill({json:converted});});
  await page.route('**/orders/cartfixture/confirm',r=>{assert.equal(r.request().postDataJSON().version,5);payments++;return r.fulfill({json:{...converted,status:'paid'}});});
+ await page.getByRole('tab',{name:/^Carts/}).click();
  const cards=page.getByRole('region',{name:'Recent carts and payments'});
  await cards.getByRole('button',{name:'Prepare devnet demo checkout'}).click();
  await cards.getByText('No retailer order is placed. Devnet test tokens only.').waitFor();

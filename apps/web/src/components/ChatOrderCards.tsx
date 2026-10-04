@@ -9,7 +9,7 @@ import { useAuth } from "./AuthProvider";
 import styles from "./ChatWidget.module.css";
 
 /** Account-backed cards; never extract payment instructions from model text. */
-export function ChatOrderCards({ refreshKey, live = false }: { refreshKey: number; live?: boolean }) {
+export function ChatOrderCards({ refreshKey, live = false, onUpdate }: { refreshKey: number; live?: boolean; onUpdate?: (count: number, fresh: string | null) => void }) {
   const { sessionKey } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -20,6 +20,8 @@ export function ChatOrderCards({ refreshKey, live = false }: { refreshKey: numbe
   const freshCard = useRef<HTMLElement | null>(null);
   const sequence = useRef(0);
   const mounted = useRef(true);
+  const report = useRef(onUpdate);
+  useEffect(() => { report.current = onUpdate; });
   const current = () => mounted.current && getToken() === sessionKey;
   const load = useCallback(async () => {
     const id = ++sequence.current;
@@ -45,6 +47,7 @@ export function ChatOrderCards({ refreshKey, live = false }: { refreshKey: numbe
     const timer = setInterval(() => void load(), 2500);
     return () => clearInterval(timer);
   }, [live, load, sessionKey]);
+  useEffect(() => { report.current?.(orders.length, fresh); }, [orders.length, fresh]);
   useEffect(() => { if (fresh) freshCard.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }, [fresh]);
   async function confirm(order: Order, prepareDemo = false) {
     if (!current() || busy || (isCheckoutReference(order) && !prepareDemo)) return;
@@ -65,12 +68,11 @@ export function ChatOrderCards({ refreshKey, live = false }: { refreshKey: numbe
   return (
     <section className={styles.orderCards} aria-label="Recent carts and payments">
       <div className={styles.cardHeading}>
-        <strong>Your carts</strong>
+        <span>{updated ? `Updated ${updated}` : "Your latest carts"}</span>
         <button type="button" disabled={!!busy} onClick={() => void load()}>Refresh carts</button>
       </div>
-      {updated && <small>Updated {updated}</small>}
       {error && <p role="alert">{error}</p>}
-      {orders.length === 0 && <p>No carts yet. Use New order to build one.</p>}
+      {orders.length === 0 && <p className={styles.cardsEmpty}>No carts yet. Ask for something to buy, or use New order.</p>}
       {orders.map(order => {
         const reference = isCheckoutReference(order);
         const currency = `${orderCurrency(order)}${reference ? " estimate" : ""}`;
@@ -78,8 +80,10 @@ export function ChatOrderCards({ refreshKey, live = false }: { refreshKey: numbe
         return (
           <article key={order.id} ref={order.id === fresh ? freshCard : undefined} className={`${styles.orderCard} ${order.id === fresh ? styles.freshCard : ""}`}>
             {order.id === fresh && <span className={styles.freshBadge}>Just found</span>}
-            <strong>{order.store?.name ?? order.merchantId}</strong>
-            <span>{order.status === "paying" ? "Payment confirmation pending" : order.status}</span>
+            <div className={styles.cardTop}>
+              <strong>{order.store?.name ?? order.merchantId}</strong>
+              <span className={styles.status}>{order.status === "paying" ? "Payment confirmation pending" : order.status}</span>
+            </div>
             <ul>{order.lines.map((line, index) => <li key={index}>{line.qty} × {line.product?.name ?? line.requested}{line.product ? ` · $${toUsdc(line.lineTotal).toFixed(2)}` : ""}{line.substitution ? " · substitution" : ""}{line.note ? ` — ${line.note}` : ""}</li>)}</ul>
             <b>{total} {currency}</b>
             <DemoCheckoutSummary order={order} />

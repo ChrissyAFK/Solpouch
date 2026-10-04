@@ -60,6 +60,10 @@ function ChatPanel({ landing }: { landing: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [retryMessages, setRetryMessages] = useState<Message[] | null>(null);
+  const [tab, setTab] = useState<"chat" | "carts">("chat");
+  const [cartCount, setCartCount] = useState(0);
+  const [cartAlert, setCartAlert] = useState(false);
+  const seenFresh = useRef<string | null>(null);
   const launcher = useRef<HTMLButtonElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const history = useRef<HTMLDivElement>(null);
@@ -251,8 +255,10 @@ function ChatPanel({ landing }: { landing: boolean }) {
     setPending(false);
     setMessages([]);
     setError(null);
+    setNotice(null);
     setRetryMessages(null);
     setDraft("");
+    setTab("chat");
     textarea.current?.focus();
   }
   async function send(content?: string, retry?: Message[]) {
@@ -266,6 +272,7 @@ function ChatPanel({ landing }: { landing: boolean }) {
       setMessages(next);
       setDraft("");
     }
+    setTab("chat");
     setError(null);
     setRetryMessages(null);
     setPending(true);
@@ -466,6 +473,25 @@ function ChatPanel({ landing }: { landing: boolean }) {
     /\b(buy|order|purchase|shop|need|get me|add to cart)\b/i.test(lastUser)
       ? lastUser
       : null;
+  const modeText =
+    mode === "agent"
+      ? session === "voice"
+        ? agent.isSpeaking
+          ? "Speaking…"
+          : "Listening…"
+        : "Voice and text agent"
+      : mode === "checking"
+        ? "Connecting…"
+        : mode === "demo"
+          ? "Assistant"
+          : mode === "claude"
+            ? "Powered by Claude"
+            : mode === "gemini"
+              ? "Powered by Gemini"
+              : "Offline";
+  const statusTone =
+    mode === "checking" ? styles.dotWait : mode === "unavailable" ? styles.dotOff : styles.dotOn;
+  const canClear = messages.length > 0 || !!draft || !!notice || !!error || session !== null;
   return (
     // The landing page has no chat of its own, but keeps one that is already running.
     <div className={styles.widget} hidden={landing && !open && session === null && messages.length === 0}>
@@ -485,40 +511,42 @@ function ChatPanel({ landing }: { landing: boolean }) {
           }}
         >
           <header className={styles.header}>
-            <div>
+            <span className={styles.mark} aria-hidden="true">
+              <ChatIcon />
+            </span>
+            <div className={styles.title}>
               <h2>Ask Solpouch</h2>
               <span className={styles.mode}>
-                {mode === "agent"
-                  ? session === "voice"
-                    ? agent.isSpeaking
-                      ? "Speaking…"
-                      : "Listening…"
-                    : "Voice and text agent"
-                  : mode === "checking"
-                  ? "Checking connection…"
-                  : mode === "demo"
-                    ? "Assistant"
-                    : mode === "claude" ? "Powered by Claude" : mode === "gemini"
-                      ? "Powered by Gemini"
-                      : "Connection unavailable"}
+                <span className={`${styles.dot} ${statusTone}`} aria-hidden="true" />
+                {modeText}
               </span>
             </div>
             <div className={styles.headerActions}>
+              {user && (
+                <button
+                  type="button"
+                  className={styles.newChat}
+                  onClick={clear}
+                  disabled={!canClear}
+                  aria-label="Clear chat"
+                  title="Start a new chat"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+                    <path d="M3 3v5h5" />
+                  </svg>
+                  <span>New chat</span>
+                </button>
+              )}
               <button
                 type="button"
-                onClick={clear}
-                disabled={messages.length === 0 && !draft}
-                aria-label="Clear chat"
-              >
-                Clear
-              </button>
-              <button
-                type="button"
-                className={styles.close}
+                className={styles.iconButton}
                 onClick={close}
                 aria-label="Close chat"
               >
-                ×
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
               </button>
             </div>
           </header>
@@ -532,16 +560,49 @@ function ChatPanel({ landing }: { landing: boolean }) {
             </div>
           ) : (
           <>
+          <div className={styles.tabs} role="tablist" aria-label="Chat views">
+            <button
+              type="button"
+              role="tab"
+              id="solpouch-tab-chat"
+              aria-selected={tab === "chat"}
+              aria-controls="solpouch-chat-log"
+              onClick={() => setTab("chat")}
+            >
+              Chat
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="solpouch-tab-carts"
+              aria-selected={tab === "carts"}
+              aria-controls="solpouch-chat-carts"
+              onClick={() => { setTab("carts"); setCartAlert(false); }}
+            >
+              Carts
+              {cartCount > 0 && <span className={styles.count}>{cartCount}</span>}
+              {cartAlert && tab !== "carts" && <span className={styles.alert}><span className="sr-only">, new cart</span></span>}
+            </button>
+          </div>
+          {session === "voice" && (
+            <div className={styles.callBar} role="status">
+              <span className={styles.wave} aria-hidden="true"><i /><i /><i /><i /></span>
+              <span>{agent.isSpeaking ? "Solpouch is speaking" : "Listening, go ahead"}</span>
+            </div>
+          )}
           <div
             className={styles.history}
+            id="solpouch-chat-log"
             ref={history}
             role="log"
             aria-label="Conversation"
             aria-live="polite"
             aria-relevant="additions text"
+            hidden={tab !== "chat"}
           >
-            {messages.length === 0 && (
+            {messages.length === 0 && !notice && !error && (
               <div className={styles.empty}>
+                <span className={styles.emptyMark} aria-hidden="true"><ChatIcon /></span>
                 <h3>How can I help?</h3>
                 <p>
                   Ask about your pouches, spending limits, or placing an order.
@@ -569,22 +630,22 @@ function ChatPanel({ landing }: { landing: boolean }) {
                 className={`${styles.message} ${message.role === "user" ? styles.user : styles.assistant}`}
                 key={index}
               >
-                <span className={styles.speaker}>
-                  {message.role === "user" ? "You" : "Solpouch"}
+                <span className="sr-only">
+                  {message.role === "user" ? "You:" : "Solpouch:"}
                 </span>
                 <p>{message.content}</p>
               </div>
             ))}
-            <ChatOrderCards refreshKey={messages.length} live={session === "voice"} />
             {notice && (
-              <p className={styles.pending} role="status">
+              <p className={styles.notice} role="status">
                 {notice}
               </p>
             )}
             {pending && (
-              <p className={styles.pending} role="status">
-                Waiting for a reply…
-              </p>
+              <div className={`${styles.message} ${styles.assistant} ${styles.typing}`} role="status">
+                <span className="sr-only">Waiting for a reply…</span>
+                <span aria-hidden="true"><i /><i /><i /></span>
+              </div>
             )}
             {error && (
               <div className={styles.error} role="alert">
@@ -599,21 +660,36 @@ function ChatPanel({ landing }: { landing: boolean }) {
                 )}
               </div>
             )}
-          </div>
-          {shoppingRequest && !pending && !error && (
-            <div className={styles.orderAction}>
+            {shoppingRequest && !pending && !error && (
               <Link
+                className={styles.orderAction}
                 href={`/order?request=${encodeURIComponent(shoppingRequest)}`}
                 onClick={() => {
                   // Full-width on phones, so step aside to show the form; the chat keeps going.
                   if (window.matchMedia("(max-width: 540px)").matches) setOpen(false);
                 }}
               >
-                Open order form <span aria-hidden="true">↗</span>
+                <span>
+                  <strong>Open order form</strong>
+                  <small>Review the cart before paying.</small>
+                </span>
+                <span aria-hidden="true">↗</span>
               </Link>
-              <span>Review the cart before paying.</span>
-            </div>
-          )}
+            )}
+          </div>
+          <div className={styles.cartsPane} id="solpouch-chat-carts" role="tabpanel" aria-labelledby="solpouch-tab-carts" hidden={tab !== "carts"}>
+            <ChatOrderCards
+              refreshKey={messages.length}
+              live={session === "voice"}
+              onUpdate={(count, fresh) => {
+                setCartCount(count);
+                if (fresh && fresh !== seenFresh.current) {
+                  seenFresh.current = fresh;
+                  setCartAlert(true);
+                }
+              }}
+            />
+          </div>
           <form
             className={styles.composer}
             onSubmit={(event) => {
@@ -624,46 +700,62 @@ function ChatPanel({ landing }: { landing: boolean }) {
             <label className="sr-only" htmlFor="solpouch-chat-message">
               Message Solpouch
             </label>
-            <textarea
-              id="solpouch-chat-message"
-              ref={textarea}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              maxLength={2000}
-              placeholder="Ask about your pouches…"
-              rows={2}
-              aria-describedby="solpouch-chat-help"
-              onKeyDown={(event) => {
-                if (
-                  event.key === "Enter" &&
-                  !event.shiftKey &&
-                  !event.nativeEvent.isComposing
-                ) {
-                  event.preventDefault();
-                  void send();
-                }
-              }}
-            />
-            <div className={styles.composerBottom}>
-              <span id="solpouch-chat-help">Shift + Enter for a new line</span>
+            <div className={styles.inputRow}>
+              <textarea
+                id="solpouch-chat-message"
+                ref={textarea}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                maxLength={2000}
+                placeholder={session === "voice" ? "Or type a message…" : "Message Solpouch…"}
+                rows={1}
+                aria-describedby="solpouch-chat-help"
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    !event.shiftKey &&
+                    !event.nativeEvent.isComposing
+                  ) {
+                    event.preventDefault();
+                    void send();
+                  }
+                }}
+              />
               {voiceEnabled && (
                 <button
                   type="button"
                   className={styles.voice}
                   onClick={() => void toggleVoice()}
                   aria-pressed={session === "voice"}
+                  aria-label={session === "voice" ? "End call" : "Talk"}
+                  title={session === "voice" ? "End call" : "Talk to Solpouch"}
                 >
-                  {session === "voice" ? "End call" : "Talk"}
+                  {session === "voice" ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+                  ) : (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect x="9" y="3" width="6" height="11" rx="3" />
+                      <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+                    </svg>
+                  )}
                 </button>
               )}
-              <button type="submit" disabled={pending || !draft.trim()}>
-                {pending ? "Sending…" : "Send"}
+              <button
+                type="submit"
+                className={styles.send}
+                disabled={pending || !draft.trim()}
+                aria-label="Send"
+                title="Send (Enter)"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 19V5M5 12l7-7 7 7" />
+                </svg>
               </button>
             </div>
-            <p className={styles.boundary}>
+            <p className={styles.boundary} id="solpouch-chat-help">
               {mode === "agent"
-                ? "Orders always wait for your yes. The assistant can't top up pouches."
-                : "The text helper cannot act on its own. Cart payment buttons require your approval."}
+                ? "Orders always wait for your yes."
+                : "Payments always need your approval."}
             </p>
           </form>
           </>

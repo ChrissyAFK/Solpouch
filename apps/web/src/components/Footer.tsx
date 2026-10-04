@@ -56,7 +56,7 @@ export function Footer() {
           </nav>
         </div>
         <div className={styles.bottom}>
-          <span>© 2026 Solpouch</span>
+          <span>Solpouch</span>
           <p>Spend with a budget. You approve orders.</p>
         </div>
       </div>
