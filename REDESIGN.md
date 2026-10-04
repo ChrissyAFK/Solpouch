@@ -72,7 +72,7 @@ Dark (app preference and auto): `--canvas #0B0D12` · `--surface #12151C` · `--
 4px base: `--space-1 4` · `2 8` · `3 12` · `4 16` · `5 24` · `6 32` · `7 48` · `8 64` · `9 96` · `10 128`.
 Container 1200px max, 24px gutters (16px under 600px). 12-column grid on landing. Section rhythm:
 96px between landing sections on desktop, 64px on mobile; more space above a heading than below.
-Radii: `--r-sm 8` (inputs, chips) · `--r-md 12` (buttons, panels) · `--r-lg 20` (cards) · pill 999.
+Radii: `--r-sm 8` (inputs, chips) · `--r-md 12` (buttons, panels) · `--r-lg 16` (cards; craft floor caps card radii at 16) · pill 999.
 
 ### Motion
 
@@ -85,7 +85,7 @@ Radii: `--r-sm 8` (inputs, chips) · `--r-md 12` (buttons, panels) · `--r-lg 20
 
 ## Checklist (in order)
 
-- [ ] 1. Foundations: fonts (Hanken Grotesk, Geist Mono), tokens, type scale, base buttons, inputs, focus, motion tokens in `globals.css` + `layout.tsx`
+- [x] 1. Foundations: fonts (Hanken Grotesk, Geist Mono), tokens, type scale, base buttons, inputs, focus, motion tokens in `globals.css` + `layout.tsx`
 - [ ] 2. Landing nav + hero (validator hero: fare card + readout restyle of HeroSequence)
 - [ ] 3. Landing "A pouch for every budget" as fare cards
 - [ ] 4. Landing how it works, boundary, FAQ, closing panel
@@ -97,3 +97,4 @@ Radii: `--r-sm 8` (inputs, chips) · `--r-md 12` (buttons, panels) · `--r-lg 20
 - [ ] 10. Chat widget panel
 
 ## Log
+- 01:17 Item 1: Hanken Grotesk + Geist Mono, light/dark fare-gate tokens with old names aliased, base buttons/inputs/cards/focus/motion tokens. Build passes; /dashboard and /about checked at 1440.
