@@ -35,6 +35,8 @@ export async function recoverTransaction(
   expected: Pick<VaultOperation, "kind" | "pouchId">,
 ): Promise<{ txSignature: string }> {
   let operation = await store.getOperation(id);
+  // Only a transaction signed in this call has never been broadcast before.
+  const firstBroadcast = !operation;
   if (!operation) {
     operation = await prepare();
     if (operation.id !== id || operation.kind !== expected.kind || operation.pouchId !== expected.pouchId) throw new Error("Payment journal context does not match the request");
@@ -61,10 +63,11 @@ export async function recoverTransaction(
     return { txSignature: operation.txSignature };
   } catch (error) {
     if (error instanceof PaymentPending || error instanceof VaultRejected) throw error;
-    // Preflight refusals never reach the cluster. Confirm the signature is unknown
-    // before reporting one, so a race with an earlier broadcast stays pending.
+    // Preflight refusals never reach the cluster. On a retry an earlier broadcast of
+    // the same bytes may still be in flight and land before lastValidBlockHeight,
+    // so only the first broadcast's refusal is final, and only for an unseen signature.
     const code = transport.rejection?.(error);
-    if (finalRejection(code)) {
+    if (firstBroadcast && finalRejection(code)) {
       const after = await transport.status(operation.txSignature).catch(() => undefined);
       if (after?.seen === false) throw new VaultRejected(code);
     }

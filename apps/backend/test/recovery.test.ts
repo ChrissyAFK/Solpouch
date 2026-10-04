@@ -174,8 +174,18 @@ describe("definitive chain refusals", () => {
     rpc.status = vi.fn().mockResolvedValue({ confirmed: false, failed: false, seen: false });
     rpc.broadcast = vi.fn().mockRejectedValue(simulated("OverDailyLimit"));
     const result = recoverTransaction(store, operation.id, rpc, async () => operation, operation);
-    await expect(result).rejects.toBeInstanceOf(VaultRejected);
-    await expect(recoverTransaction(store, operation.id, rpc, vi.fn(), operation)).rejects.toMatchObject({ code: "OverDailyLimit" });
+    const error = await result.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(VaultRejected);
+    expect(error).toMatchObject({ code: "OverDailyLimit" });
+  });
+
+  it("never finalizes a refusal on a retry, while an earlier broadcast could still land", async () => {
+    const rpc = { ...transport(), rejection: preflightRejectCode };
+    rpc.status = vi.fn().mockResolvedValue({ confirmed: false, failed: false, seen: false });
+    rpc.broadcast = vi.fn().mockRejectedValueOnce(new Error("socket hang up")).mockRejectedValue(simulated("InsufficientFunds"));
+    await expect(recoverTransaction(store, operation.id, rpc, async () => operation, operation)).rejects.toThrow("not confirmed");
+    await expect(recoverTransaction(store, operation.id, rpc, vi.fn(), operation)).rejects.toThrow("not confirmed");
+    expect(rpc.broadcast).toHaveBeenCalledTimes(2);
   });
 
   it("stays pending when the signature may have landed or the error could hide a success", async () => {
