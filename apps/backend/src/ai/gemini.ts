@@ -116,7 +116,7 @@ export function cleanPrice(v: unknown): number | undefined {
 
 const GEMINI_HTTP = { timeout: 15_000, retryOptions: { attempts: 1 } };
 
-function finishParse(parsed: any): ParsedRequest | null {
+export function finishParse(parsed: any): ParsedRequest | null {
   const items: ParsedItem[] = (parsed?.items ?? [])
     .filter((i: ParsedItem) => i?.requested)
     .map((i: ParsedItem) => ({ requested: String(i.requested).replace(/\s+/g, " ").trim(), qty: validQuantity(Number(i.qty ?? 1)) }));
