@@ -93,7 +93,7 @@ Radii: `--r-sm 8` (inputs, chips) · `--r-md 12` (buttons, panels) · `--r-lg 16
 - [x] 6. App shell: sidebar, top bar, sign-in card, Ask Solpouch button
 - [x] 7. Info pages: About, Privacy, Terms, Contact, Delete account
 - [x] 8. Dashboard overview: stat tiles, spending card, pouch list as cards
-- [ ] 9. Order page and receipt
+- [x] 9. Order page and receipt
 - [ ] 10. Chat widget panel
 
 ## Log
@@ -105,3 +105,4 @@ Radii: `--r-sm 8` (inputs, chips) · `--r-md 12` (buttons, panels) · `--r-lg 16
 - 01:33 Item 6: sidebar on tokens (bordered workspace tile with violet avatar, 8px-radius nav rows, active row as a raised surface with a violet icon instead of a 2px colored edge, gated hover, 13px floor), 64px top bar with a pill label, sign-in card with flat violet mark and money-card shadow, Ask Solpouch launcher as an ink button that turns violet, with press scale. Build passes; /dashboard checked at 1440.
 - 01:36 Item 7: info pages (About, Privacy, Terms, Contact, Delete account) on tokens: title Hanken 800 at -0.035em with balanced wrap and no font-stretch, hairline rule under the header, ink h2s with more space above, brand list markers and links with gated hover, mono code, 16px mobile gutter. Build passes; /privacy checked at 1440, all five routes return 200.
 - 01:39 Item 8: dashboard overview on tokens: stat tiles at 16px radius, the Balance tile on black readout glass with a mint mono figure and the money-card shadow, brand spend bar at 6px; pouch and order lists each on one surface card with a raised header row, 20px row padding and gated hover; dashed empty-state cards; 48px section rhythm. Build passes; the overview sits behind Google sign-in, which isn't configured on the test server, so only the shell was checked visually (1440).
+- 01:41 Item 9: order page and receipt on tokens: step tabs on a hairline with a brand underline, 56px Talk button, suggestion chips as 36px brand-soft pressables with gated hover, pill status, receipt as white tape with 12px radius and the money-card shadow, rejection panel with a danger hairline, brand 'via' button with press scale; no solana-purple left. Build passes; not checked visually (the test server was stopped for low memory, and /order sits behind sign-in).
