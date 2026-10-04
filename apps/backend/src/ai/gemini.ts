@@ -89,10 +89,24 @@ type MatchRow = {
   note: string | null;
 };
 
+/** Model-supplied quantity as an integer in 1..1000. */
+export function clampQty(v: unknown): number {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.min(1000, Math.max(1, n)) : 1;
+}
+
+/** Model-supplied price: finite and non-negative, else undefined (treated as missing). */
+export function cleanPrice(v: unknown): number | undefined {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
+const GEMINI_HTTP = { timeout: 15_000, retryOptions: { attempts: 1 } };
+
 function finishParse(parsed: any): ParsedRequest | null {
   const items: ParsedItem[] = (parsed?.items ?? [])
     .filter((i: ParsedItem) => i?.requested)
-    .map((i: ParsedItem) => ({ requested: String(i.requested), qty: Math.max(1, Math.round(Number(i.qty) || 1)) }));
+    .map((i: ParsedItem) => ({ requested: String(i.requested), qty: clampQty(i.qty) }));
   return items.length ? { pouchHint: parsed.pouchHint || undefined, items } : null;
 }
 
@@ -100,10 +114,10 @@ function finishMatch(rows: MatchRow[], catalog: Product[]): OrderLine[] | null {
   if (!rows?.length) return null;
   return rows.map((r) => {
     const product = catalog.find((p) => p.id === r.productId && p.inStock) ?? null;
-    const qty = product ? Math.max(1, Math.round(r.qty || r.requestedQty || 1)) : 0;
+    const qty = product ? clampQty(r.qty || r.requestedQty || 1) : 0;
     return {
       requested: r.requested,
-      requestedQty: r.requestedQty || 1,
+      requestedQty: clampQty(r.requestedQty || 1),
       product,
       qty,
       lineTotal: product ? product.unitPrice * qty : 0,
@@ -132,6 +146,7 @@ export async function parseRequest(text: string): Promise<ParsedRequest> {
         model: model(),
         contents: text,
         config: {
+          httpOptions: GEMINI_HTTP,
           systemInstruction: PARSE_PROMPT,
           responseMimeType: "application/json",
           responseSchema: {
@@ -187,6 +202,7 @@ export async function matchItems(items: ParsedItem[], catalog: Product[]): Promi
         model: model(),
         contents: JSON.stringify({ items, catalog: slim }),
         config: {
+          httpOptions: GEMINI_HTTP,
           systemInstruction: MATCH_PROMPT,
           responseMimeType: "application/json",
           responseSchema: {

@@ -32,7 +32,7 @@ The historical integration notes below describe the earlier deployment, not the 
 
 ## Abuse protection (2026-10-03)
 
-- Backend (`apps/backend/src/security/rateLimit.ts`, `app.ts`): per-IP limits (all routes 120/min, writes 30/min, `/chat` and `POST /orders` 10/min and 200/day, top-ups 5/min, `/voice/*` 60/min), 64KB body limit, secure headers, CORS only for `WEB_ORIGINS` (default localhost:3000 and solpouch.tech). Requests that come through the Cloudflare tunnel can only reach `/health` and `/voice/*` unless `PUBLIC_API=all`. The voice secret is compared in constant time, and 10 wrong secrets lock an IP out for 10 minutes. Inputs are capped (names 60 chars, amounts 10,000 USDC, max 50 pouches).
+- Backend (`apps/backend/src/security/rateLimit.ts`, `app.ts`): per-IP limits (all routes 120/min, writes 30/min, `/chat` and `POST /orders` 10/min and 200/day, top-ups 5/min, `/voice/*` 60/min), 64KB body limit, secure headers, CORS only for `WEB_ORIGINS` (default localhost:3000 and solpouch.tech). There is no tunnel-level route guard: the full API is served through the Cloudflare tunnel at `api.solpouch.tech`, and every non-public route requires a Bearer session (or the voice secret plus voice token for `/voice/*`). The voice secret is compared in constant time, and 10 wrong secrets lock an IP out for 10 minutes. Inputs are capped (names 60 chars, amounts 10,000 USDC, max 50 pouches).
 - ElevenLabs agent: origin allowlist (localhost, solpouch.tech, www.solpouch.tech), Origin header required, 5 concurrent calls, 300 a day, 5-minute calls, hang up after 30s of silence.
 - The backend no longer seeds placeholder pouches on start (tests still use `seedPouches()`).
 

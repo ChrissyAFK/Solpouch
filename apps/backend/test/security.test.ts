@@ -5,6 +5,7 @@ import { getMerchant } from "../src/merchants/index.js";
 import { MemoryStore } from "../src/store/memory.js";
 import { MockVaultClient } from "../src/vault/mock.js";
 import { clientIp, rateLimit } from "../src/security/rateLimit.js";
+import { resetVoiceLockouts } from "../src/security/auth.js";
 import { authHeaders, ownedSeed } from "./helpers.js";
 
 const VOICE_SECRET = "fixture-only-voice-secret";
@@ -13,6 +14,7 @@ let auth: Record<string, string>;
 let store: MemoryStore;
 let vault: MockVaultClient;
 beforeEach(async () => {
+  resetVoiceLockouts();
   auth = await authHeaders();
   vi.stubEnv("GEMINI_API_KEY", "");
   vi.stubEnv("ANTHROPIC_API_KEY", "");
@@ -88,8 +90,20 @@ describe("security", () => {
     const call = (index: number, secret: string) => app.request("/voice/tools/get_pouches", {
       method: "POST", headers: { ...json, "x-forwarded-for": `4.4.4.${index}`, "X-Solpouch-Secret": secret }, body: "{}",
     });
-    for (let i = 0; i < 30; i++) expect((await call(i, "wrong")).status).toBe(401);
+    for (let i = 0; i < 10; i++) expect((await call(i, "wrong")).status).toBe(401);
     expect((await call(31, VOICE_SECRET)).status).toBe(429);
+  });
+
+  it("locks an IP out after 10 wrong voice secrets and a correct secret clears the count", async () => {
+    const call = (secret: string) => app.request("/voice/tools/get_pouches", {
+      method: "POST", headers: { ...json, "X-Solpouch-Secret": secret }, body: "{}",
+    });
+    for (let i = 0; i < 9; i++) expect((await call("wrong")).status).toBe(401);
+    expect((await call(VOICE_SECRET)).status).toBe(401); // passes the secret, no voice token
+    for (let i = 0; i < 9; i++) expect((await call("wrong")).status).toBe(401); // count was cleared
+    expect((await call("wrong")).status).toBe(401);
+    const locked = await call(VOICE_SECRET);
+    expect(locked.status).toBe(429);
   });
 
   it("rejects oversized bodies with 413", async () => {

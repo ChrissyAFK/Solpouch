@@ -51,7 +51,7 @@ export function createApp(deps: Deps) {
     const m = c.req.method;
     return m === "POST" || m === "PATCH" ? writes(c, next) : next();
   });
-  app.on("POST", ["/chat", "/orders"], gemini, geminiDay);
+  app.on("POST", ["/chat", "/orders", "/voice/tools/create_order"], gemini, geminiDay);
   app.on("POST", "/topups/*", topups);
   app.use("/voice/*", rateLimit({ store: deps.store, windowMs: MIN, max: 60, key: "voice" }));
 
