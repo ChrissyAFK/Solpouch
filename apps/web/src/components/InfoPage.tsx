@@ -1,3 +1,5 @@
+import styles from "./InfoPage.module.css";
+
 export function InfoPage({
   title,
   intro,
@@ -8,12 +10,12 @@ export function InfoPage({
   children: React.ReactNode;
 }) {
   return (
-    <div className="prose">
-      <div className="page-heading" style={{ display: "block" }}>
-        <h1>{title}</h1>
-        {intro && <p className="page-description">{intro}</p>}
-      </div>
-      {children}
-    </div>
+    <main id="main-content" className={styles.page}>
+      <header className={styles.head}>
+        <h1 className={styles.title}>{title}</h1>
+        {intro && <p className={styles.intro}>{intro}</p>}
+      </header>
+      <div className={styles.body}>{children}</div>
+    </main>
   );
 }

@@ -21,14 +21,15 @@
   gap: 10px;
   color: #e5e2ed;
   font-size: 21px;
-  font-weight: 600;
-  letter-spacing: -0.6px;
+  font-weight: 800;
+  font-stretch: 115%;
+  letter-spacing: -0.03em;
 }
 .about p {
   max-width: 300px;
   margin: 12px 0 0;
   color: #96909f;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.7;
 }
 .group {
@@ -40,7 +41,7 @@
 .group h2 {
   margin: 0 0 8px;
   color: #ccc5d5;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
   font-weight: 600;
 }
@@ -50,13 +51,13 @@
   gap: 7px;
   min-height: 29px;
   color: #9890a4;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
 }
 .group a:hover {
   color: #ddd0ee;
   text-decoration: underline;
-  text-underline-offset: 4px;
+  text-underline-offset: 0.2em;
 }
 .group a > span[aria-hidden] {
   color: #787080;
@@ -69,7 +70,7 @@
   border-top: 1px solid #29252e;
   padding-top: 18px;
   color: #8e8798;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.6;
 }
 .bottom > span {

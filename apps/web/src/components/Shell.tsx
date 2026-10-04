@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Icon, type IconName } from "./Icons";
 import { Footer } from "./Footer";
+import { LandingNav } from "./LandingNav";
 import { ChatWidget } from "./ChatWidget";
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -75,6 +76,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
     },
   ];
   if (pathname === "/") return <>{children}</>;
+  if (["/about", "/contact", "/terms", "/privacy"].includes(pathname))
+    return (
+      <>
+        <LandingNav />
+        {children}
+        <Footer />
+      </>
+    );
   return (
     <div className="app-shell">
       <a href="#main-content" className="skip-link">

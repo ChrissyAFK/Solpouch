@@ -8,20 +8,41 @@
   --line: #2b2b32;
   --solana-purple: #9945ff;
   --solana-green: #14f195;
+  --font-sans: var(--font-archivo), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+  --paper: #efece4;
+  --paper-ink: #1a1820;
+  --paper-muted: #5f5a63;
+  --warn: #f4c879;
+  --warn-surface: #342816;
+  --danger: #ffa6bb;
+  --danger-surface: #361c28;
+  --ok: var(--solana-green);
+  --ok-surface: #102e24;
+  --line-strong: #373041;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 28px;
+  --text-3xl: 36px;
+  --text-4xl: 48px;
+  --text-display: clamp(3rem, 7vw, 6rem);
   color-scheme: dark;
 }
 * {
   box-sizing: border-box;
 }
 html {
-  font-size: 15px;
+  font-size: 16px;
   scroll-behavior: smooth;
 }
 body {
   margin: 0;
   background: var(--canvas);
   color: var(--ink);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 button,
@@ -39,6 +60,7 @@ button:disabled {
 }
 a {
   text-decoration: none;
+  text-underline-offset: 0.2em;
 }
 a,
 button {
@@ -57,12 +79,49 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid var(--solana-green);
-  outline-offset: 4px;
+  outline: 2px solid var(--solana-purple);
+  outline-offset: 3px;
 }
 ::selection {
   background: #9945ff66;
-  color: white;
+  color: var(--ink);
+}
+input,
+textarea,
+select {
+  caret-color: var(--solana-purple);
+}
+html {
+  accent-color: var(--solana-purple);
+  scrollbar-color: #3a3545 var(--canvas);
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--canvas);
+}
+::-webkit-scrollbar-thumb {
+  background: #3a3545;
+  border-radius: 6px;
+  border: 2px solid var(--canvas);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4d4660;
+}
+.num,
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+.num {
+  font-family: var(--font-mono);
+}
+.brand,
+h1,
+h2,
+.wallet-metric > strong {
+  font-stretch: 115%;
 }
 .app-shell {
   min-height: 100vh;
@@ -83,8 +142,8 @@ textarea:focus-visible {
   align-items: center;
   gap: 10px;
   font-size: 24px;
-  letter-spacing: -0.8px;
-  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-weight: 800;
   padding-left: 11px;
 }
 .brand-bars {
@@ -138,7 +197,7 @@ textarea:focus-visible {
   align-items: center;
   min-height: 39px;
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: 14px;
   color: #a9a7b3;
   border-radius: 4px;
 }
@@ -191,7 +250,7 @@ textarea:focus-visible {
   align-items: center;
   gap: 12px;
   color: #888592;
-  font-size: 12px;
+  font-size: 14px;
   flex: 1;
 }
 .breadcrumb strong {
@@ -214,7 +273,8 @@ textarea:focus-visible {
 }
 .prose h2 {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   margin: 28px 0 8px;
 }
 .prose p {
@@ -241,14 +301,14 @@ textarea:focus-visible {
   margin-bottom: 28px;
 }
 h1 {
-  font-size: 29px;
+  font-size: var(--text-2xl);
   line-height: 1.2;
-  letter-spacing: -0.8px;
-  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-weight: 800;
   margin: 0;
 }
 .page-description {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--muted);
   line-height: 1.6;
   margin: 10px 0 0;
@@ -326,7 +386,7 @@ h1 {
   border-radius: 5px;
   background: #28161c;
   color: #ffb6c2;
-  font-size: 13px;
+  font-size: 14px;
   margin: 16px 0;
   overflow-wrap: anywhere;
 }
@@ -345,7 +405,9 @@ h1 {
 .sp-progress > div {
   height: 100%;
   background: #14f195;
-  transition: width 0.2s;
+  width: 100%;
+  transform-origin: left;
+  transition: transform 0.2s;
 }
 .sp-progress > .progress-high {
   background: #eeb26a;
@@ -367,7 +429,7 @@ h1 {
   border-left: 0;
 }
 .wallet-metric p {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--muted);
   margin: 1px 0 14px;
 }
@@ -382,15 +444,16 @@ h1 {
 .wallet-metric > strong {
   display: block;
   font-size: 30px;
-  font-weight: 500;
+  font-family: var(--font-mono);
+  font-weight: 700;
   line-height: 1;
-  letter-spacing: -0.7px;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
   margin-bottom: 13px;
 }
 .wallet-metric.main-metric > strong {
   font-size: 39px;
-  letter-spacing: -1.1px;
+  letter-spacing: -0.03em;
 }
 .wallet-metric > strong > span {
   font-size: 19px;
@@ -399,7 +462,7 @@ h1 {
 }
 .wallet-metric > span {
   display: block;
-  font-size: 12px;
+  font-size: 14px;
   color: #908b9d;
 }
 .wallet-section {
@@ -415,13 +478,13 @@ h1 {
 }
 .section-heading h2 {
   margin: 0;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.2px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 .section-heading p {
   margin: 5px 0 0;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--muted);
 }
 .section-count {
@@ -431,7 +494,7 @@ h1 {
   margin-left: 8px;
 }
 .section-note {
-  font-size: 12px;
+  font-size: 14px;
   color: #898392;
 }
 .pouch-table {
@@ -474,22 +537,24 @@ h1 {
 }
 .pouch-identity > span {
   display: block;
-  font-size: 12px;
+  font-size: 14px;
   color: #928a9e;
   line-height: 1.5;
 }
 .pouch-row-balance > strong {
+  font-family: var(--font-mono);
   font-size: 16px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.3px;
+  letter-spacing: -0.02em;
 }
 .pouch-row-spending {
-  font-size: 12px;
+  font-size: 14px;
   min-width: 0;
   max-width: 210px;
 }
 .pouch-row-spending > div:first-of-type {
+  font-family: var(--font-mono);
   margin-bottom: 9px;
   font-variant-numeric: tabular-nums;
 }
@@ -500,7 +565,7 @@ h1 {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 14px;
   color: #a2d7bd;
 }
 .pouch-status > span {
@@ -587,23 +652,32 @@ h1 {
 }
 .order-identity > strong {
   display: block;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   margin-bottom: 6px;
 }
 .order-identity > span {
   display: block;
-  font-size: 12px;
+  font-size: 14px;
   color: #9a91a7;
 }
 .order-date {
-  font-size: 12px;
+  font-size: 14px;
   color: #a79bb5;
 }
 .order-status {
-  font-size: 12px;
+  font-size: 14px;
   text-transform: capitalize;
   color: #bab0c8;
+}
+.status-paid,
+.status-draft,
+.status-confirmed,
+.status-paying,
+.status-rejected,
+.status-cancelled,
+.pouch-status {
+  text-transform: capitalize;
 }
 .status-paid {
   color: #8bdbb5;
@@ -620,7 +694,8 @@ h1 {
   color: #9c91a8;
 }
 .order-amount {
-  font-size: 13px;
+  font-size: 14px;
+  font-family: var(--font-mono);
   font-weight: 500;
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -633,14 +708,14 @@ h1 {
   border-bottom: 1px solid var(--line);
   padding: 25px 12px;
   color: #aaa0b5;
-  font-size: 13px;
+  font-size: 14px;
 }
 .table-empty p {
   margin-bottom: 7px;
   color: #d8d0e2;
 }
 .table-empty > span {
-  font-size: 12px;
+  font-size: 14px;
   color: #928899;
 }
 .table-empty .sp-button {
@@ -731,7 +806,7 @@ h1 {
     font-size: 34px;
   }
   .wallet-metric > span {
-    font-size: 12px;
+    font-size: 14px;
   }
 }
 @media (max-width: 760px) {
@@ -830,7 +905,7 @@ h1 {
     width: 15px;
   }
   .breadcrumb {
-    font-size: 12px;
+    font-size: 14px;
     gap: 8px;
   }
   .demo-label {
@@ -869,11 +944,11 @@ h1 {
     font-size: 27px;
   }
   .wallet-metric p {
-    font-size: 12px;
+    font-size: 14px;
     margin-bottom: 11px;
   }
   .wallet-metric > span {
-    font-size: 12px;
+    font-size: 14px;
   }
   .pouch-table-head {
     display: none;
@@ -891,7 +966,7 @@ h1 {
     font-size: 15px;
   }
   .pouch-identity > span {
-    font-size: 12px;
+    font-size: 14px;
   }
   .pouch-row > .pouch-status {
     display: inline-flex;
@@ -911,7 +986,7 @@ h1 {
   }
   .mobile-label {
     display: block;
-    font-size: 12px;
+    font-size: 14px;
     color: #93899f;
     margin-bottom: 9px;
   }
@@ -919,7 +994,7 @@ h1 {
     font-size: 19px;
   }
   .pouch-row-spending {
-    font-size: 12px;
+    font-size: 14px;
   }
   .row-actions {
     grid-column: 1/-1;
@@ -956,18 +1031,18 @@ h1 {
     font-size: 14px;
   }
   .order-identity > span {
-    font-size: 12px;
+    font-size: 14px;
   }
   .order-date {
     grid-column: 1;
     grid-row: 2;
-    font-size: 12px;
+    font-size: 14px;
   }
   .order-status {
     grid-column: 2;
     grid-row: 2;
     text-align: right;
-    font-size: 12px;
+    font-size: 14px;
   }
   .order-amount {
     grid-column: 2;
@@ -987,7 +1062,7 @@ h1 {
     padding: 22px 0;
   }
   .section-note {
-    font-size: 12px;
+    font-size: 14px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1048,7 +1123,7 @@ h1 {
     min-height: 44px;
     padding: 11px 12px;
     gap: 11px;
-    font-size: 13px;
+    font-size: 14px;
   }
   .main-nav .nav-link.active {
     box-shadow: inset 2px 0 #9945ff;

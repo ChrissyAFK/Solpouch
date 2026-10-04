@@ -4,6 +4,7 @@ import { securityHeaders } from "./security.mjs";
 const nextConfig = {
   transpilePackages: ["@solpouch/shared"],
   poweredByHeader: false,
+  devIndicators: false,
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },

@@ -34,7 +34,7 @@ export function Progress({ value, max }: { value: number; max: number }) {
     >
       <div
         className={pct >= 90 ? "progress-high" : ""}
-        style={{ width: `${pct}%` }}
+        style={{ transform: `scaleX(${pct / 100})` }}
       />
     </div>
   );
