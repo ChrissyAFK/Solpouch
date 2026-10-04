@@ -167,6 +167,11 @@ export function errMsg(e: unknown): string {
       OrderAlreadyUsed:
         "This order has already been paid. Refresh to see its latest status.",
       Unauthorized: "You do not have permission to make this change.",
+      ZeroAmount: "The amount must be more than zero.",
+      ZeroLimit: "Limits must be more than zero.",
+      PerOrderOverDaily: "The limit per order cannot be higher than the daily limit.",
+      DuplicateMerchant: "Each store can only be added to a pouch once.",
+      MerchantTokenNotAta: "This store's payment account is not set up correctly. No money moved.",
     };
     return (e.code && messages[e.code]) || e.message;
   }

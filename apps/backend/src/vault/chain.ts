@@ -51,19 +51,9 @@ function orderBytes(orderId: string): Buffer {
   return b;
 }
 
-const PROGRAM_ERRORS = new Set([
-  "Unauthorized",
-  "PouchFrozen",
-  "MerchantNotAllowed",
-  "OverPerOrderLimit",
-  "OverDailyLimit",
-  "InsufficientFunds",
-  "NameTooLong",
-  "TooManyMerchants",
-  "VaultNotEmpty",
-]);
-
 const ERROR_NAMES = new Map<number, string>(((idlJson as { errors?: { code: number; name: string }[] }).errors ?? []).map(e => [e.code, e.name]));
+// Every named error in the IDL is a definitive program refusal.
+const PROGRAM_ERRORS = new Set<string>(ERROR_NAMES.values());
 
 /** Name the vault program error inside a failed transaction status, if it is one. */
 export function statusRejectCode(err: unknown): VaultRejectCode | undefined {
