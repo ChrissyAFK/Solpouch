@@ -116,7 +116,7 @@ export interface TopUp {
   pouchId: string;
   amount: Micros;
   reason: string;
-  /** The linked wallet (base58) this top-up is funded from. */
+  /** The account's linked wallet (base58) when the top-up was requested. Funds still come from the demo owner key. */
   fromWallet?: string;
   status: TopUpStatus;
   /** When the cooldown ends and the top-up can be completed. */

@@ -48,7 +48,7 @@ Solpouch doesn't use a wallet service. Pouches live in `solpouch_vault`, a Solan
 
 The AI's key can only call `pay`. There's no instruction that lets it refill a pouch, withdraw, or move money between pouches. A leaked AI key can spend at most one pouch's daily limit, at allowed merchants only.
 
-The daily limit is a rolling 24-hour window that starts at the first payment after the last reset, not a calendar day. Lowering the limit below what's already spent is allowed; further payments are then refused.
+The daily limit covers a 24-hour window, not a calendar day. The first window opens when the pouch is created; after a window ends, the next payment resets the count and opens a new one. Lowering the limit below what's already spent is allowed; further payments are then refused.
 
 Every payment creates an on-chain receipt account keyed by the order ID, so the same order can never be paid twice.
 
@@ -106,7 +106,7 @@ flowchart TD
 | Purpose | "Uber Eats", "Groceries", "Fun money", "Kim job: materials" |
 | Allowed merchants | Uber Eats pouch can only buy Uber Eats |
 | Max per order | $25 for food, $2,000 for job materials. Can't exceed the daily limit |
-| Daily limit | Rolling 24 hours from the first payment after the last reset |
+| Daily limit | 24-hour windows: the first opens when the pouch is created, each later one at the first payment after the previous one ends |
 | Confirmation | Always, or only above an amount (small exact catalog matches auto-confirm) |
 | Refill | **Owner only**, enforced by the program. The app adds friction on top |
 | Moving money between pouches | Owner only (withdraw, then top up). `withdraw` exists on-chain but isn't in the app yet |

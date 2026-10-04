@@ -48,7 +48,8 @@ export function topupRoutes(deps: Deps) {
     const b = startBody.parse(await c.req.json());
     const email = c.get("user").email;
     await getOwnedPouch(deps, b.pouchId, email);
-    // Money only enters from a wallet the account has proven it owns.
+    // Only accounts that have proven they own a wallet may add money. The demo still
+    // debits the backend owner key; fromWallet records the linked wallet for audit.
     const wallet = (await deps.store.getUser(email))?.wallet;
     if (!wallet) throw new HttpError(403, "Link a wallet to add money", "WalletRequired");
     const cooldown = Number(process.env.TOPUP_COOLDOWN_SECONDS ?? 60);
