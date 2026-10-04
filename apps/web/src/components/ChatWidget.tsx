@@ -8,6 +8,11 @@ import styles from "./ChatWidget.module.css";
 
 type Message = { role: "user" | "assistant"; content: string };
 type Mode = "checking" | "claude" | "gemini" | "demo" | "unavailable";
+const PRESETS = [
+  "What is my balance?",
+  "Explain my spending limits",
+  "How do I place an order?",
+];
 function ChatIcon() {
   return (
     <svg
@@ -54,6 +59,7 @@ function ChatPanel() {
   const mounted = useRef(true);
   const active = useRef(false);
   const voiceBusy = useRef(false);
+  const agentDown = useRef(false);
   const lastTyped = useRef<string | null>(null);
   const expiry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const agentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -73,7 +79,7 @@ function ChatPanel() {
         if (role === "agent" && last?.role === "assistant" && last.content === message) return m;
         return [...m, { role: role === "user" ? "user" : "assistant", content: message }];
       });
-      if (role === "agent") { if (agentTimer.current) clearTimeout(agentTimer.current); busy.current = false; setPending(false); }
+      if (role === "agent") { setNotice(null); if (agentTimer.current) clearTimeout(agentTimer.current); busy.current = false; setPending(false); }
     },
     onDisconnect: () => {
       if (!active.current && !connection.current) return;
@@ -87,6 +93,7 @@ function ChatPanel() {
     },
     onError: () => {
       if (!active.current && !connection.current) return;
+      if (connection.current) agentDown.current = true;
       connection.current?.reject(new Error("The agent could not connect"));
       connection.current = null;
       if (expiry.current) clearTimeout(expiry.current);
@@ -142,6 +149,7 @@ function ChatPanel() {
         if (mounted.current) setNotice("Your agent session ended. Start again to continue.");
       }, remaining);
       agentTimer.current = setTimeout(() => {
+        agentDown.current = true;
         stopAgent();
         if (mounted.current) setNotice("The agent connection timed out. Try again or use the text helper.");
       }, 15000);
@@ -179,6 +187,7 @@ function ChatPanel() {
   }, []);
   useEffect(() => {
     if (!open) return;
+    agentDown.current = false;
     let live = true;
     api.voiceStatus()
       .then((data) => { if (live) setVoiceEnabled(data.enabled === true); })
@@ -229,8 +238,26 @@ function ChatPanel() {
   const talkEvent = useRef<() => void>(() => {});
   talkEvent.current = () => {
     setOpen(true);
-    if (!active.current && !connecting) void toggleVoice();
+    if (!connecting && voiceMode !== "voice") void toggleVoice();
   };
+  // Signed out or switched account: release the mic and drop the previous user's chat.
+  const userKey = useRef(user?.email);
+  useEffect(() => {
+    if (userKey.current === user?.email) return;
+    userKey.current = user?.email;
+    stopAgent();
+    sequence.current++;
+    request.current?.abort();
+    if (timer.current) clearTimeout(timer.current);
+    busy.current = false;
+    setPending(false);
+    setMessages([]);
+    setNotice(null);
+    setError(null);
+    setRetryMessages(null);
+    setDraft("");
+    if (history.current) history.current.scrollTop = 0;
+  }, [user?.email]);
   useEffect(() => {
     const onTalk = () => talkEvent.current();
     window.addEventListener("solpouch:talk", onTalk);
@@ -254,6 +281,7 @@ function ChatPanel() {
     setPending(false);
     setMessages([]);
     setError(null);
+    setNotice(null);
     setRetryMessages(null);
     setDraft("");
     textarea.current?.focus();
@@ -270,11 +298,12 @@ function ChatPanel() {
       setDraft("");
     }
     setError(null);
+    setNotice(null);
     setRetryMessages(null);
     setPending(true);
     busy.current = true;
     const sendRevision = sequence.current;
-    if (voiceEnabled && !retry) {
+    if (voiceEnabled && !retry && !agentDown.current) {
       try {
         if (!active.current) await startAgent("text");
         if (!mounted.current || !active.current) return;
@@ -357,11 +386,14 @@ function ChatPanel() {
     }
   }
   async function toggleVoice() {
-    if (active.current || connecting) {
+    if (connecting || (active.current && voiceMode !== "text")) {
       sequence.current++;
       stopAgent();
       return;
     }
+    // A typed text session is active: replace it with a voice session.
+    if (active.current) { sequence.current++; stopAgent(); }
+    agentDown.current = false;
     setError(null);
     setNotice(null);
     if (!user) return;
@@ -392,6 +424,7 @@ function ChatPanel() {
     .find((m) => m.role === "user")?.content;
   const shoppingRequest =
     lastUser &&
+    !PRESETS.includes(lastUser) &&
     /\b(buy|order|purchase|shop|need|get me|add to cart)\b/i.test(lastUser)
       ? lastUser
       : null;
@@ -467,11 +500,7 @@ function ChatPanel() {
                   Ask about your pouches, spending limits, or placing an order.
                 </p>
                 <div className={styles.presets}>
-                  {[
-                    "What is my balance?",
-                    "Explain my spending limits",
-                    "How do I place an order?",
-                  ].map((question) => (
+                  {PRESETS.map((question) => (
                     <button
                       type="button"
                       key={question}
@@ -496,7 +525,7 @@ function ChatPanel() {
               </div>
             ))}
             {notice && (
-              <p className={styles.pending} role="status">
+              <p className={styles.notice} role="status">
                 {notice}
               </p>
             )}
@@ -568,16 +597,16 @@ function ChatPanel() {
                 onClick={() => void toggleVoice()}
                 disabled={!voiceEnabled || (!connecting && !active.current && pending)}
                 title={voiceEnabled ? undefined : "Voice is off right now"}
-                aria-pressed={!!voiceMode}
+                aria-pressed={voiceMode === "voice"}
               >
-                {connecting ? "Cancel" : voiceMode ? "End call" : "Talk"}
+                {connecting ? "Cancel" : voiceMode === "voice" ? "End call" : "Talk"}
               </button>
               <button type="submit" disabled={pending || connecting || !draft.trim()}>
                 {pending ? "Sending…" : "Send"}
               </button>
             </div>
             <p className={styles.boundary}>
-              {voiceMode
+              {voiceEnabled
                 ? "Orders always wait for your yes. The assistant can't top up pouches."
                 : "Chat cannot move funds or place orders."}
             </p>
