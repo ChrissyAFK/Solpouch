@@ -5,7 +5,7 @@ import { OrderSkeleton } from "@/components/Skeletons";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { Merchant, Order, Pouch } from "@solpouch/shared";
-import { toUsdc } from "@solpouch/shared";
+import { isCheckoutReference, toUsdc } from "@solpouch/shared";
 import { api, ApiRequestError, errMsg } from "@/lib/api";
 import { PouchGlyph } from "@/components/PouchGlyph";
 import s from "./order.module.css";
@@ -58,9 +58,9 @@ function StoreVia({ order, paper }: { order: Order; paper?: boolean }) {
   if (!store && !(f && f.via !== "direct")) return null;
   const via =
     f?.via === "instacart"
-      ? "Bought via Instacart"
+      ? "Continue checkout on Instacart"
       : f?.via === "service"
-        ? "Bought via Solpouch Buyer"
+        ? "Check availability with the retailer"
         : null;
   const linkText = f?.via === "instacart" ? "Open Instacart cart" : "Open store page";
   return (
@@ -208,6 +208,7 @@ function OrderWorkspace() {
   }
   const selected = pouches.find((p) => p.id === (order?.pouchId ?? pouchId));
   const isDraft = order?.status === "draft";
+  const referenceOnly = !!order && isCheckoutReference(order);
   const step = !order ? 1 : isDraft ? 2 : 3;
   const merchant = merchants.find((m) => m.id === order?.merchantId);
   const paidDate = new Date(order?.createdAt ?? Date.now()).toLocaleDateString(undefined, {
@@ -386,6 +387,12 @@ function OrderWorkspace() {
                 {order.status === "paid" && (
                   <div className={s.receipt} aria-label="Receipt">
                     <span className={s.stamp}>Paid</span>
+                    {referenceOnly && (
+                      <Notice>
+                        A payment was recorded, but no retailer purchase or fulfillment has been confirmed.
+                        Check the payment and contact the retailer before paying again.
+                      </Notice>
+                    )}
                     <div className={s.receiptHead}>
                       <div className={s.receiptStore}>
                         {order.store?.name ?? merchant?.name ?? "Your order"}
@@ -529,14 +536,16 @@ function OrderWorkspace() {
                 </div>
                 <div className="flex items-center justify-between border-t border-[var(--line-strong)] pt-5">
                   <span className="text-sm text-[var(--muted)]">
-                    Cart total · USDC
+                    {referenceOnly ? "Estimated total · CAD" : "Cart total · USDC"}
                   </span>
                   <strong className="num text-3xl tracking-tight">
                     {usd(toUsdc(order.total))}
                   </strong>
                 </div>
                 <p className="mt-2 text-xs text-[var(--muted)]">
-                  Prices come from the store’s catalog.
+                  {referenceOnly
+                    ? "Search estimate only. Check the current price and complete checkout with the retailer. Solpouch has not placed an order."
+                    : "Prices come from the store’s catalog."}
                 </p>
                 </>
                 )}
@@ -545,10 +554,12 @@ function OrderWorkspace() {
                     <>
                       <button
                         className={btnPrimary}
-                        disabled={busy || order.total <= 0}
+                        disabled={busy || order.total <= 0 || referenceOnly}
                         onClick={() => void act("confirm")}
                       >
-                        {busy
+                        {referenceOnly
+                          ? "Complete checkout with the retailer"
+                          : busy
                           ? "Processing…"
                           : `Approve ${usd(toUsdc(order.total))} & pay`}
                       </button>

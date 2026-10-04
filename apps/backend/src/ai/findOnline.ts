@@ -31,26 +31,6 @@ export function normalizeDomain(raw: string): string {
   return raw.trim().toLowerCase().replace(/^[a-z]+:\/\//, "").replace(/^www\./, "").split(/[/?#]/)[0];
 }
 
-const PRICES: Array<[RegExp, number]> = [
-  [/chainsaw/i, 299.99],
-  [/orange juice/i, 5.49],
-];
-
-export function fallbackFind(items: ParsedItem[], allowedDomains?: string[]): WebFind {
-  const domain = allowedDomains?.length ? normalizeDomain(allowedDomains[0]) : "example.com";
-  return {
-    store: { name: allowedDomains?.length ? domain : "Example Store", domain, url: `https://${domain}` },
-    onInstacart: false,
-    fallback: true,
-    items: items.map((it) => ({
-      requested: it.requested,
-      name: it.requested,
-      unitPrice: PRICES.find(([re]) => re.test(it.requested))?.[1] ?? 19.99,
-      url: `https://${domain}/search?q=${encodeURIComponent(it.requested)}`,
-    })),
-  };
-}
-
 function parseJson(text: string): any {
   const t = text.replace(/```(?:json)?/gi, "").trim();
   const candidates = [t];
@@ -103,7 +83,7 @@ export async function findOnline(
   opts: { allowedDomains?: string[]; region?: string } = {},
 ): Promise<WebFind | null> {
   const g = ai();
-  if (!g) return fallbackFind(items, opts.allowedDomains);
+  if (!g) return null;
   const region = opts.region ?? "Vancouver, BC, Canada";
   const list = items.map((i) => `- ${i.requested} (qty ${i.qty})`).join("\n");
   const restrict = opts.allowedDomains?.length
@@ -120,11 +100,11 @@ Use Google Search to find real current prices. Reply with ONLY a JSON object, no
     const res = await g.models.generateContent({
       model: model(),
       contents: prompt,
-      config: { tools: [{ googleSearch: {} }] },
+      config: { tools: [{ googleSearch: {} }], httpOptions: { timeout: 15_000, retryOptions: { attempts: 1 } } },
     });
     return validateFind(parseJson(res.text ?? ""), items, opts.allowedDomains);
-  } catch (e) {
-    console.warn("findOnline failed, using fallback:", (e as Error).message);
-    return fallbackFind(items, opts.allowedDomains);
+  } catch {
+    console.warn("Online product search is temporarily unavailable.");
+    return null;
   }
 }

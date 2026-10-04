@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { clientIp } from "../security/rateLimit.js";
 import { verifyVoiceToken } from "../auth/session.js";
 import { z } from "zod";
-import { toUsdc, type Order } from "@solpouch/shared";
+import { isCheckoutReference, toUsdc, type Order } from "@solpouch/shared";
 import { getMerchant } from "../merchants/index.js";
 import { cancelOrder, confirmOrder, createDraft, HttpError, type Deps } from "../services/orders.js";
 
@@ -24,6 +24,9 @@ export function readback(order: Order): string {
     const sub = l.substitution ? ` as a substitute. ${l.note ?? ""}`.trimEnd() : "";
     return `${l.qty} ${l.product.name}, ${usd(l.lineTotal)}${sub}`;
   });
+  if (isCheckoutReference(order)) {
+    return `From ${merchant}: ${parts.join("; ")}. Estimated total CAD ${usd(order.total)}. This is a search estimate only. Check current prices and complete checkout with the retailer using the link on the order page. Solpouch has not placed an order.`;
+  }
   return `From ${merchant}: ${parts.join("; ")}. Total ${usd(order.total)}. Should I place it?`;
 }
 
@@ -83,7 +86,7 @@ export function voiceRoutes(deps: Deps) {
       case "create_order": {
         const b = requestBody.parse(body);
         const order = await createDraft(deps, email, b.request, b.pouchId);
-        return c.json({ say: readback(order), orderId: order.id, total: usd(order.total), needsConfirmation: true });
+        return c.json({ say: readback(order), orderId: order.id, total: usd(order.total), needsConfirmation: !isCheckoutReference(order), checkoutRequired: isCheckoutReference(order) });
       }
       case "confirm_order": {
         const { orderId } = orderIdBody.parse(body);
@@ -91,6 +94,9 @@ export function voiceRoutes(deps: Deps) {
           const order = await confirmOrder(deps, email, orderId);
           return c.json({ say: `Done. Paid ${usd(order.total)}.`, status: order.status });
         } catch (e) {
+          if (e instanceof HttpError && e.code === "WebCheckoutRequired") {
+            return c.json({ say: e.message, status: "draft", code: e.code });
+          }
           if (e instanceof HttpError && e.code) {
             return c.json({ say: `That payment was refused: ${e.code}. No money moved.`, status: "rejected", code: e.code });
           }

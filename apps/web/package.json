@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start -p 3000",
     "typecheck": "tsc --noEmit",
+    "test:browser": "node --test test/auth-browser.test.mjs test/order-browser.test.mjs",
     "test:security": "node --test test/security.test.mjs",
     "test:smoke": "node --test test/smoke.test.mjs"
   },

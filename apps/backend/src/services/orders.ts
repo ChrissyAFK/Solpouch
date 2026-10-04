@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { WEB_PREFIX, isAnyStore, toMicros, type Merchant, type Order, type OrderLine, type Pouch } from "@solpouch/shared";
+import { WEB_PREFIX, isAnyStore, isCheckoutReference, toMicros, type Merchant, type Order, type OrderLine, type Pouch } from "@solpouch/shared";
 import { findOnline } from "../ai/findOnline.js";
 import { catalogFit, matchItems, parseRequest } from "../ai/gemini.js";
 import { getCatalog, getMerchant, merchants, registerWebMerchant } from "../merchants/index.js";
@@ -100,7 +100,7 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
   }
   const mayGoOnline = pouch ? webAllowed(pouch) : pouches.some((p) => webAllowed(p));
   const found = mayGoOnline ? await findOnline(parsed.items, { allowedDomains }) : null;
-  if (found) {
+  if (found && !found.fallback) {
     const { store, items } = found;
     const merchant = registerWebMerchant({
       id: WEB_PREFIX + store.domain,
@@ -160,6 +160,10 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
     });
   }
 
+  if (mayGoOnline) {
+    throw new HttpError(422, "Online search is unavailable. Try again later or choose items from a supported catalog.", "SearchUnavailable");
+  }
+
   // 3. Both failed: partial catalog draft if anything matched, else an error.
   if (best && catalogLines) {
     const merchant = getMerchant(best.id)!;
@@ -193,17 +197,15 @@ export async function confirmOrder(deps: Deps, ownerEmail: string, id: string): 
   if (order.status !== "draft") throw new HttpError(409, `Order is ${order.status}, not draft`);
   if (order.total <= 0) throw new HttpError(400, "Order has nothing to pay for");
   const pouch = await deps.store.getPouch(order.pouchId);
-  let merchant = getMerchant(order.merchantId);
-  if (!merchant && order.store) {
-    merchant = registerWebMerchant({
-      id: order.merchantId,
-      name: order.store.name,
-      payTo: checkoutPayTo(),
-      kind: "other",
-      source: "web",
-      url: order.store.url,
-    });
+  if (!pouch || pouch.ownerEmail !== ownerEmail) throw new HttpError(404, "Pouch not found");
+  // Shared checkout wallets cannot enforce individual website restrictions.
+  if (!isAnyStore(pouch) && !pouch.allowedMerchantIds.includes(order.merchantId)) {
+    throw new HttpError(422, "This pouch no longer allows this store. Review its store rules before paying.", "MerchantNotAllowed");
   }
+  if (isCheckoutReference(order) || !merchants.some((m) => m.id === order.merchantId)) {
+    throw new HttpError(422, "This is a search estimate, not a payable quote. Check the current price and complete checkout with the retailer. Solpouch has not placed an order.", "WebCheckoutRequired");
+  }
+  const merchant = getMerchant(order.merchantId);
   if (!pouch || !merchant) throw new HttpError(404, "Pouch or merchant not found");
 
   order.status = "paying";

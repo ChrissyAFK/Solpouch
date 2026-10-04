@@ -39,6 +39,7 @@ const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 
 type AuthState = {
   user: SessionUser | null;
+  sessionKey: string | null;
   /** True until the stored session has been checked. */
   loading: boolean;
   gisReady: boolean;
@@ -62,6 +63,8 @@ export function AuthProvider({
   children: React.ReactNode;
 }) {
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [sessionKey, setSessionKey] = useState<string | null>(null);
+  const authGeneration = useRef(0);
   const [loading, setLoading] = useState(true);
   const [gisReady, setGisReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,14 +72,28 @@ export function AuthProvider({
 
   // Restore and verify the stored session.
   useEffect(() => {
-    const sync = () => setUser(readSession()?.user ?? null);
+    const sync = () => {
+      authGeneration.current++;
+      const current = readSession();
+      setUser(current?.user ?? null);
+      setSessionKey(current?.token ?? null);
+      setLoading(false);
+    };
     const off = onSessionChange(sync);
     const stored = readSession();
     if (!stored) {
       setLoading(false);
-      return off;
+      return () => {
+        authGeneration.current++;
+        off();
+      };
     }
     setUser(stored.user);
+    setSessionKey(stored.token);
+    const generation = authGeneration.current;
+    const isCurrent = () =>
+      generation === authGeneration.current &&
+      readSession()?.token === stored.token;
     const controller = new AbortController();
     fetch(`${BACKEND_URL}/auth/me`, {
       headers: { Authorization: `Bearer ${stored.token}` },
@@ -84,13 +101,14 @@ export function AuthProvider({
       signal: controller.signal,
     })
       .then(async (res) => {
+        if (!isCurrent()) return;
         if (res.status === 401) {
           clearSession();
           return;
         }
         if (!res.ok) return;
         const data = await res.json().catch(() => null);
-        if (data?.user?.email)
+        if (isCurrent() && data?.user?.email)
           writeSession({ token: stored.token, user: data.user });
       })
       .catch(() => {})
@@ -98,12 +116,14 @@ export function AuthProvider({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => {
+      authGeneration.current++;
       controller.abort();
       off();
     };
   }, []);
 
   const handleCredential = useCallback(async (credential: string) => {
+    const generation = ++authGeneration.current;
     setError(null);
     try {
       const res = await fetch(`${BACKEND_URL}/auth/google`, {
@@ -113,10 +133,12 @@ export function AuthProvider({
         cache: "no-store",
       });
       const data = await res.json().catch(() => null);
+      if (generation !== authGeneration.current) return;
       if (!res.ok || !data?.token || !data?.user)
         throw new Error("Google sign-in didn't work. Try again.");
       writeSession({ token: data.token, user: data.user });
     } catch (e) {
+      if (generation !== authGeneration.current) return;
       setError(
         e instanceof TypeError
           ? "We couldn't connect to Solpouch. Check your connection and try again."
@@ -175,8 +197,8 @@ export function AuthProvider({
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, gisReady, error, signOut, updateUser }),
-    [user, loading, gisReady, error, signOut, updateUser],
+    () => ({ user, sessionKey, loading, gisReady, error, signOut, updateUser }),
+    [user, sessionKey, loading, gisReady, error, signOut, updateUser],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

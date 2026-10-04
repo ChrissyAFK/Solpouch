@@ -88,6 +88,14 @@ export interface Order {
   fulfillment?: { via: "direct" | "instacart" | "service"; label: string; checkoutUrl?: string };
 }
 
+/** Web search results are references, never retailer-authorized payment quotes.
+ * Inspect legacy fields too: old drafts have no explicit quote provenance. */
+export function isCheckoutReference(order: Order): boolean {
+  return order.merchantId.startsWith(WEB_PREFIX) || !!order.store ||
+    !!(order.fulfillment && order.fulfillment.via !== "direct") ||
+    order.lines.some((line) => line.product?.estimated === true);
+}
+
 export type TopUpStatus = "started" | "cooling_down" | "completed" | "cancelled";
 
 export interface TopUp {

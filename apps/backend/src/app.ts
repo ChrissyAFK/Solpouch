@@ -4,6 +4,7 @@ import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
 import { ZodError } from "zod";
 import type { ApiError } from "@solpouch/shared";
+import { CheckoutConfigurationError } from "./services/fulfillment.js";
 import { HttpError, type Deps } from "./services/orders.js";
 import { merchantRoutes } from "./routes/merchants.js";
 import { orderRoutes } from "./routes/orders.js";
@@ -74,6 +75,7 @@ export function createApp(deps: Deps) {
   app.route("/chat", chatRoutes(deps));
 
   app.onError((err, c) => {
+    if (err instanceof CheckoutConfigurationError) return c.json({ error: err.message, code: "CheckoutNotConfigured" } satisfies ApiError, 503);
     if (err instanceof HttpError) {
       const body: ApiError = { error: err.message, code: err.code };
       return c.json(body, err.status);

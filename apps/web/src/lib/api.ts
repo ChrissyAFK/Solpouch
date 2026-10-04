@@ -27,6 +27,7 @@ export class ApiRequestError extends Error {
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
+  const token = getToken();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
   try {
@@ -34,11 +35,13 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
       headers: {
         "Content-Type": "application/json",
-        ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(init?.headers ?? {}),
       },
       cache: "no-store",
-      signal: controller.signal,
+      signal: init?.signal
+        ? AbortSignal.any([controller.signal, init.signal])
+        : controller.signal,
     });
     const text = await res.text();
     let data: unknown;
@@ -48,7 +51,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
       /* handled below */
     }
     if (!res.ok) {
-      if (res.status === 401) clearSession();
+      if (res.status === 401 && getToken() === token) clearSession();
       const body =
         data && typeof data === "object" ? (data as Partial<ApiError>) : {};
       const message =
@@ -117,7 +120,8 @@ export const api = {
     }),
   freeze: (id: string) => post<Pouch>(`/pouches/${id}/freeze`),
   unfreeze: (id: string) => post<Pouch>(`/pouches/${id}/unfreeze`),
-  voiceToken: () => post<{ token: string }>("/auth/voice-token"),
+  voiceToken: (signal?: AbortSignal) =>
+    req<{ token: string }>("/auth/voice-token", { method: "POST", signal }),
   merchants: () => req<Merchant[]>("/merchants"),
   createOrder: (b: CreateOrderBody) => post<Order>("/orders", b),
   orders: (pouchId?: string) =>

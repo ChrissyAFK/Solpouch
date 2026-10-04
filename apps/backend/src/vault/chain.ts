@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { checkoutPayTo } from "../services/fulfillment.js";
 import { allowedPayTos } from "./allow.js";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -112,7 +113,7 @@ export class ChainVaultClient implements VaultClient {
 
   // web: entries and any-store resolve to the checkout wallet (see allow.ts)
   private merchantKeys(p: Pouch): PublicKey[] {
-    return allowedPayTos(p, this.payToOf)
+    return allowedPayTos(p, this.payToOf, () => checkoutPayTo("chain"))
       .slice(0, 10)
       .map((s) => new PublicKey(s));
   }

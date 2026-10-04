@@ -37,7 +37,7 @@ export function pouchRoutes(deps: Deps) {
     const b = createBody.parse(await c.req.json());
     if ((await deps.store.listPouches(email)).length >= 50) throw new HttpError(409, "Pouch limit reached (50)");
     const pouch: StoredPouch = {
-      id: b.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + Date.now().toString(36) + randomBytes(4).toString("hex"),
+      id: randomBytes(16).toString("hex"),
       address: fakeAddress(),
       name: b.name,
       balance: 0,

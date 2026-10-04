@@ -30,7 +30,12 @@ export function clearSession() {
 }
 export function onSessionChange(fn: () => void) {
   listeners.add(fn);
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === KEY || event.key === null) fn();
+  };
+  window.addEventListener("storage", onStorage);
   return () => {
     listeners.delete(fn);
+    window.removeEventListener("storage", onStorage);
   };
 }

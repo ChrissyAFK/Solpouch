@@ -1,8 +1,22 @@
+import { PublicKey } from "@solana/web3.js";
 import type { Order } from "@solpouch/shared";
 
-/** Placeholder Solpouch checkout wallet for demos. Override with CHECKOUT_PAY_TO. */
+/** Used only by the in-memory simulator; never passed to a chain client. */
 export const MOCK_CHECKOUT_PAY_TO = "SoLCheckout111111111111111111111111111111111";
-export const checkoutPayTo = () => process.env.CHECKOUT_PAY_TO?.trim() || MOCK_CHECKOUT_PAY_TO;
+export class CheckoutConfigurationError extends Error {}
+
+export function checkoutPayTo(mode = process.env.VAULT_MODE ?? "mock"): string {
+  const configured = process.env.CHECKOUT_PAY_TO?.trim();
+  if (!configured) {
+    if (mode === "mock") return MOCK_CHECKOUT_PAY_TO;
+    throw new CheckoutConfigurationError("Set CHECKOUT_PAY_TO to a valid Solana checkout wallet before using web or any-store pouches.");
+  }
+  try {
+    return new PublicKey(configured).toBase58();
+  } catch {
+    throw new CheckoutConfigurationError("CHECKOUT_PAY_TO must be a valid Solana public key.");
+  }
+}
 
 type Fulfillment = NonNullable<Order["fulfillment"]>;
 
