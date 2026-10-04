@@ -1,0 +1,267 @@
+.stage {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.tab {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--text-sm, 14px);
+  font-weight: 500;
+  cursor: pointer;
+}
+.tab[aria-selected="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--canvas);
+}
+.tab:focus-visible,
+.replay:focus-visible {
+  outline: 2px solid var(--solana-green);
+  outline-offset: 2px;
+}
+.field {
+  background: var(--solana-purple);
+  border-radius: 16px;
+  padding: 24px 24px 0;
+  display: grid;
+  gap: 20px;
+  overflow: hidden;
+  color: #fff;
+}
+.voice {
+  display: grid;
+  gap: 12px;
+}
+.wave {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 36px;
+}
+.wave i {
+  flex: 1;
+  max-width: 6px;
+  height: 100%;
+  border-radius: 3px;
+  background: #fff;
+  transform-origin: center;
+}
+.transcript {
+  margin: 0;
+  min-height: 3.2em;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.4;
+  max-width: 36ch;
+}
+.rest {
+  visibility: hidden;
+}
+
+/* Receipt */
+.receipt {
+  position: relative;
+  background: var(--paper);
+  color: var(--paper-ink);
+  padding: 20px 22px 32px;
+  border-radius: 6px 6px 0 0;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  display: grid;
+  gap: 12px;
+}
+.receipt::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 10px;
+  background:
+    linear-gradient(-45deg, transparent 6px, var(--solana-purple) 0) 0 0 / 14px 10px,
+    linear-gradient(45deg, transparent 6px, var(--solana-purple) 0) 0 0 / 14px 10px;
+  background-repeat: repeat-x;
+}
+.receiptHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--paper-muted);
+}
+.merchant {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.example {
+  color: var(--paper-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: baseline;
+}
+.item {
+  min-width: 0;
+}
+.qty {
+  color: var(--paper-muted);
+}
+.amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.flag {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #fde7b8;
+  color: #6b4300;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.flag svg {
+  flex: none;
+  margin-top: 2px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.total {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px dashed var(--paper-muted);
+  font-weight: 700;
+  font-size: 16px;
+}
+.limits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.limits li {
+  display: grid;
+  grid-template-columns: 1fr auto 20px;
+  gap: 12px;
+  align-items: center;
+}
+.check {
+  fill: none;
+  stroke: #0a7a4f;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.verdict {
+  display: grid;
+  gap: 12px;
+  padding-top: 8px;
+  justify-items: start;
+}
+.stamp {
+  padding: 6px 14px;
+  border: 2.5px solid #0a7a4f;
+  border-radius: 6px;
+  color: #0a7a4f;
+  font-weight: 800;
+  font-size: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transform-origin: center;
+}
+.approval {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--paper-muted);
+}
+.approveBtn {
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--paper-ink);
+  color: var(--paper);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.foot p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.replay {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.replay svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+@media (max-width: 480px) {
+  .field {
+    padding: 16px 16px 0;
+  }
+  .receipt {
+    padding: 16px 16px 28px;
+  }
+  .row {
+    gap: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stamp,
+  .flag,
+  .row {
+    transition: none;
+  }
+}

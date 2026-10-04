@@ -1,0 +1,45 @@
+.pouch {
+  display: block;
+  flex: none;
+  overflow: visible;
+}
+.body {
+  fill: var(--surface-raised);
+}
+.outline {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+.level {
+  stroke: rgb(0 0 0 / 0.28);
+  stroke-width: 2;
+}
+.neck {
+  fill: var(--canvas);
+  stroke: var(--ink);
+  stroke-width: 2.5;
+}
+.string {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.lock rect {
+  fill: var(--canvas);
+  stroke: var(--ink);
+  stroke-width: 2.5;
+}
+.lock path {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .fill {
+    transition: y 600ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
