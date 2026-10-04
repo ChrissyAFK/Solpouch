@@ -88,7 +88,7 @@ Radii: `--r-sm 8` (inputs, chips) · `--r-md 12` (buttons, panels) · `--r-lg 16
 - [x] 1. Foundations: fonts (Hanken Grotesk, Geist Mono), tokens, type scale, base buttons, inputs, focus, motion tokens in `globals.css` + `layout.tsx`
 - [x] 2. Landing nav + hero (validator hero: fare card + readout restyle of HeroSequence)
 - [x] 3. Landing "A pouch for every budget" as fare cards
-- [ ] 4. Landing how it works, boundary, FAQ, closing panel
+- [x] 4. Landing how it works, boundary, FAQ, closing panel
 - [ ] 5. Footer (shared) and landing nav on mobile
 - [ ] 6. App shell: sidebar, top bar, sign-in card, Ask Solpouch button
 - [ ] 7. Info pages: About, Privacy, Terms, Contact, Delete account
@@ -99,4 +99,5 @@ Radii: `--r-sm 8` (inputs, chips) · `--r-md 12` (buttons, panels) · `--r-lg 16
 ## Log
 - 01:17 Item 1: Hanken Grotesk + Geist Mono, light/dark fare-gate tokens with old names aliased, base buttons/inputs/cards/focus/motion tokens. Build passes; /dashboard and /about checked at 1440.
 - 01:22 Item 2: landing now on the light palette; hero headline Hanken 800 at -0.035em, "limit." in brand violet, violet CTA with press scale, underlined text link; nav 72px with a bordered Sign in button; HeroSequence restyled as a validator (segmented tabs, black readout panel, mint voice bars, white receipt tape). Build passes; / checked at 1440 and 390.
-- 01:31 Item 3: pouches rebuilt as fare cards (tinted card face per tone with a chip mark, pouch glyph and name on the face, purpose and mono rule table below, one soft money-card shadow); glyph tones moved to transit violet and mint. Build passes; / checked at 1440 and 390.
+- 01:25 Item 3: pouches rebuilt as fare cards (tinted card face per tone with a chip mark, pouch glyph and name on the face, purpose and mono rule table below, one soft money-card shadow); glyph tones moved to transit violet and mint. Build passes; / checked at 1440 and 390.
+- 01:27 Item 4: how-it-works rail with gate-square stops (last one signal green); boundary as a black readout panel; FAQ toggles as bordered squares that rotate on open; closing as the violet brand field with mint second line and a white CTA. Build passes; / checked at 1440 and 390.
