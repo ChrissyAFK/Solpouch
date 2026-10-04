@@ -136,11 +136,11 @@ describe("claude provider", () => {
     await store.savePouch({ ...g, confirmAbove: g.maxPerOrder });
     const app = createApp({ store, vault: new MockVaultClient(store, (id) => getMerchant(id)?.payTo) });
     sdk.create
-      .mockResolvedValueOnce({ content: [{ type: "tool_use", name: "shopping_list", input: { items: [{ requested: "large eggs", qty: 1 }] } }] })
+      .mockResolvedValueOnce({ content: [{ type: "tool_use", name: "shopping_list", input: { store: "Mountain Market", items: [{ requested: "large eggs", qty: 1 }] } }] })
       .mockResolvedValueOnce({ content: [{ type: "tool_use", name: "matched_lines", input: { lines: [
         { requested: "large eggs", requestedQty: 3, productId: "mm-eggs", qty: 3, matchScore: 1, substitution: false, note: null },
       ] } }] });
-    const res = await app.request("/orders", { method: "POST", headers: { "Content-Type": "application/json", ...await authHeaders(store) }, body: JSON.stringify({ request: "large eggs", pouchId: "groceries" }) });
+    const res = await app.request("/orders", { method: "POST", headers: { "Content-Type": "application/json", ...await authHeaders(store) }, body: JSON.stringify({ request: "large eggs from Mountain Market", pouchId: "groceries" }) });
     expect(res.status).toBe(201);
     const o = await res.json();
     expect(o.status).toBe("draft");

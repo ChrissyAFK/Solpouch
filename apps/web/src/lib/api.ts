@@ -245,6 +245,7 @@ export function errMsg(e: unknown): string {
       PaymentPending: e.message,
       PaymentNotSent: e.message,
       LookupFailed: e.message,
+      SearchUnavailable: "Product search is not available right now. Try again in a moment.",
       PouchFrozen: "This pouch is frozen. Unfreeze it first.",
       MerchantNotAllowed:
         "This store is not allowed for this pouch. Choose another pouch or update its allowed stores.",

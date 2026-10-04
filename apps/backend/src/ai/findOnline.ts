@@ -13,6 +13,8 @@ export interface WebFindItem {
   /** Unit price in CAD (treated 1:1 as USDC for the demo). */
   unitPrice: number;
   url?: string;
+  /** True when the price was confirmed on the product's own page (set by findCart). */
+  verified?: boolean;
 }
 export interface WebFind {
   store: { name: string; domain: string; url?: string };
@@ -146,32 +148,38 @@ ${list}
 ${opts.store && opts.allowedDomains?.length ? `${restrict}\n` : ""}${storeRule}${limit ? `\n${limit}` : ""}
 Use web search to find real current prices. Reply with ONLY a JSON object, no prose, in this shape:
 {"storeName": string, "domain": string, "storeUrl": string, "onInstacart": boolean,
- "items": [{"requested": string (exactly as listed above), "name": string, "brand": string|null, "size": string|null, "unitPrice": number (CAD, per unit), "url": string (product page)}]}
+ "items": [{"requested": string (exactly as listed above), "name": string, "brand": string|null, "size": string|null, "unitPrice": number (CAD, per unit), "url": string (the product's or menu item's own page on the store's site, never the homepage; omit it if you did not open such a page)}]}
 "onInstacart" is true only if this store is available on Instacart.`;
   try {
     if (provider === "claude") {
-      const tools = [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }] as any;
+      // A named store needs fewer searches; a list with no store gets more, up to 5.
+      const maxUses = opts.store ? 2 : Math.min(5, 2 + items.length);
+      const tools = [{ type: "web_search_20250305", name: "web_search", max_uses: maxUses }] as any;
+      const searchModel = process.env.ANTHROPIC_SEARCH_MODEL || claudeModel();
+      const started = Date.now();
       const system =
         "You are a shopping lookup service. Your final message must be exactly one JSON object and nothing else. " +
         "Never answer in prose. If no single store has everything, pick the store that covers the most items (big general retailers like Walmart, Costco or Canadian Tire are fine) and include only the items you priced. " +
         "Only include prices you found; never invent a price.";
-      // Web searches take 5-19 s: a longer per-request timeout and no retry (a retry would double the wait).
-      const ask = (messages: any[]) =>
-        claude()!.messages.create({ model: claudeModel(), max_tokens: 2048, system, messages, tools }, { timeout: 45_000, maxRetries: 0 });
+      // The whole lookup gets 20 s: 15 s for the search, and the JSON-only retry only if time is left.
+      const ask = (messages: any[], timeout: number) =>
+        claude()!.messages.create({ model: searchModel, max_tokens: 2048, system, messages, tools }, { timeout, maxRetries: 0 });
       const finalText = (content: any[]) => {
         let last = -1;
         content.forEach((b, i) => { if (b.type === "web_search_tool_result") last = i; });
         return content.slice(last + 1).map((b) => (b.type === "text" ? b.text : "")).join("");
       };
-      const first = await ask([{ role: "user", content: prompt }]);
+      const first = await ask([{ role: "user", content: prompt }], 15_000);
       const found = validateFind(parseJson(finalText(first.content)), items, opts.allowedDomains, opts);
       if (found) return found;
       // One retry: hand back the searches it already did and ask for the JSON only.
+      const left = 20_000 - (Date.now() - started);
+      if (left < 4_000) return null;
       const retry = await ask([
         { role: "user", content: prompt },
         { role: "assistant", content: first.content },
         { role: "user", content: "Do not search again. Reply now with only the JSON object, using the best store and prices from your searches above." },
-      ]);
+      ], left);
       return validateFind(parseJson(finalText(retry.content)), items, opts.allowedDomains, opts);
     }
     const res = await g!.models.generateContent({

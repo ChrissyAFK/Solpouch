@@ -4,9 +4,11 @@ import { validateOrderLines } from "./orderValidation.js";
 import { PaymentPending } from "../vault/recovery.js";
 import { randomBytes } from "node:crypto";
 import { WEB_PREFIX, isAnyStore, isCheckoutReference, toMicros, type Merchant, type Order, type OrderLine, type Pouch } from "@solpouch/shared";
-import { findOnline } from "../ai/findOnline.js";
+import { findCart } from "../ai/findCart.js";
 import { SearchUnavailableError, storeMatches } from "../ai/storeMatch.js";
-import { catalogFit, fallbackMatch, matchItems, parseRequest, type ParsedItem } from "../ai/gemini.js";
+import { catalogFit, fallbackMatch, matchItems, type ParsedItem } from "../ai/gemini.js";
+import { aiProvider } from "../ai/provider.js";
+import { understand, type Understood } from "../ai/understand.js";
 import { getCatalog, getMerchant, merchants, registerWebMerchant } from "../merchants/index.js";
 import { parseRequestConstraints } from "./request-constraints.js";
 import { buildFulfillment, checkoutPayTo } from "./fulfillment.js";
@@ -70,6 +72,8 @@ export class HttpError extends Error {
 
 /** Lowest matchScore a catalog line may have to count as covering the request. */
 export const MATCH_THRESHOLD = 0.3;
+/** The same floor once real search is available: a catalog line must be a close match, not a look-alike. */
+export const MATCH_THRESHOLD_ONLINE = 0.6;
 /** Auto-pay moves money without asking, so every line must be a near-exact match (1 = exactly what was asked). */
 export const AUTO_CONFIRM_MATCH = 0.9;
 
@@ -126,14 +130,23 @@ export async function createOrder(deps: Deps, ownerEmail: string, request: strin
 /** parse -> pick pouch -> pick merchant -> match -> total. Returns a draft order. */
 export async function createDraft(deps: Deps, ownerEmail: string, request: string, pouchId?: string, savedItems?: ParsedItem[]): Promise<Order> {
   await consumeAiBudget(deps.store, ownerEmail);
-  const parsed: Awaited<ReturnType<typeof parseRequest>> = savedItems ? { items: savedItems } : await parseRequest(request);
+  const online = aiProvider() !== "none";
+  const unavailable = () => new HttpError(503, "I can't search right now. Try again in a minute.", "SearchUnavailable");
+  let parsed: Understood;
+  try {
+    parsed = savedItems ? { items: savedItems } : await understand(request);
+  } catch (e) {
+    if (e instanceof SearchUnavailableError) throw unavailable();
+    throw e;
+  }
+  // The assistant asks one question instead of guessing; the answer comes back as a new request.
+  if (parsed.clarify) throw new HttpError(400, parsed.clarify.question, "NeedClarification");
   const { maxPrice, perItem } = parseRequestConstraints(request);
   const cap = maxPrice !== undefined ? maxPrice / 1_000_000 : undefined;
   // A store plus a price cap with no items: the search picks a typical order that fits the cap.
   const chooseItems = !parsed.items.length && !!parsed.store && cap !== undefined;
   if (!parsed.items.length && !chooseItems) {
-    if (parsed.store) throw new HttpError(400, `What would you like from ${parsed.store}?`, "NeedItems");
-    throw new HttpError(400, "Could not find any items in that request");
+    throw new HttpError(400, parsed.store ? `What would you like from ${parsed.store}?` : "What would you like me to order?", "NeedClarification");
   }
   const pouches = await deps.store.listPouches(ownerEmail);
 
@@ -169,6 +182,12 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
       : pouch.allowedMerchantIds.filter((id) => merchants.some((m) => m.id === id));
   // A named store only matches its own catalog; any other name skips the catalog (no look-alikes).
   if (parsed.store) candidateIds = candidateIds.filter((id) => storeMatches(parsed.store!, getMerchant(id)?.name ?? ""));
+  // With real search available, a built-in catalog is used only when the user names that merchant,
+  // the pouch allows nothing else, or the items come from a saved list. No look-alikes for everyday requests.
+  const catalogOnlyPouch = !!pouch && !isAnyStore(pouch) && !webAllowed(pouch);
+  const mayGoOnline = pouch ? webAllowed(pouch) : pouches.some((p) => webAllowed(p));
+  const catalogFallback = !online || catalogOnlyPouch || !mayGoOnline || !!savedItems;
+  if (!catalogFallback && !parsed.store) candidateIds = [];
   const best = candidateIds
     .map((id) => ({ id, fit: catalogFit(parsed.items, getCatalog(id)) }))
     .sort((a, b) => b.fit - a.fit)[0];
@@ -183,7 +202,7 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
         return {...line,requested:item.requested,requestedQty:item.qty,qty:line.product ? item.qty : 0,lineTotal:line.product ? line.product.unitPrice*item.qty : 0};
       });
     }
-    covered = catalogLines.every((l) => l.product && l.matchScore >= MATCH_THRESHOLD);
+    covered = catalogLines.every((l) => l.product && l.matchScore >= (online && !savedItems ? MATCH_THRESHOLD_ONLINE : MATCH_THRESHOLD));
   }
 
   const pickCatalogPouch = (id: string) =>
@@ -205,17 +224,16 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
     const all = pouches.flatMap(webDomains);
     if (all.length) allowedDomains = all;
   }
-  const mayGoOnline = pouch ? webAllowed(pouch) : pouches.some((p) => webAllowed(p));
-  let found: Awaited<ReturnType<typeof findOnline>> = null;
+  let found: Awaited<ReturnType<typeof findCart>> = null;
   if (mayGoOnline) {
     try {
-      found = await findOnline(parsed.items, {
+      found = await findCart(parsed.items, {
         allowedDomains, store: parsed.store, service: parsed.service, ...(chooseItems ? { chooseItems: true } : {}),
         ...(cap !== undefined ? (perItem ? { maxPerItem: cap } : { maxTotal: cap }) : {}),
       });
     } catch (e) {
       if (!(e instanceof SearchUnavailableError)) throw e;
-      throw new HttpError(422, "Online search is unavailable. Try again later or choose items from a supported catalog.", "SearchUnavailable");
+      throw unavailable();
     }
   }
   if (found && !found.fallback) {
@@ -239,6 +257,8 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
       }
       const slug = w.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
       const unitPrice = toMicros(w.unitPrice);
+      // Verified = the price was read from the product's own page; anything else is an estimate to check.
+      const verified = w.verified === true;
       return {
         requested: it.requested,
         requestedQty: it.qty,
@@ -251,13 +271,13 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
           unitPrice,
           inStock: true,
           url: w.url,
-          estimated: true,
+          estimated: !verified,
         },
         qty: it.qty,
         lineTotal: unitPrice * it.qty,
-        matchScore: 0.8,
+        matchScore: verified ? 0.95 : 0.8,
         substitution: false,
-        note: `Estimated price from ${store.domain}`,
+        ...(verified ? {} : { note: `Estimated price from ${store.domain}. Check it before paying.` }),
       };
     });
     const fulfillment = await buildFulfillment(
@@ -280,13 +300,13 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
   }
 
   if (mayGoOnline) {
-    if (found?.fallback) throw new HttpError(422, "Online search is unavailable. Try again later or choose items from a supported catalog.", "SearchUnavailable");
+    if (found?.fallback) throw unavailable();
     const what = chooseItems ? "an order" : parsed.items.map((i) => i.requested).join(", ");
     throw new HttpError(422, `Couldn't find ${what}${parsed.store ? ` from ${parsed.store}` : ""}${allowedDomains ? " at the stores this pouch allows" : ""}. Try rewording or naming a store.`.replace(/\s+/g, " "), "NotFound");
   }
 
   // 3. Both failed: partial catalog draft if anything matched, else an error.
-  if (best && catalogLines) {
+  if (best && catalogLines && (catalogFallback || covered)) {
     const merchant = getMerchant(best.id)!;
     pouch ??= pickCatalogPouch(merchant.id);
     if (!pouch) throw new HttpError(400, `No pouch is allowed to pay ${merchant.name}`);

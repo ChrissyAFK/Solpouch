@@ -133,7 +133,7 @@ describe("HTTP flow", () => {
   it("missing search configuration never invents a payable chainsaw quote", async () => {
     const before = (await store.getPouch("groceries"))!.balance;
     const res = await post(mk(), "/orders", { request: "a chainsaw", pouchId: "groceries" });
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(503);
     expect((await res.json()).code).toBe("SearchUnavailable");
     expect(await store.listOrders()).toEqual([]);
     expect((await store.getPouch("groceries"))!.balance).toBe(before);
