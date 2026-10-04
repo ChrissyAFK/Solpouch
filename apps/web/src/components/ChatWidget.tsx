@@ -152,6 +152,17 @@ function ChatPanel() {
     if (open && history.current)
       history.current.scrollTop = history.current.scrollHeight;
   }, [messages, pending, error, open]);
+  // Pages can open the widget straight into voice with a "solpouch:talk" event.
+  const talk = useRef<() => void>(() => {});
+  talk.current = () => {
+    setOpen(true);
+    if (session !== "voice") void toggleVoice();
+  };
+  useEffect(() => {
+    const onTalk = () => talk.current();
+    window.addEventListener("solpouch:talk", onTalk);
+    return () => window.removeEventListener("solpouch:talk", onTalk);
+  }, []);
 
   function close() {
     if (session === "voice") agent.endSession();
