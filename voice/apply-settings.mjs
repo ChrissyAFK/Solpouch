@@ -33,16 +33,19 @@ if (process.argv.includes("--dry-run")) {
     process.exit(1);
   }
   const cc = (await cur.json())?.conversation_config ?? {};
+  // The API returns both `tools` and `tool_ids` but accepts only one of them back.
+  const { tools, ...curPrompt } = cc.agent?.prompt ?? {};
+  const toolsBefore = curPrompt.tool_ids?.length ?? tools?.length ?? 0;
   const body = {
     conversation_config: {
       asr: { ...cc.asr, keywords },
       turn: { ...cc.turn, speculative_turn: false, turn_eagerness: "patient" },
-      agent: { prompt: { ...cc.agent?.prompt, prompt: promptText } },
+      agent: { prompt: { ...curPrompt, ...(curPrompt.tool_ids ? {} : tools ? { tools } : {}), prompt: promptText } },
     },
   };
   const res = await fetch(url, { method: "PATCH", headers: { "xi-api-key": key, "content-type": "application/json" }, body: JSON.stringify(body) });
   const text = await res.text();
   if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${text.slice(0, 500)}`);
   const c = JSON.parse(text).conversation_config;
-  console.log(`applied: ${c?.asr?.keywords?.length ?? "?"} keywords, speculative_turn=${c?.turn?.speculative_turn}, turn_eagerness=${c?.turn?.turn_eagerness}`);
+  console.log(`applied: ${c?.asr?.keywords?.length ?? "?"} keywords, speculative_turn=${c?.turn?.speculative_turn}, turn_eagerness=${c?.turn?.turn_eagerness}, tools ${toolsBefore} -> ${c?.agent?.prompt?.tool_ids?.length ?? c?.agent?.prompt?.tools?.length ?? 0}, prompt ${c?.agent?.prompt?.prompt?.length} chars`);
 }
