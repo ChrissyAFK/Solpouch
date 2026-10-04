@@ -91,7 +91,7 @@ Radii: `--r-sm 8` (inputs, chips) · `--r-md 12` (buttons, panels) · `--r-lg 16
 - [x] 4. Landing how it works, boundary, FAQ, closing panel
 - [x] 5. Footer (shared) and landing nav on mobile
 - [x] 6. App shell: sidebar, top bar, sign-in card, Ask Solpouch button
-- [ ] 7. Info pages: About, Privacy, Terms, Contact, Delete account
+- [x] 7. Info pages: About, Privacy, Terms, Contact, Delete account
 - [ ] 8. Dashboard overview: stat tiles, spending card, pouch list as cards
 - [ ] 9. Order page and receipt
 - [ ] 10. Chat widget panel
@@ -103,3 +103,4 @@ Radii: `--r-sm 8` (inputs, chips) · `--r-md 12` (buttons, panels) · `--r-lg 16
 - 01:27 Item 4: how-it-works rail with gate-square stops (last one signal green); boundary as a black readout panel; FAQ toggles as bordered squares that rotate on open; closing as the violet brand field with mint second line and a white CTA. Build passes; / checked at 1440 and 390.
 - 01:29 Item 5: shared footer and landing footer on tokens (no font-stretch, muted 13px column labels, ink-soft links with gated brand hover, 36/44px link targets, surface ground); landing mobile nav 64px with a full-width menu of 52px rows and a bordered Sign in. Build passes; /about footer checked at 1440, landing header at 390.
 - 01:33 Item 6: sidebar on tokens (bordered workspace tile with violet avatar, 8px-radius nav rows, active row as a raised surface with a violet icon instead of a 2px colored edge, gated hover, 13px floor), 64px top bar with a pill label, sign-in card with flat violet mark and money-card shadow, Ask Solpouch launcher as an ink button that turns violet, with press scale. Build passes; /dashboard checked at 1440.
+- 01:36 Item 7: info pages (About, Privacy, Terms, Contact, Delete account) on tokens: title Hanken 800 at -0.035em with balanced wrap and no font-stretch, hairline rule under the header, ink h2s with more space above, brand list markers and links with gated hover, mono code, 16px mobile gutter. Build passes; /privacy checked at 1440, all five routes return 200.
