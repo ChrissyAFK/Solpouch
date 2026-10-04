@@ -68,8 +68,10 @@ export function PouchList({
               <Link href={`/pouches/${p.id}`}>{p.name}</Link>
             </h3>
             <span>
-              {p.allowedMerchantIds.length}{" "}
-              {p.allowedMerchantIds.length === 1 ? "store" : "stores"} ·{" "}
+              {p.allowedMerchantIds.length === 0
+                ? "Any store"
+                : `${p.allowedMerchantIds.length} ${p.allowedMerchantIds.length === 1 ? "store" : "stores"}`}{" "}
+              ·{" "}
               <span className="num">{usd(toUsdc(p.maxPerOrder))}</span> per order
             </span>
           </div>

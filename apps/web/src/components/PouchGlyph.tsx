@@ -16,7 +16,10 @@ function hashName(name: string) {
   for (let i = 0; i < name.length; i += 1) {
     h = (h * 31 + name.charCodeAt(i)) >>> 0;
   }
-  return h;
+  // Mix the bits so similar names land on different tones.
+  h = (h ^ (h >>> 16)) >>> 0;
+  h = Math.imul(h, 0x45d9f3b) >>> 0;
+  return (h ^ (h >>> 16)) >>> 0;
 }
 
 function usd(n: number) {

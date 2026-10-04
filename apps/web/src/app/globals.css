@@ -486,7 +486,7 @@ h1 {
   display: grid;
   grid-template-columns:
     64px minmax(140px, 1.3fr) minmax(95px, 0.8fr) minmax(95px, 0.8fr) 84px
-    136px;
+    max-content;
   gap: 20px;
   align-items: center;
 }
@@ -735,7 +735,7 @@ h1 {
   }
   .pouch-table-head,
   .pouch-row {
-    grid-template-columns: 64px minmax(120px, 1.2fr) minmax(80px, 0.7fr) minmax(80px, 0.7fr) 74px 112px;
+    grid-template-columns: 64px minmax(120px, 1.2fr) minmax(80px, 0.7fr) minmax(80px, 0.7fr) 74px max-content;
     gap: 12px;
   }
   .row-actions {
@@ -766,7 +766,7 @@ h1 {
   }
   .pouch-table-head,
   .pouch-row {
-    grid-template-columns: 64px minmax(120px, 1.2fr) 90px minmax(90px, 0.8fr) 100px;
+    grid-template-columns: 64px minmax(120px, 1.2fr) 90px minmax(90px, 0.8fr) max-content;
   }
   .pouch-table-head > span:nth-child(5),
   .pouch-row > .pouch-status {
@@ -839,7 +839,8 @@ h1 {
     font-size: 14px;
   }
   .main-content {
-    padding: 23px 16px 40px;
+    /* Bottom room so the floating Ask button never covers the last action. */
+    padding: 23px 16px 88px;
   }
   .topbar {
     padding: 0 16px;
@@ -861,10 +862,10 @@ h1 {
   .breadcrumb {
     font-size: 14px;
     gap: 8px;
+    white-space: nowrap;
   }
   .demo-label {
-    font-size: 12px;
-    padding: 3px 5px;
+    display: none;
   }
   .page-heading h1 {
     font-size: 25px;

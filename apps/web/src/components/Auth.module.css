@@ -74,6 +74,7 @@
   background: var(--surface-raised);
 }
 .signOut {
+  white-space: nowrap;
   background: none;
   border: 1px solid var(--line);
   color: var(--muted);
