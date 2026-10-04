@@ -18,7 +18,7 @@ test("production scripts require a nonce and do not allow inline code or eval", 
   assert.doesNotMatch(scripts, /unsafe-inline|unsafe-eval/);
   assert.match(policy, /connect-src 'self' https:\/\/api\.example\.test https:\/\/api\.elevenlabs\.io wss:\/\/api\.elevenlabs\.io https:\/\/livekit\.rtc\.elevenlabs\.io wss:\/\/livekit\.rtc\.elevenlabs\.io https:\/\/accounts\.google\.com\/gsi\/ /);
   assert.match(scripts, /https:\/\/accounts\.google\.com\/gsi\/client/);
-  assert.match(policy, /frame-src https:\/\/accounts\.google\.com\/gsi\/;/);
+  assert.match(policy, /frame-src https:\/\/accounts\.google\.com\/gsi\/ https:\/\/auth\.privy\.io;/);
   assert.match(policy, /style-src 'self' 'unsafe-inline' https:\/\/accounts\.google\.com\/gsi\/style;/);
   assert.match(policy, /frame-ancestors 'none'/);
   assert.match(policy, /upgrade-insecure-requests/);
