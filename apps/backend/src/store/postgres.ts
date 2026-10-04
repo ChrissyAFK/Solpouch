@@ -270,11 +270,11 @@ export class PostgresStore implements Store, PaymentIndex {
     if (!pouchIds.length) return undefined;
     const { rows: any } = await this.query("SELECT 1 FROM payments WHERE pouch_id = ANY($1::text[]) LIMIT 1", [pouchIds]);
     if (!any.length) return undefined;
-    // Day buckets come from the spend_daily continuous aggregate (real-time, see schema.sql).
-    const sql = bucket === "day"
-      ? "SELECT bucket, pouch_id, spent, orders FROM spend_daily WHERE pouch_id = ANY($1::text[]) ORDER BY bucket, pouch_id"
-      : "SELECT time_bucket('1 hour', time) AS bucket, pouch_id, sum(amount) AS spent, count(*) AS orders FROM payments WHERE pouch_id = ANY($1::text[]) GROUP BY 1, 2 ORDER BY 1, 2";
-    const { rows } = await this.query(sql, [pouchIds]);
+    // Aggregate payments directly. spend_daily only re-materializes its last 3 days, so a
+    // payment indexed late (backfill, indexer downtime) would be missing from older buckets.
+    const { rows } = await this.query(
+      "SELECT time_bucket($2::interval, time) AS bucket, pouch_id, sum(amount) AS spent, count(*) AS orders FROM payments WHERE pouch_id = ANY($1::text[]) GROUP BY 1, 2 ORDER BY 1, 2",
+      [pouchIds, bucket === "day" ? "1 day" : "1 hour"]);
     return rows.map((r) => ({ bucket: iso(r.bucket), pouchId: r.pouch_id, spent: Number(r.spent), orders: Number(r.orders) }));
   }
 
