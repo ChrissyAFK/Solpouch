@@ -1,7 +1,7 @@
 "use client";
 import { useId, useState } from "react";
 import type { Merchant, Pouch, CreatePouchBody } from "@solpouch/shared";
-import { MAX_ALLOWED_MERCHANTS, toMicros, toUsdc, WEB_PREFIX } from "@solpouch/shared";
+import { MAX_ALLOWED_MERCHANTS, pouchRuleError, toMicros, toUsdc, WEB_PREFIX } from "@solpouch/shared";
 import { errMsg } from "@/lib/api";
 import { ErrorBanner, btnPrimary, input, label } from "./ui";
 
@@ -70,6 +70,7 @@ export function PouchForm({
   const [webError, setWebError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ max?: string; daily?: string }>({});
 
   function addWeb() {
     const d = normalizeDomain(webInput);
@@ -94,16 +95,35 @@ export function PouchForm({
         e.preventDefault();
         if (busy) return;
         setError(null);
+        setFieldErrors({});
         const amounts = [maxPerOrder, dailyLimit].map(Number);
-        if (
-          amounts.some(
-            (v) =>
-              !Number.isFinite(v) ||
-              v < 0 ||
-              !Number.isSafeInteger(toMicros(v)),
-          )
-        ) {
-          setError("Enter valid, non-negative spending limits.");
+        const invalid = (raw: string) => {
+          const v = Number(raw);
+          return raw.trim() === "" || !Number.isFinite(v) || v < 0 || !Number.isSafeInteger(toMicros(v));
+        };
+        if (invalid(maxPerOrder) || invalid(dailyLimit)) {
+          setFieldErrors({
+            max: invalid(maxPerOrder) ? "Enter a valid amount." : undefined,
+            daily: invalid(dailyLimit) ? "Enter a valid amount." : undefined,
+          });
+          return;
+        }
+        const stores = mode === "any" ? [] : [...new Set(allowed)];
+        // The vault program refuses these, so catch them before saving.
+        const rule = pouchRuleError({
+          maxPerOrder: toMicros(amounts[0]),
+          dailyLimit: toMicros(amounts[1]),
+          allowedMerchantIds: stores,
+        });
+        if (rule === "ZeroLimit") {
+          setFieldErrors({
+            max: toMicros(amounts[0]) <= 0 ? "Must be more than zero." : undefined,
+            daily: toMicros(amounts[1]) <= 0 ? "Must be more than zero." : undefined,
+          });
+          return;
+        }
+        if (rule === "PerOrderOverDaily") {
+          setFieldErrors({ daily: "Must be at least the per-order limit." });
           return;
         }
         if (withName && !name.trim()) {
@@ -125,7 +145,7 @@ export function PouchForm({
             maxPerOrder: toMicros(amounts[0]),
             dailyLimit: toMicros(amounts[1]),
             confirmAbove: initial?.confirmAbove ?? 0,
-            allowedMerchantIds: mode === "any" ? [] : allowed,
+            allowedMerchantIds: stores,
           });
         } catch (err) {
           setError(errMsg(err));
@@ -162,13 +182,20 @@ export function PouchForm({
               className={input}
               required
               type="number"
-              min="0"
+              min="0.01"
               step="0.01"
               inputMode="decimal"
               placeholder="25.00"
               value={maxPerOrder}
+              aria-invalid={!!fieldErrors.max}
+              aria-describedby={fieldErrors.max ? `${id}-max-err` : undefined}
               onChange={(e) => setMax(e.target.value)}
             />
+            {fieldErrors.max && (
+              <p id={`${id}-max-err`} role="alert" className="mt-2 text-xs text-[var(--danger)]">
+                {fieldErrors.max}
+              </p>
+            )}
             <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
               The most a single order can cost.
             </p>
@@ -182,13 +209,20 @@ export function PouchForm({
               className={input}
               required
               type="number"
-              min="0"
+              min="0.01"
               step="0.01"
               inputMode="decimal"
               placeholder="50.00"
               value={dailyLimit}
+              aria-invalid={!!fieldErrors.daily}
+              aria-describedby={fieldErrors.daily ? `${id}-daily-err` : undefined}
               onChange={(e) => setDaily(e.target.value)}
             />
+            {fieldErrors.daily && (
+              <p id={`${id}-daily-err`} role="alert" className="mt-2 text-xs text-[var(--danger)]">
+                {fieldErrors.daily}
+              </p>
+            )}
             <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
               Maximum total spending per day.
             </p>

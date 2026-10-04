@@ -98,3 +98,60 @@ describe("allowed merchant cap", () => {
     expect((await store.getPouch("uber-eats"))!.allowedMerchantIds).toEqual(["thai-express"]);
   });
 });
+
+describe("pouch rules mirror the vault program's check_rules", () => {
+  async function setup() {
+    const store = new MemoryStore(ownedSeed());
+    const vault = new MockVaultClient(store, () => undefined);
+    const create = vi.spyOn(vault, "createPouch");
+    const update = vi.spyOn(vault, "updateRules");
+    const app = createApp({ store, vault });
+    const headers = { "Content-Type": "application/json", ...await authHeaders(store) };
+    return { store, vault, app, headers, create, update };
+  }
+
+  it("rejects zero limits, per-order above daily and duplicate stores on create with the program's codes", async () => {
+    const { app, headers, create, store } = await setup();
+    const before = (await store.listPouches()).length;
+    const cases: [Record<string, unknown>, string][] = [
+      [{ maxPerOrder: 0, dailyLimit: 5 }, "ZeroLimit"],
+      [{ maxPerOrder: 5, dailyLimit: 0 }, "ZeroLimit"],
+      [{ maxPerOrder: 6, dailyLimit: 5 }, "PerOrderOverDaily"],
+      [{ maxPerOrder: 5, dailyLimit: 5, allowedMerchantIds: ["web:a.example", "web:a.example"] }, "DuplicateMerchant"],
+    ];
+    for (const [rules, code] of cases) {
+      const res = await app.request("/pouches", { method: "POST", headers, body: JSON.stringify({ name: "P", allowedMerchantIds: [], ...rules }) });
+      expect(res.status, code).toBe(422);
+      expect(await res.json()).toMatchObject({ code });
+    }
+    expect(create).not.toHaveBeenCalled();
+    expect((await store.listPouches()).length).toBe(before);
+    const ok = await app.request("/pouches", { method: "POST", headers, body: JSON.stringify({ name: "P", maxPerOrder: 5, dailyLimit: 5, allowedMerchantIds: [] }) });
+    expect(ok.status).toBe(201);
+  });
+
+  it("validates the merged rules on PATCH, so lowering only the daily limit below the per-order limit fails", async () => {
+    const { app, headers, update, store } = await setup();
+    // uber-eats: maxPerOrder 25, dailyLimit 40.
+    const lower = await app.request("/pouches/uber-eats/rules", { method: "PATCH", headers, body: JSON.stringify({ dailyLimit: 10_000_000 }) });
+    expect(lower.status).toBe(422);
+    expect(await lower.json()).toMatchObject({ code: "PerOrderOverDaily" });
+    const zero = await app.request("/pouches/uber-eats/rules", { method: "PATCH", headers, body: JSON.stringify({ maxPerOrder: 0 }) });
+    expect(await zero.json()).toMatchObject({ code: "ZeroLimit" });
+    const dup = await app.request("/pouches/uber-eats/rules", { method: "PATCH", headers, body: JSON.stringify({ allowedMerchantIds: ["thai-express", "thai-express"] }) });
+    expect(await dup.json()).toMatchObject({ code: "DuplicateMerchant" });
+    expect(update).not.toHaveBeenCalled();
+    expect(await store.getPouch("uber-eats")).toMatchObject({ maxPerOrder: 25_000_000, dailyLimit: 40_000_000, allowedMerchantIds: ["thai-express"] });
+    const both = await app.request("/pouches/uber-eats/rules", { method: "PATCH", headers, body: JSON.stringify({ maxPerOrder: 5_000_000, dailyLimit: 10_000_000 }) });
+    expect(both.status).toBe(200);
+  });
+
+  it("MockVaultClient refuses invalid rules like the program does", async () => {
+    const { vault, store } = await setup();
+    const p = (await store.getPouch("uber-eats"))!;
+    await expect(vault.createPouch({ ...p, maxPerOrder: 0 })).rejects.toMatchObject({ code: "ZeroLimit" });
+    await expect(vault.updateRules({ ...p, maxPerOrder: p.dailyLimit + 1 })).rejects.toMatchObject({ code: "PerOrderOverDaily" });
+    await expect(vault.updateRules({ ...p, allowedMerchantIds: ["x", "x"] })).rejects.toMatchObject({ code: "DuplicateMerchant" });
+    await expect(vault.updateRules(p)).resolves.toMatchObject({ txSignature: expect.any(String) });
+  });
+});
