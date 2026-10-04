@@ -127,6 +127,10 @@ export async function createOrder(deps: Deps, ownerEmail: string, request: strin
   }
 }
 
+const GENERIC_WORDS = new Set(["a", "an", "the", "some", "any", "my", "me", "order", "orders", "meal", "meals", "combo", "combos", "something", "food", "lunch", "dinner", "breakfast", "from", "at", "of", "for", "to", "get", "typical", "good", "cheap"]);
+/** The user left the choice to the assistant ("anything", "you pick", "surprise me"). */
+const VAGUE_ANSWER = /\b(anything|any ?thing|whatever|idk|i don'?t know|surprise me|you pick|you choose|your choice|doesn'?t matter|does not matter|don'?t care|up to you|any)\b/i;
+
 /** parse -> pick pouch -> pick merchant -> match -> total. Returns a draft order. */
 export async function createDraft(deps: Deps, ownerEmail: string, request: string, pouchId?: string, savedItems?: ParsedItem[]): Promise<Order> {
   await consumeAiBudget(deps.store, ownerEmail);
@@ -140,11 +144,20 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
     throw e;
   }
   // The assistant asks one question instead of guessing; the answer comes back as a new request.
-  if (parsed.clarify) throw new HttpError(400, parsed.clarify.question, "NeedClarification");
   const { maxPrice, perItem } = parseRequestConstraints(request);
-  const cap = maxPrice !== undefined ? maxPrice / 1_000_000 : undefined;
-  // A store plus a price cap with no items: the search picks a typical order that fits the cap.
-  const chooseItems = !parsed.items.length && !!parsed.store && cap !== undefined;
+  let cap = maxPrice !== undefined ? maxPrice / 1_000_000 : undefined;
+  // "a mcdonalds order" names no item: generic words (and the store name) do not count as items.
+  if (parsed.store && parsed.items.length && !savedItems) {
+    const storeWords = parsed.store.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    const isGeneric = (s: string) =>
+      s.toLowerCase().split(/[^a-z0-9']+/).filter(Boolean).every((w) => GENERIC_WORDS.has(w) || storeWords.includes(w.replace(/'?s$/, "")) || storeWords.includes(w));
+    if (parsed.items.every((i) => isGeneric(i.requested))) parsed = { ...parsed, items: [] };
+  }
+  const vague = VAGUE_ANSWER.test(request);
+  // A store plus a price cap (or a "you pick" answer) with no items: the search picks a typical order that fits.
+  const chooseItems = !parsed.items.length && !!parsed.store && (cap !== undefined || vague);
+  // The assistant asks one question instead of guessing; never when we can just build a cart.
+  if (parsed.clarify && !chooseItems) throw new HttpError(400, parsed.clarify.question, "NeedClarification");
   if (!parsed.items.length && !chooseItems) {
     throw new HttpError(400, parsed.store ? `What would you like from ${parsed.store}?` : "What would you like me to order?", "NeedClarification");
   }
@@ -173,6 +186,12 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
       }));
       if (!canPay) pouch = undefined;
     }
+  }
+
+  // A "you pick" answer with no budget: spend up to what the pouch can pay.
+  if (chooseItems && cap === undefined) {
+    const sp = pouch ?? pouches.find((p) => isAnyStore(p) && !p.frozen) ?? pouches.find((p) => !p.frozen);
+    if (sp) cap = Math.max(0, Math.min(sp.balance, sp.maxPerOrder, sp.dailyLimit - sp.spentToday)) / 1_000_000;
   }
 
   // 1. Catalog path.

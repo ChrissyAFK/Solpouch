@@ -38,6 +38,23 @@ describe("createDraft with the assistant", () => {
     const e = await fail(draft("a Popeyes order"));
     expect([e.code, e.message]).toEqual(["NeedClarification", "What would you like from Popeyes?"]);
   });
+  it("a store with a budget builds a cart, even if the assistant asked a question", async () => {
+    m.findCart.mockResolvedValue(find([{ requested: "Big Mac", name: "Big Mac", unitPrice: 6.99, verified: true }]));
+    m.understand.mockResolvedValue({ store: "McDonald's", items: [{ requested: "mcdonalds order", qty: 1 }] });
+    await draft("find me a mcdonalds order for under $15");
+    expect(m.findCart.mock.calls[0][1]).toMatchObject({ chooseItems: true, maxTotal: 15 });
+    m.findCart.mockClear();
+    m.understand.mockResolvedValue({ store: "McDonald's", items: [], clarify: { question: "What would you like?", reason: "missing_detail" } });
+    await draft("find me a mcdonalds order for under $15");
+    expect(m.findCart.mock.calls[0][1]).toMatchObject({ chooseItems: true, maxTotal: 15 });
+  });
+  it("a vague answer with a store and no budget uses the pouch limit as the cap", async () => {
+    for (const p of await store.listPouches(TEST_USER)) await store.savePouch({ ...p, frozen: false, balance: 7_000_000, maxPerOrder: 50_000_000, dailyLimit: 100_000_000, spentToday: 0 });
+    m.findCart.mockResolvedValue(find([{ requested: "Chicken", name: "Chicken", unitPrice: 5, verified: true }]));
+    m.understand.mockResolvedValue({ store: "Popeyes", items: [], clarify: { question: "What would you like?", reason: "missing_detail" } });
+    await draft("a Popeyes order, anything");
+    expect(m.findCart.mock.calls[0][1]).toMatchObject({ chooseItems: true, maxTotal: 7 });
+  });
   it("verified lines are not estimates; unverified lines are", async () => {
     m.understand.mockResolvedValue({ store: "Popeyes", items: [{ requested: "tenders combo", qty: 1 }, { requested: "biscuit", qty: 2 }] });
     m.findCart.mockResolvedValue(find([
