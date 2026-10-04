@@ -177,5 +177,11 @@ export const VAULT_ERRORS = [
   "TooManyMerchants",
   "VaultNotEmpty",
   "OrderAlreadyUsed",
+  "PouchNotOnChain",
+  "AgentKeyMismatch",
+  "SignerOutOfSol",
+  "ChainRejected",
+  "TxFailed",
+  "TxExpired",
 ] as const;
 export type VaultError = (typeof VAULT_ERRORS)[number];

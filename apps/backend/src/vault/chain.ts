@@ -18,6 +18,8 @@ import {
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 import { merchants } from "../merchants/index.js";
+import { checkoutPayTo } from "../services/fulfillment.js";
+import { WEB_PREFIX, isAnyStore } from "@solpouch/shared";
 import type { Store } from "../store/types.js";
 import { recoverTransaction } from "./recovery.js";
 import type { Micros, Pouch } from "@solpouch/shared";
@@ -61,9 +63,9 @@ const PROGRAM_ERRORS = new Set([
   "VaultNotEmpty",
 ]);
 
-function mapError(e: unknown): never {
+export function mapError(e: unknown): never {
   if (e instanceof VaultRejected) throw e;
-  const anyE = e as { error?: { errorCode?: { code?: string } }; message?: string; logs?: string[] };
+  const anyE = e as { error?: { errorCode?: { code?: string; number?: number } }; message?: string; logs?: string[] };
   const code = anyE?.error?.errorCode?.code;
   if (code && PROGRAM_ERRORS.has(code)) throw new VaultRejected(code as VaultRejectCode);
   const text = `${anyE?.message ?? ""} ${(anyE?.logs ?? []).join(" ")}`;
@@ -76,7 +78,46 @@ function mapError(e: unknown): never {
     if (entry && PROGRAM_ERRORS.has(entry.name)) throw new VaultRejected(entry.name as VaultRejectCode);
   }
   if (/already in use/i.test(text)) throw new VaultRejected("OrderAlreadyUsed");
+  // Anchor framework errors (2000-3999), System-program lamport shortfalls and SPL token insufficient funds.
+  if (/insufficient lamports|insufficient funds for fee|no record of a prior credit/i.test(text)) throw new VaultRejected("SignerOutOfSol");
+  const num = anyE?.error?.errorCode?.number ?? (/Error Number: (\d+)/.exec(text) ? Number(/Error Number: (\d+)/.exec(text)![1]) : custom ? parseInt(custom[1], 16) : undefined);
+  if (num !== undefined && num >= 2000 && num <= 3999) {
+    if (num === 3012 || num === 3007) throw new VaultRejected("PouchNotOnChain");
+    if (num === 2001) throw new VaultRejected("AgentKeyMismatch");
+    throw new VaultRejected("ChainRejected");
+  }
+  if (custom && parseInt(custom[1], 16) === 1) throw new VaultRejected("InsufficientFunds");
   throw e;
+}
+
+/** Resolve a pouch's pay-to addresses to at most 10 unique keys. Never truncates silently. */
+export function resolveMerchantKeys(addresses: string[]): PublicKey[] {
+  const unique = [...new Set(addresses)];
+  if (unique.length > 10) throw new VaultRejected("TooManyMerchants");
+  return unique.map((s) => new PublicKey(s));
+}
+
+/**
+ * Map on-chain allowlist keys back to catalog ids. The shared checkout key stands for every web: entry,
+ * and for any-store pouches (which also list every catalog merchant) it means "no restriction".
+ */
+export function mapAllowedKeys(keys: string[], payToOf: (id: string) => string | undefined, stored?: Pouch): string[] {
+  const checkout = checkoutPayTo();
+  if (stored && isAnyStore(stored) && keys.includes(checkout)) return [];
+  const out: string[] = [];
+  for (const key of keys) {
+    if (key === checkout) {
+      for (const id of stored?.allowedMerchantIds ?? []) if (id.startsWith(WEB_PREFIX)) out.push(id);
+      continue;
+    }
+    const matches = merchants.filter((merchant) => payToOf(merchant.id) === key);
+    if (matches.length !== 1) {
+      console.warn(`[chain] Skipping unknown or ambiguous merchant address ${key}${stored ? ` on pouch ${stored.id}` : ""}.`);
+      continue;
+    }
+    out.push(matches[0].id);
+  }
+  return [...new Set(out)];
 }
 
 /**
@@ -135,9 +176,18 @@ export class ChainVaultClient implements VaultClient {
 
   // web: entries and any-store resolve to the checkout wallet (see allow.ts)
   private merchantKeys(p: Pouch): PublicKey[] {
-    return allowedPayTos(p, this.payToOf)
-      .slice(0, 10)
-      .map((s) => new PublicKey(s));
+    return resolveMerchantKeys(allowedPayTos(p, this.payToOf));
+  }
+
+  get agentAddress(): string { return this.agent.publicKey.toBase58(); }
+
+  /** Read-only: warn loudly when the agent key cannot pay for receipts. Sends nothing. */
+  async checkAgentBalance(minSol = 0.05): Promise<number> {
+    const lamports = await this.connection.getBalance(this.agent.publicKey, COMMITMENT);
+    if (lamports < minSol * 1_000_000_000) {
+      console.warn(`[startup] AGENT KEY LOW ON SOL: ${(lamports / 1e9).toFixed(4)} SOL. Each payment receipt costs about 0.0015 SOL. Fund the agent address ${this.agentAddress} with at least ${minSol} SOL or payments will fail.`);
+    }
+    return lamports;
   }
 
   private async assertDevnet() {
@@ -152,7 +202,7 @@ export class ChainVaultClient implements VaultClient {
     return recoverTransaction(this.store, id, {
       status: async (signature) => {
         const value = (await this.connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
-        return { confirmed: !!value && !value.err && (value.confirmationStatus === "confirmed" || value.confirmationStatus === "finalized"), failed: !!value?.err };
+        return { confirmed: !!value && !value.err && (value.confirmationStatus === "confirmed" || value.confirmationStatus === "finalized"), failed: !!value?.err, found: !!value };
       },
       blockHeight: () => this.connection.getBlockHeight(COMMITMENT),
       broadcast: async (bytes) => {
@@ -254,7 +304,7 @@ export class ChainVaultClient implements VaultClient {
     return { balance, spentToday };
   }
 
-  async getState(pouchId: string): Promise<VaultState> {
+  async getState(pouchId: string, stored?: Pouch): Promise<VaultState> {
     const pda = this.pouchPda(pouchId);
     const [acct, vault] = await Promise.all([
       this.program.account.pouch.fetch(pda, COMMITMENT),
@@ -265,11 +315,7 @@ export class ChainVaultClient implements VaultClient {
     if (!acct.owner.equals(this.owner.publicKey) || !acct.mint.equals(this.mint)) {
       throw new Error("Chain pouch owner or mint does not match the configured vault");
     }
-    const allowedMerchantIds = acct.allowedMerchants.map((key) => {
-      const matches = merchants.filter((merchant) => this.payToOf(merchant.id) === key.toBase58());
-      if (matches.length !== 1) throw new Error("Chain pouch has an unknown or ambiguous merchant address");
-      return matches[0].id;
-    });
+    const allowedMerchantIds = mapAllowedKeys(acct.allowedMerchants.map((key) => key.toBase58()), this.payToOf, stored);
     const balance = Number(vault.amount);
     if (!Number.isSafeInteger(balance)) throw new Error("Chain balance exceeds supported precision");
     return { balance, spentToday: expired ? 0 : acct.spentToday.toNumber(), frozen: acct.frozen,
@@ -294,14 +340,17 @@ export class ChainVaultClient implements VaultClient {
 /** Startup reconciliation is read-only on chain. Missing accounts require explicit creation. */
 export async function ensureOnChain(vault: ChainVaultClient, pouches: Pouch[]): Promise<Pouch[]> {
   const out: Pouch[] = [];
+  const missing: string[] = [];
   for (const pouch of pouches) {
     try {
-      const state = await vault.getState(pouch.id);
+      const state = await vault.getState(pouch.id, pouch);
       out.push({ ...pouch, ...state });
     } catch {
       // One unreadable pouch must not stop the server: log it and keep the stored state.
+      missing.push(pouch.id);
       console.warn(`[reconcile] Cannot read chain pouch ${pouch.id}; skipping it. Startup will not create or fund it.`);
     }
   }
+  if (missing.length) console.warn(`[startup] WARNING: ${missing.length} pouch(es) are in the store but not readable on chain: ${missing.join(", ")}. Payments from them will fail until they are created on chain.`);
   return out;
 }

@@ -124,7 +124,17 @@ describe("durable signed transaction recovery", () => {
     await store.saveOperation(operation);
     const rpc = transport();
     rpc.status = vi.fn().mockResolvedValue({ confirmed: false, failed: true });
-    await expect(recoverTransaction(store, operation.id, rpc, vi.fn(), operation)).rejects.toThrow("failed on chain");
+    await expect(recoverTransaction(store, operation.id, rpc, vi.fn(), operation)).rejects.toMatchObject({ code: "TxFailed" });
+    expect(rpc.broadcast).not.toHaveBeenCalled();
+  });
+  it("rejects terminally only when expiry is proven by a missing signature status", async () => {
+    await store.saveOperation(operation);
+    const rpc = transport();
+    rpc.blockHeight = vi.fn().mockResolvedValue(101);
+    rpc.status = vi.fn().mockResolvedValue({ confirmed: false, failed: false, found: false });
+    await expect(recoverTransaction(store, operation.id, rpc, vi.fn(), operation)).rejects.toMatchObject({ code: "TxExpired" });
+    rpc.status = vi.fn().mockResolvedValue({ confirmed: false, failed: false, found: true });
+    await expect(recoverTransaction(store, operation.id, rpc, vi.fn(), operation)).rejects.toThrow("expired");
     expect(rpc.broadcast).not.toHaveBeenCalled();
   });
 });
@@ -143,8 +153,12 @@ describe("payment service recovery", () => {
       program: { account: { pouch: { fetch: vi.fn().mockResolvedValue(account) } } },
     }) as ChainVaultClient;
     expect(await fake.getState("uber-eats")).toEqual({ balance: 10, spentToday: 2, frozen: true, maxPerOrder: 3, dailyLimit: 4, allowedMerchantIds: ["thai-express"] });
+    // An unknown key is skipped with a warning instead of breaking the listing.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     account.allowedMerchants = [Keypair.generate().publicKey];
-    await expect(fake.getState("uber-eats")).rejects.toThrow("unknown or ambiguous merchant");
+    expect((await fake.getState("uber-eats")).allowedMerchantIds).toEqual([]);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it("serializes simultaneous confirmations and returns the same paid outcome", async () => {

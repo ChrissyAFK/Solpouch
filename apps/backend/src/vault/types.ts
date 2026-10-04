@@ -12,7 +12,8 @@ export class VaultRejected extends Error {
 export type VaultState = Pick<Pouch, "balance" | "spentToday" | "frozen" | "maxPerOrder" | "dailyLimit" | "allowedMerchantIds">;
 
 export interface VaultClient {
-  getState?(pouchId: string): Promise<VaultState>;
+  /** `stored` is the mirrored pouch, used to map the shared checkout key back to web:/any-store entries. */
+  getState?(pouchId: string, stored?: Pouch): Promise<VaultState>;
   readonly authorizedOwner?: string;
   /** Create the pouch account on the vault. Returns its address (PDA). */
   createPouch(pouch: Pouch): Promise<{ address: string }>;

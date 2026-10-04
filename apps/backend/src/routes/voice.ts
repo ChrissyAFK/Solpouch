@@ -68,8 +68,15 @@ export function voiceRoutes(_baseDeps: Deps) {
       }
       case "freeze_all": {
         const pouches = await reconcilePouches(deps);
-        for (const p of pouches) await deps.store.withPouchLock(p.id, () => deps.vault.freeze(p.id));
-        return c.json({ say: `Frozen. All ${pouches.length} pouches are locked until you unfreeze them in the app.` });
+        const failed: string[] = [];
+        for (const p of pouches) {
+          try { await deps.store.withPouchLock(p.id, () => deps.vault.freeze(p.id)); } catch { failed.push(p.name); }
+        }
+        const done = pouches.length - failed.length;
+        const say = failed.length === 0
+          ? `Frozen. All ${pouches.length} pouches are locked until you unfreeze them in the app.`
+          : `Frozen ${done} of ${pouches.length} pouches. These could not be frozen: ${failed.join(", ")}. Check them in the app.`;
+        return c.json({ say, frozen: done, failed });
       }
       default:
         return c.json({ error: `Unknown tool: ${tool}` }, 404);

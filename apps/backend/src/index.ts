@@ -18,14 +18,20 @@ if (process.env.DATABASE_URL && process.env.VAULT_MODE !== "chain") {
 }
 const store = process.env.DATABASE_URL ? await PostgresStore.connect(process.env.DATABASE_URL, []) : new MemoryStore([], process.env.LEGACY_OWNER_EMAIL?.trim().toLowerCase());
 console.log(`store: ${process.env.DATABASE_URL ? "postgres (Tiger Data)" : "memory"}`);
+if (process.env.VAULT_MODE === "chain") {
+  const { assertCheckoutPayTo } = await import("./services/fulfillment.js");
+  assertCheckoutPayTo();
+}
 let vault = createVaultClient(store);
 if (process.env.VAULT_MODE === "chain") {
   const { ensureOnChain, ChainVaultClient } = await import("./vault/index.js");
   const { SyncedVaultClient } = await import("./vault/synced.js");
   // Only reads existing chain accounts. Startup never creates, mints or transfers funds.
-  for (const p of await ensureOnChain(vault as InstanceType<typeof ChainVaultClient>, await store.listPouches())) {
+  const chainVault = vault as InstanceType<typeof ChainVaultClient>;
+  for (const p of await ensureOnChain(chainVault, await store.listPouches())) {
     await store.savePouch(p);
   }
+  await chainVault.checkAgentBalance().catch((e) => console.warn(`[startup] Could not read the agent SOL balance: ${e instanceof Error ? e.message : e}`));
   vault = new SyncedVaultClient(vault, store);
 }
 const app = createApp({ store, vault });
