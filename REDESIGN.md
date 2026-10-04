@@ -107,3 +107,28 @@ Radii: `--r-sm 8` (inputs, chips) · `--r-md 12` (buttons, panels) · `--r-lg 16
 - 01:39 Item 8: dashboard overview on tokens: stat tiles at 16px radius, the Balance tile on black readout glass with a mint mono figure and the money-card shadow, brand spend bar at 6px; pouch and order lists each on one surface card with a raised header row, 20px row padding and gated hover; dashed empty-state cards; 48px section rhythm. Build passes; the overview sits behind Google sign-in, which isn't configured on the test server, so only the shell was checked visually (1440).
 - 01:41 Item 9: order page and receipt on tokens: step tabs on a hairline with a brand underline, 56px Talk button, suggestion chips as 36px brand-soft pressables with gated hover, pill status, receipt as white tape with 12px radius and the money-card shadow, rejection panel with a danger hairline, brand 'via' button with press scale; no solana-purple left. Build passes; not checked visually (the test server was stopped for low memory, and /order sits behind sign-in).
 - 01:43 Item 10: Ask Solpouch panel on tokens: 16px-radius surface panel with a layered shadow that rises in from the launcher (220ms ease-out via @starting-style, off under reduced motion), white header, 20px gutters, brand-soft user bubbles, 40px preset chips with press scale and gated hover, brand Send button, Talk on readout glass while live; hardcoded #9945ff/#14f195 removed and every 10-12px size raised to 13px. Build passes; not checked visually (the test server was stopped for low memory and was not restarted).
+
+## Summary (loop ended 01:46 PDT, before the 02:10 deadline: all ten items done)
+
+**What changed.** Solpouch moved from a dark crypto look (stretched display type, Solana purple and
+green, 4 to 7px radii) to the "Fare gate" system: light platform canvas, Hanken Grotesk with Geist
+Mono numbers, one transit violet used flat, black readout glass for money and gate decisions,
+8/12/16 radii, one money-card shadow, a 13px type floor, hover gated to fine pointers, a 0.97 press
+scale on buttons, and transform/opacity-only motion that respects reduced motion. Covered: tokens and
+base controls; landing nav, hero validator, pouch fare cards, how it works, boundary, FAQ, closing
+panel; shared footer and mobile nav; app shell and sign-in; the five info pages; dashboard overview
+tiles and lists; order page and receipt; the Ask Solpouch panel. No copy or behaviour changed.
+
+**Verification.** Every item built cleanly. Items 1 to 7 were screenshotted on a local `next start`.
+Items 8 to 10 were not seen: the dashboard and order pages sit behind Google sign-in, which isn't
+configured locally, and the test server was stopped for low memory before items 9 and 10.
+
+**What's left.**
+- Look at the dashboard, order page and chat panel with sign-in configured, in light and dark, at
+  desktop and phone width.
+- `global-error.tsx` still hardcodes its colors; the old token aliases (`--solana-purple`,
+  `--accent-*`) can be removed once nothing references them.
+- The signature tap (card nudge plus readout flip on approval, shake on denial) from the direction
+  was not built; the hero's existing sequence was restyled instead.
+- The finish review and DESIGN.md named in the direction were not written.
+- Branch `design/redesign` is local only: not pushed, not merged into `scaffold`.
