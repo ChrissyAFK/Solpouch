@@ -5,7 +5,7 @@ import { verifyVoiceToken } from "../auth/session.js";
 import { z } from "zod";
 import { isCheckoutReference, toUsdc, type Order } from "@solpouch/shared";
 import { getMerchant } from "../merchants/index.js";
-import { cancelOrder, confirmOrder, createDraft, HttpError, type Deps } from "../services/orders.js";
+import { cancelOrder, confirmOrder, createOrder, HttpError, type Deps } from "../services/orders.js";
 
 /**
  * ElevenLabs server-tool webhook.
@@ -16,6 +16,14 @@ export const VOICE_TOOLS = ["get_pouches", "create_order", "confirm_order", "can
 
 const usd = (m: number) => `$${toUsdc(m).toFixed(2)}`;
 let warned = false;
+
+function itemsReadback(order: Order): string {
+  const merchant = getMerchant(order.merchantId)?.name ?? "the merchant";
+  const parts = order.lines.map((l) => (l.product ? `${l.qty} ${l.product.name}, ${usd(l.lineTotal)}` : `${l.requested}: nothing found`));
+  return `From ${merchant}: ${parts.join("; ")}. Total ${usd(order.total)}.`;
+}
+
+const PENDING_SAY = "I sent that payment but can't confirm it yet, so it may have gone through. Don't start a new order. In a minute I can confirm this same order again; that only checks it and never pays twice.";
 
 export function readback(order: Order): string {
   const merchant = getMerchant(order.merchantId)?.name ?? "the merchant";
@@ -76,7 +84,17 @@ export function voiceRoutes(deps: Deps) {
       }
       case "create_order": {
         const b = requestBody.parse(body);
-        const order = await createDraft(deps, email, b.request, b.pouchId);
+        const { order, autoPaid, autoPayError } = await createOrder(deps, email, b.request, b.pouchId);
+        if (autoPaid) {
+          const pouch = await deps.store.getPouch(order.pouchId);
+          return c.json({ say: `Paid automatically, because it is within your ${usd(pouch?.confirmAbove ?? order.total)} auto-pay amount. ${itemsReadback(order)}`, orderId: order.id, total: usd(order.total), status: order.status, autoPaid: true, needsConfirmation: false, checkoutRequired: false });
+        }
+        if (autoPayError) {
+          const say = autoPayError.code === "PaymentPending"
+            ? PENDING_SAY
+            : `I tried to pay this automatically but it was refused: ${autoPayError.code ?? autoPayError.message}. No money moved. ${itemsReadback(order)}`;
+          return c.json({ say, orderId: order.id, total: usd(order.total), status: order.status, autoPaid: false, needsConfirmation: order.status === "draft", checkoutRequired: false, code: autoPayError.code });
+        }
         return c.json({ say: readback(order), orderId: order.id, total: usd(order.total), needsConfirmation: !isCheckoutReference(order), checkoutRequired: isCheckoutReference(order) });
       }
       case "confirm_order": {
@@ -90,7 +108,7 @@ export function voiceRoutes(deps: Deps) {
           }
           if (e instanceof HttpError && e.code === "PaymentPending") {
             // The outcome is unknown: money may have moved. Never tell the caller it was refused.
-            return c.json({ say: "I sent that payment but can't confirm it yet, so it may have gone through. Don't start a new order. In a minute I can confirm this same order again; that only checks it and never pays twice.", status: "paying", code: e.code });
+            return c.json({ say: PENDING_SAY, status: "paying", code: e.code });
           }
           if (e instanceof HttpError && e.code) {
             return c.json({ say: `That payment was refused: ${e.code}. No money moved.`, status: "rejected", code: e.code });

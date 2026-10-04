@@ -331,7 +331,9 @@ export function PouchForm({
         </fieldset>
       </fieldset>
       <div className="rounded bg-[var(--surface-raised)] px-4 py-3 text-xs leading-5 text-[var(--muted)]">
-        Every order requires approval before payment.
+        {initial && initial.confirmAbove > 0
+          ? `Orders up to ${toUsdc(initial.confirmAbove).toFixed(2)} USDC from a built-in store, with every item an exact match, are paid without asking. Everything else requires approval before payment.`
+          : "Every order requires approval before payment."}
       </div>
       <button
         className={`${btnPrimary} w-full sm:w-auto`}

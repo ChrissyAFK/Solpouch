@@ -55,6 +55,50 @@ export class HttpError extends Error {
   }
 }
 
+/** Lowest matchScore a catalog line may have to count as covering the request. */
+export const MATCH_THRESHOLD = 0.3;
+
+/**
+ * Whether a fresh draft may be paid without asking (Pouch.confirmAbove).
+ * Deliberately conservative: only built-in catalog quotes within the owner's
+ * auto-pay amount whose every line is exactly what was asked for, and only when
+ * the pouch's local rules show the payment should succeed. Anything else stays a
+ * draft for explicit confirmation.
+ */
+export function autoConfirmEligible(pouch: Pouch, order: Order): boolean {
+  if (!(pouch.confirmAbove > 0) || order.status !== "draft" || order.pouchId !== pouch.id) return false;
+  if (isCheckoutReference(order) || !merchants.some((m) => m.id === order.merchantId)) return false;
+  if (!isAnyStore(pouch) && !pouch.allowedMerchantIds.includes(order.merchantId)) return false;
+  if (!(order.total > 0) || order.total > pouch.confirmAbove) return false;
+  if (pouch.frozen || order.total > pouch.maxPerOrder || order.total > pouch.balance || pouch.spentToday + order.total > pouch.dailyLimit) return false;
+  if (!order.lines.length) return false;
+  return order.lines.every((l) =>
+    !!l.product && l.product.inStock && !l.product.estimated && l.product.merchantId === order.merchantId &&
+    !l.substitution && !l.note && l.matchScore >= MATCH_THRESHOLD && l.qty === l.requestedQty && l.qty > 0);
+}
+
+export interface CreatedOrder {
+  order: Order;
+  /** True only when the draft was paid without asking because of confirmAbove. */
+  autoPaid: boolean;
+  /** Set when an auto-pay attempt was made but did not finish as paid. */
+  autoPayError?: HttpError;
+}
+
+/** createDraft, then pay it immediately only when autoConfirmEligible allows it. */
+export async function createOrder(deps: Deps, ownerEmail: string, request: string, pouchId?: string): Promise<CreatedOrder> {
+  const draft = await createDraft(deps, ownerEmail, request, pouchId);
+  const pouch = await deps.store.getPouch(draft.pouchId);
+  if (!pouch || pouch.ownerEmail !== ownerEmail || !autoConfirmEligible(pouch, draft)) return { order: draft, autoPaid: false };
+  try {
+    const order = await confirmOrder(deps, ownerEmail, draft.id);
+    return { order, autoPaid: order.status === "paid" };
+  } catch (e) {
+    if (!(e instanceof HttpError)) throw e;
+    return { order: await getOwnedOrder(deps, draft.id, ownerEmail), autoPaid: false, autoPayError: e };
+  }
+}
+
 /** parse -> pick pouch -> pick merchant -> match -> total. Returns a draft order. */
 export async function createDraft(deps: Deps, ownerEmail: string, request: string, pouchId?: string): Promise<Order> {
   await consumeAiBudget(deps.store, ownerEmail);
@@ -83,7 +127,7 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
   let covered = false;
   if (best && best.fit > 0) {
     catalogLines = await matchItems(parsed.items, getCatalog(best.id));
-    covered = catalogLines.every((l) => l.product && l.matchScore >= 0.3);
+    covered = catalogLines.every((l) => l.product && l.matchScore >= MATCH_THRESHOLD);
   }
 
   const pickCatalogPouch = (id: string) =>
