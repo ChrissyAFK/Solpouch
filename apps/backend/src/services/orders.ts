@@ -125,19 +125,39 @@ export async function createOrder(deps: Deps, ownerEmail: string, request: strin
 export async function createDraft(deps: Deps, ownerEmail: string, request: string, pouchId?: string, savedItems?: ParsedItem[]): Promise<Order> {
   await consumeAiBudget(deps.store, ownerEmail);
   const parsed: Awaited<ReturnType<typeof parseRequest>> = savedItems ? { items: savedItems } : await parseRequest(request);
-  if (!parsed.items.length) {
+  const { maxPrice, perItem } = parseRequestConstraints(request);
+  const cap = maxPrice !== undefined ? maxPrice / 1_000_000 : undefined;
+  // A store plus a price cap with no items: the search picks a typical order that fits the cap.
+  const chooseItems = !parsed.items.length && !!parsed.store && cap !== undefined;
+  if (!parsed.items.length && !chooseItems) {
     if (parsed.store) throw new HttpError(400, `What would you like from ${parsed.store}?`, "NeedItems");
     throw new HttpError(400, "Could not find any items in that request");
   }
   const pouches = await deps.store.listPouches(ownerEmail);
 
+  const webDomains = (p: Pouch) =>
+    p.allowedMerchantIds.filter((id) => id.startsWith(WEB_PREFIX)).map((id) => id.slice(WEB_PREFIX.length));
+  const webAllowed = (p: Pouch) => isAnyStore(p) || webDomains(p).length > 0;
+  const byName = (hint?: string) => {
+    const h = hint?.trim().toLowerCase();
+    return h ? pouches.find((p) => p.name.toLowerCase().includes(h) || h.includes(p.name.toLowerCase())) : undefined;
+  };
   let pouch: Pouch | undefined;
   if (pouchId) {
     pouch = pouches.find((p) => p.id === pouchId);
     if (!pouch) throw new HttpError(404, "Pouch not found");
-  } else if (parsed.pouchHint) {
-    const h = parsed.pouchHint.toLowerCase();
-    pouch = pouches.find((p) => p.name.toLowerCase().includes(h) || h.includes(p.name.toLowerCase()));
+  } else {
+    pouch = byName(parsed.pouchHint) ?? byName(parsed.service);
+    // A pouch chosen only by a hint or the delivery service is dropped when it cannot pay this request.
+    if (pouch && !isAnyStore(pouch) || pouch?.frozen) {
+      const pp = pouch;
+      const canPay = !pp.frozen && (webDomains(pp).length > 0 || pp.allowedMerchantIds.some((id) => {
+        const mer = getMerchant(id);
+        if (!mer) return false;
+        return parsed.store ? storeMatches(parsed.store, mer.name) : catalogFit(parsed.items, getCatalog(id)) > 0;
+      }));
+      if (!canPay) pouch = undefined;
+    }
   }
 
   // 1. Catalog path.
@@ -176,9 +196,6 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
   }
 
   // 2. Web path.
-  const webDomains = (p: Pouch) =>
-    p.allowedMerchantIds.filter((id) => id.startsWith(WEB_PREFIX)).map((id) => id.slice(WEB_PREFIX.length));
-  const webAllowed = (p: Pouch) => isAnyStore(p) || webDomains(p).length > 0;
   let allowedDomains: string[] | undefined;
   if (pouch) {
     if (webAllowed(pouch)) allowedDomains = isAnyStore(pouch) ? undefined : webDomains(pouch);
@@ -187,13 +204,11 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
     if (all.length) allowedDomains = all;
   }
   const mayGoOnline = pouch ? webAllowed(pouch) : pouches.some((p) => webAllowed(p));
-  const { maxPrice, perItem } = parseRequestConstraints(request);
-  const cap = maxPrice !== undefined ? maxPrice / 1_000_000 : undefined;
   let found: Awaited<ReturnType<typeof findOnline>> = null;
   if (mayGoOnline) {
     try {
       found = await findOnline(parsed.items, {
-        allowedDomains, store: parsed.store, service: parsed.service,
+        allowedDomains, store: parsed.store, service: parsed.service, ...(chooseItems ? { chooseItems: true } : {}),
         ...(cap !== undefined ? (perItem ? { maxPerItem: cap } : { maxTotal: cap }) : {}),
       });
     } catch (e) {
@@ -214,7 +229,8 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
     pouch ??=
       pouches.find((p) => isAnyStore(p) && !p.frozen) ?? pouches.find((p) => p.allowedMerchantIds.includes(merchant.id));
     if (!pouch) throw new HttpError(400, `No pouch is allowed to pay ${merchant.name}`);
-    const lines: OrderLine[] = parsed.items.map((it) => {
+    const wanted: ParsedItem[] = chooseItems ? items.map((i) => ({ requested: i.requested, qty: 1 })) : parsed.items;
+    const lines: OrderLine[] = wanted.map((it) => {
       const w = items.find((i) => i.requested === it.requested);
       if (!w) {
         return { requested: it.requested, requestedQty: it.qty, product: null, qty: 0, lineTotal: 0, matchScore: 0, substitution: false, note: `Not found at ${store.domain}` };
@@ -263,8 +279,8 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
 
   if (mayGoOnline) {
     if (found?.fallback) throw new HttpError(422, "Online search is unavailable. Try again later or choose items from a supported catalog.", "SearchUnavailable");
-    const what = parsed.items.map((i) => i.requested).join(", ");
-    throw new HttpError(422, `Couldn't find ${what}${parsed.store ? ` from ${parsed.store}` : ""}${allowedDomains ? " at the stores this pouch allows" : ""}. Try rewording or naming a store.`, "NotFound");
+    const what = chooseItems ? "an order" : parsed.items.map((i) => i.requested).join(", ");
+    throw new HttpError(422, `Couldn't find ${what}${parsed.store ? ` from ${parsed.store}` : ""}${allowedDomains ? " at the stores this pouch allows" : ""}. Try rewording or naming a store.`.replace(/\s+/g, " "), "NotFound");
   }
 
   // 3. Both failed: partial catalog draft if anything matched, else an error.

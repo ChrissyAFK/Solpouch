@@ -144,3 +144,62 @@ describe("bug 6: web search timeout", () => {
     expect(m.create.mock.calls[0][1]).toEqual({ timeout: 45_000, maxRetries: 0 });
   });
 });
+
+describe("live bugs A-D", () => {
+  it("A: store plus cap with no items lets the search choose", async () => {
+    m.parse.mockImplementation(() => ({ store: "McDonald's", items: [] }));
+    m.find.mockResolvedValue({ store: { name: "McDonald's", domain: "mcdonalds.ca" }, onInstacart: false, fallback: false, items: [
+      { requested: "Big Mac", name: "Big Mac", unitPrice: 6 }, { requested: "Fries", name: "Fries", unitPrice: 3 }, { requested: "Drink", name: "Drink", unitPrice: 2 }] });
+    const o = await draft("Can you make me a McDonald's order for under 15 dollars?");
+    expect(m.find).toHaveBeenCalledWith([], expect.objectContaining({ store: "McDonald's", chooseItems: true, maxTotal: 15 }));
+    expect(o.lines.map((l) => l.requested)).toEqual(["Big Mac", "Fries", "Drink"]);
+    expect(o.lines.every((l) => l.product)).toBe(true);
+  });
+  it("A: store with no items and no cap still asks for items", async () => {
+    m.parse.mockImplementation(() => ({ store: "McDonald's", items: [] }));
+    const err = await fail(draft("a McDonald's order"));
+    expect(err.code).toBe("NeedItems");
+    expect(m.find).not.toHaveBeenCalled();
+  });
+  it("A: validateFind builds lines from the find when items is empty; prompt says no items named", async () => {
+    const f = validateFind(web("McDonald's", "mcdonalds.ca", "Big Mac"), [], undefined, { store: "McDonald's" });
+    expect(f?.items.map((i) => i.requested)).toEqual(["Big Mac"]);
+    vi.stubEnv("ANTHROPIC_API_KEY", "fake");
+    m.create.mockResolvedValue({ content: [{ type: "text", text: "{}" }] });
+    await findOnline([], { store: "McDonald's", chooseItems: true, maxTotal: 15 });
+    expect(m.create.mock.calls[0][0].messages[0].content).toMatch(/named no items[\s\S]*typical order from McDonald's/);
+  });
+  it("B: a hinted pouch that cannot pay is dropped, not an error", async () => {
+    m.parse.mockImplementation(() => ({ store: "McDonald's", service: "Uber Eats", pouchHint: "uber eats", items: [item("Big Mac meal")] }));
+    m.find.mockResolvedValue({ store: { name: "McDonald's", domain: "mcdonalds.ca" }, onInstacart: false, fallback: false, items: [{ requested: "Big Mac meal", name: "Big Mac meal", unitPrice: 9 }] });
+    const o = await draft("Big Mac meal from McDonald's on Uber Eats");
+    expect(o.pouchId).not.toBe("uber-eats");
+  });
+  it("B: an explicit pouchId that cannot pay still errors", async () => {
+    m.parse.mockImplementation(() => ({ store: "McDonald's", items: [item("Big Mac meal")] }));
+    const err = await fail(draft("Big Mac meal from McDonald's", "uber-eats"));
+    expect(err).toBeInstanceOf(HttpError);
+  });
+  it("B: the delivery service selects the pouch of that name", async () => {
+    const all = await store.listPouches(TEST_USER);
+    for (const [i, p] of all.entries()) await store.savePouch({ ...p, allowedMerchantIds: [], name: i === all.length - 1 ? "Uber Eats" : `Other ${i}` });
+    const target = all[all.length - 1].id;
+    m.parse.mockImplementation(() => ({ store: "McDonald's", service: "Uber Eats", items: [item("Big Mac meal")] }));
+    m.find.mockResolvedValue({ store: { name: "McDonald's", domain: "mcdonalds.ca" }, onInstacart: false, fallback: false, items: [{ requested: "Big Mac meal", name: "Big Mac meal", unitPrice: 9 }] });
+    expect((await draft("Big Mac meal from McDonald's on Uber Eats")).pouchId).toBe(target);
+  });
+  it("C: dozens count the unit as sold", () => {
+    expect(fallbackParse("2 dozen eggs and a litre of milk").items).toEqual([{ requested: "dozen eggs", qty: 2 }, { requested: "litre of milk", qty: 1 }]);
+    expect(PARSE_PROMPT).toMatch(/2 dozen eggs.*qty 2.*dozen eggs/s);
+  });
+  it("D: NotFound message and parsed items have collapsed whitespace", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "fake");
+    m.create.mockResolvedValue({ content: [{ type: "tool_use", name: "shopping_list", input: { items: [{ requested: "college   order for  hours", qty: 1 }] } }] });
+    expect((await parseRequest("x")).items[0].requested).toBe("college order for hours");
+    m.parse.mockImplementation(() => ({ items: [item("college   order for   hours")] }));
+    m.find.mockResolvedValue(null);
+    const err = await fail(draft("x"));
+    expect(err.code).toBe("NotFound");
+    expect(err.message).not.toMatch(/\s{2}/);
+  });
+});

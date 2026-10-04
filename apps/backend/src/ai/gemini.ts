@@ -24,6 +24,7 @@ Return JSON: { "pouchHint": string|null, "store": string|null, "service": string
 - If the user names a store but no specific items ("a McDonald's order"), return an empty items array.
 - "requested" is the product in plain words, without quantity or filler (e.g. "8 foot 2x4 stud", "oat milk", "pad thai").
 - "qty" is how many units the user wants (default 1). "ten boxes of screws" is qty 10.
+- qty counts the units as sold: "2 dozen eggs" is qty 2 of "dozen eggs" (not 24 eggs), "a litre of milk" is qty 1.
 - "pouchHint" is a budget/pouch name only (e.g. "groceries", "job materials"), else null. It is never the store or restaurant.
 - Ignore price caps like "under $20"; do not invent items.`;
 
@@ -117,7 +118,7 @@ const GEMINI_HTTP = { timeout: 15_000, retryOptions: { attempts: 1 } };
 function finishParse(parsed: any): ParsedRequest | null {
   const items: ParsedItem[] = (parsed?.items ?? [])
     .filter((i: ParsedItem) => i?.requested)
-    .map((i: ParsedItem) => ({ requested: String(i.requested), qty: validQuantity(Number(i.qty ?? 1)) }));
+    .map((i: ParsedItem) => ({ requested: String(i.requested).replace(/\s+/g, " ").trim(), qty: validQuantity(Number(i.qty ?? 1)) }));
   const store = typeof parsed?.store === "string" && parsed.store.trim() ? parsed.store.trim() : undefined;
   const service = typeof parsed?.service === "string" && parsed.service.trim() ? parsed.service.trim() : undefined;
   if (!items.length && !store) return null;
@@ -296,7 +297,11 @@ export function fallbackParse(text: string): ParsedRequest {
     let qty = 1;
     const m = part.match(/^(\d+)\s+/);
     const w = part.match(/^([a-z]+)\s+/);
-    if (m) {
+    const dz = part.match(/^(\d+|[a-z]+)\s+dozen\s+/);
+    if (dz && (/^\d+$/.test(dz[1]) || (NUM_WORDS[dz[1]] !== undefined && dz[1] !== "dozen"))) {
+      qty = /^\d+$/.test(dz[1]) ? parseInt(dz[1], 10) : NUM_WORDS[dz[1]];
+      part = part.slice(dz[1].length + 1);
+    } else if (m) {
       qty = parseInt(m[1], 10);
       part = part.slice(m[0].length);
     } else if (w && NUM_WORDS[w[1]] !== undefined) {

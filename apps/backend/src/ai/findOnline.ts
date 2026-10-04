@@ -89,7 +89,8 @@ export function validateFind(raw: any, items: ParsedItem[], allowedDomains?: str
   }
   const rawItems: any[] = Array.isArray(raw.items) ? raw.items : [];
   const out: WebFindItem[] = [];
-  for (const [i, it] of items.entries()) {
+  const wanted: ParsedItem[] = items.length ? items : rawItems.slice(0, 8).map((r) => ({ requested: String(r?.requested ?? r?.name ?? r?.product ?? "").trim(), qty: 1 })).filter((i) => i.requested);
+  for (const [i, it] of wanted.entries()) {
     const m =
       rawItems.find((r) => String(r?.requested ?? "").toLowerCase() === it.requested.toLowerCase()) ?? rawItems[i];
     const price = Number(String(m?.unitPrice ?? m?.price ?? "").replace(/[^0-9.]/g, ""));
@@ -111,13 +112,15 @@ export function validateFind(raw: any, items: ParsedItem[], allowedDomains?: str
 /** Search the web (Claude web search or Gemini Google Search grounding) for one retailer that sells the items. */
 export async function findOnline(
   items: ParsedItem[],
-  opts: { allowedDomains?: string[]; region?: string; store?: string; service?: string; maxTotal?: number; maxPerItem?: number } = {},
+  opts: { allowedDomains?: string[]; region?: string; store?: string; service?: string; maxTotal?: number; maxPerItem?: number; chooseItems?: boolean } = {},
 ): Promise<WebFind | null> {
   const provider = aiProvider();
   const g = provider === "gemini" ? ai() : undefined;
   if (provider === "none" || (provider === "gemini" && !g)) throw new SearchUnavailableError("Online search is not configured");
   const region = opts.region ?? "Vancouver, BC, Canada";
-  const list = items.map((i) => `- ${i.requested} (qty ${i.qty})`).join("\n");
+  const list = opts.chooseItems && !items.length
+    ? `The user named no items. Pick a typical order from ${opts.store ?? "the store"} (e.g. a main, a side and a drink) that fits the limit below, using real current prices. List each chosen item in "items" with its own name as "requested".`
+    : items.map((i) => `- ${i.requested} (qty ${i.qty})`).join("\n");
   const restrict = opts.allowedDomains?.length
     ? `The store MUST be one of these domains: ${opts.allowedDomains.join(", ")}.`
     : "Pick any real retailer.";
