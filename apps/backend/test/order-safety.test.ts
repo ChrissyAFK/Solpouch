@@ -80,9 +80,9 @@ describe("order payment boundaries", () => {
     expect(pay).not.toHaveBeenCalled();
   });
 
-  it.each([null, { ...fixtureFind, fallback: true }])("fails closed on unavailable or fallback search results", async (result) => {
-    vi.mocked(findOnline).mockResolvedValue(result);
-    await expect(createDraft(deps(), TEST_USER, "chainsaw", "groceries")).rejects.toMatchObject({ code: "SearchUnavailable" });
+  it.each([[null, "NotFound"], [{ ...fixtureFind, fallback: true }, "SearchUnavailable"]] as const)("fails closed on empty or fallback search results", async (result, code) => {
+    vi.mocked(findOnline).mockResolvedValue(result as any);
+    await expect(createDraft(deps(), TEST_USER, "chainsaw", "groceries")).rejects.toMatchObject({ code });
     expect(await store.listOrders()).toEqual([]);
   });
 });

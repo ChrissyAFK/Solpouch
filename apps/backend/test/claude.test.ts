@@ -5,7 +5,7 @@ import { MemoryStore } from "../src/store/memory.js";
 import { MockVaultClient } from "../src/vault/mock.js";
 import { aiProvider } from "../src/ai/provider.js";
 import { matchItems, parseRequest } from "../src/ai/gemini.js";
-import { findOnline } from "../src/ai/findOnline.js";
+import { findOnline, SearchUnavailableError } from "../src/ai/findOnline.js";
 import { OrderInputError } from "../src/services/orderValidation.js";
 import { authHeaders, ownedSeed } from "./helpers.js";
 
@@ -82,7 +82,7 @@ describe("claude provider", () => {
     expect(sdk.create).toHaveBeenCalledTimes(2);
     expect(sdk.create.mock.calls[1][0].messages).toHaveLength(3);
     sdk.create.mockRejectedValue(new Error("boom"));
-    expect(await findOnline([{ requested: "chainsaw", qty: 1 }])).toBeNull();
+    await expect(findOnline([{ requested: "chainsaw", qty: 1 }])).rejects.toBeInstanceOf(SearchUnavailableError);
   });
 
   it("parseRequest uses forced tool output and keeps quantity validation", async () => {
@@ -152,6 +152,6 @@ describe("claude provider", () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "fake");
     sdk.create.mockRejectedValue(new Error("boom"));
     expect((await parseRequest("3 boxes of screws")).items).toEqual([{ requested: "screws", qty: 3 }]);
-    expect(await findOnline([{ requested: "chainsaw", qty: 1 }])).toBeNull();
+    await expect(findOnline([{ requested: "chainsaw", qty: 1 }])).rejects.toBeInstanceOf(SearchUnavailableError);
   });
 });

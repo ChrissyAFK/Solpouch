@@ -5,6 +5,7 @@ import { PaymentPending } from "../vault/recovery.js";
 import { randomBytes } from "node:crypto";
 import { WEB_PREFIX, isAnyStore, isCheckoutReference, toMicros, type Merchant, type Order, type OrderLine, type Pouch } from "@solpouch/shared";
 import { findOnline } from "../ai/findOnline.js";
+import { SearchUnavailableError, storeMatches } from "../ai/storeMatch.js";
 import { catalogFit, fallbackMatch, matchItems, parseRequest, type ParsedItem } from "../ai/gemini.js";
 import { getCatalog, getMerchant, merchants, registerWebMerchant } from "../merchants/index.js";
 import { parseRequestConstraints } from "./request-constraints.js";
@@ -123,8 +124,11 @@ export async function createOrder(deps: Deps, ownerEmail: string, request: strin
 /** parse -> pick pouch -> pick merchant -> match -> total. Returns a draft order. */
 export async function createDraft(deps: Deps, ownerEmail: string, request: string, pouchId?: string, savedItems?: ParsedItem[]): Promise<Order> {
   await consumeAiBudget(deps.store, ownerEmail);
-  const parsed = savedItems ? {items:savedItems} : await parseRequest(request);
-  if (!parsed.items.length) throw new HttpError(400, "Could not find any items in that request");
+  const parsed: Awaited<ReturnType<typeof parseRequest>> = savedItems ? { items: savedItems } : await parseRequest(request);
+  if (!parsed.items.length) {
+    if (parsed.store) throw new HttpError(400, `What would you like from ${parsed.store}?`, "NeedItems");
+    throw new HttpError(400, "Could not find any items in that request");
+  }
   const pouches = await deps.store.listPouches(ownerEmail);
 
   let pouch: Pouch | undefined;
@@ -137,10 +141,12 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
   }
 
   // 1. Catalog path.
-  const candidateIds =
+  let candidateIds =
     !pouch || isAnyStore(pouch)
       ? merchants.map((m) => m.id)
       : pouch.allowedMerchantIds.filter((id) => merchants.some((m) => m.id === id));
+  // A named store only matches its own catalog; any other name skips the catalog (no look-alikes).
+  if (parsed.store) candidateIds = candidateIds.filter((id) => storeMatches(parsed.store!, getMerchant(id)?.name ?? ""));
   const best = candidateIds
     .map((id) => ({ id, fit: catalogFit(parsed.items, getCatalog(id)) }))
     .sort((a, b) => b.fit - a.fit)[0];
@@ -181,7 +187,20 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
     if (all.length) allowedDomains = all;
   }
   const mayGoOnline = pouch ? webAllowed(pouch) : pouches.some((p) => webAllowed(p));
-  const found = mayGoOnline ? await findOnline(parsed.items, { allowedDomains }) : null;
+  const { maxPrice, perItem } = parseRequestConstraints(request);
+  const cap = maxPrice !== undefined ? maxPrice / 1_000_000 : undefined;
+  let found: Awaited<ReturnType<typeof findOnline>> = null;
+  if (mayGoOnline) {
+    try {
+      found = await findOnline(parsed.items, {
+        allowedDomains, store: parsed.store, service: parsed.service,
+        ...(cap !== undefined ? (perItem ? { maxPerItem: cap } : { maxTotal: cap }) : {}),
+      });
+    } catch (e) {
+      if (!(e instanceof SearchUnavailableError)) throw e;
+      throw new HttpError(422, "Online search is unavailable. Try again later or choose items from a supported catalog.", "SearchUnavailable");
+    }
+  }
   if (found && !found.fallback) {
     const { store, items } = found;
     const merchant = registerWebMerchant({
@@ -243,7 +262,9 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
   }
 
   if (mayGoOnline) {
-    throw new HttpError(422, "Online search is unavailable. Try again later or choose items from a supported catalog.", "SearchUnavailable");
+    if (found?.fallback) throw new HttpError(422, "Online search is unavailable. Try again later or choose items from a supported catalog.", "SearchUnavailable");
+    const what = parsed.items.map((i) => i.requested).join(", ");
+    throw new HttpError(422, `Couldn't find ${what}${parsed.store ? ` from ${parsed.store}` : ""}${allowedDomains ? " at the stores this pouch allows" : ""}. Try rewording or naming a store.`, "NotFound");
   }
 
   // 3. Both failed: partial catalog draft if anything matched, else an error.

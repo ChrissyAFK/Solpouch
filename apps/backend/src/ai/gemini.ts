@@ -9,15 +9,22 @@ export interface ParsedItem {
 }
 export interface ParsedRequest {
   pouchHint?: string;
+  /** The shop, restaurant or brand the user names (e.g. "McDonald's"). */
+  store?: string;
+  /** The delivery app the user names (e.g. "Uber Eats"). */
+  service?: string;
   items: ParsedItem[];
 }
 
 // ---- Prompts: tune these ----
 export const PARSE_PROMPT = `You turn a spoken or typed shopping request into a structured shopping list.
-Return JSON: { "pouchHint": string|null, "items": [{ "requested": string, "qty": number }] }.
+Return JSON: { "pouchHint": string|null, "store": string|null, "service": string|null, "items": [{ "requested": string, "qty": number }] }.
+- "store" is the shop, restaurant or brand the user names (e.g. "McDonald's", "Tim Hortons", "Walmart"), else null.
+- "service" is the delivery app the user names (e.g. "Uber Eats", "DoorDash"), else null.
+- If the user names a store but no specific items ("a McDonald's order"), return an empty items array.
 - "requested" is the product in plain words, without quantity or filler (e.g. "8 foot 2x4 stud", "oat milk", "pad thai").
 - "qty" is how many units the user wants (default 1). "ten boxes of screws" is qty 10.
-- "pouchHint" is the budget the user names or implies (e.g. "uber eats", "groceries", "job materials"), else null.
+- "pouchHint" is a budget/pouch name only (e.g. "groceries", "job materials"), else null. It is never the store or restaurant.
 - Ignore price caps like "under $20"; do not invent items.`;
 
 export const MATCH_PROMPT = `You match a shopping list to products in ONE merchant's catalog.
@@ -46,6 +53,8 @@ const PARSE_JSON_SCHEMA = {
   type: "object",
   properties: {
     pouchHint: { type: ["string", "null"] },
+    store: { type: ["string", "null"] },
+    service: { type: ["string", "null"] },
     items: {
       type: "array",
       items: {
@@ -109,7 +118,10 @@ function finishParse(parsed: any): ParsedRequest | null {
   const items: ParsedItem[] = (parsed?.items ?? [])
     .filter((i: ParsedItem) => i?.requested)
     .map((i: ParsedItem) => ({ requested: String(i.requested), qty: validQuantity(Number(i.qty ?? 1)) }));
-  return items.length ? { pouchHint: parsed.pouchHint || undefined, items } : null;
+  const store = typeof parsed?.store === "string" && parsed.store.trim() ? parsed.store.trim() : undefined;
+  const service = typeof parsed?.service === "string" && parsed.service.trim() ? parsed.service.trim() : undefined;
+  if (!items.length && !store) return null;
+  return { pouchHint: parsed.pouchHint || undefined, ...(store ? { store } : {}), ...(service ? { service } : {}), items };
 }
 
 /**
@@ -165,6 +177,8 @@ export async function parseRequest(text: string): Promise<ParsedRequest> {
             type: Type.OBJECT,
             properties: {
               pouchHint: { type: Type.STRING, nullable: true },
+              store: { type: Type.STRING, nullable: true },
+              service: { type: Type.STRING, nullable: true },
               items: {
                 type: Type.ARRAY,
                 items: {
@@ -253,8 +267,26 @@ const PREFIX = /^(?:please\s+)?(?:can you\s+|could you\s+)?(?:get me|get|i need|
 const UNITS = /^(?:boxes|box|bags|bag|cartons|carton|packs|pack|sheets|sheet|bottles|bottle|loaves|loaf|orders|order|of)\s+/;
 const STOP = new Set(["of", "the", "a", "an", "some", "box", "boxes", "bag", "sheet", "sheets", "pack", "with", "for", "and", "in"]);
 
+const SERVICES: Array<[RegExp, string]> = [
+  [/uber\s?eats/i, "Uber Eats"], [/door\s?dash/i, "DoorDash"], [/skip\s?the\s?dishes/i, "SkipTheDishes"], [/grubhub/i, "Grubhub"],
+];
+const CAP = String.raw`[A-Z][\w'’&.-]*(?:\s+[A-Z][\w'’&.-]*)*`;
+const GENERIC_ITEM = /^(?:something|anything|food|stuff|a meal|meal|lunch|dinner)$/;
+
 export function fallbackParse(text: string): ParsedRequest {
-  let t = text.toLowerCase().trim();
+  let src = text;
+  let service: string | undefined;
+  for (const [re, name] of SERVICES) {
+    const m = src.match(new RegExp(String.raw`(?:\s+(?:on|via|through|using|with)\b)?\s*${re.source}`, "i"));
+    if (m) { service = name; src = src.replace(m[0], " "); break; }
+  }
+  let store: string | undefined;
+  const sm = src.match(new RegExp(String.raw`\b(?:from|at)\s+(${CAP})`)) ?? src.match(new RegExp(String.raw`\b(?:[Aa]n?|[Tt]he)\s+(${CAP})\s+order\b`));
+  if (sm) {
+    store = sm[1].replace(/[.!?]+$/, "");
+    src = src.replace(sm[0], " ");
+  }
+  let t = src.toLowerCase().trim();
   t = t.replace(/\b(?:under|below|up to|for less than|less than|max)\s+\$?\d+(?:\.\d+)?\b/g, " ");
   t = t.replace(PREFIX, "");
   const parts = t.split(/,|\band\b|\bplus\b/).map((s) => s.trim()).filter(Boolean);
@@ -273,15 +305,15 @@ export function fallbackParse(text: string): ParsedRequest {
     }
     for (let i = 0; i < 2; i++) part = part.replace(UNITS, "");
     part = part.replace(/[.!?]+$/, "").trim();
-    if (part) items.push({ requested: part, qty: validQuantity(qty) });
+    if (part && !(store && GENERIC_ITEM.test(part))) items.push({ requested: part, qty: validQuantity(qty) });
   }
   const hints: Array<[RegExp, string]> = [
     [/uber|takeout|delivery|dinner|lunch/, "uber eats"],
     [/grocer|milk|eggs|bread/, "groceries"],
     [/kim|job|material|lumber|stud|screw/, "kim job: materials"],
   ];
-  const pouchHint = hints.find(([re]) => re.test(text.toLowerCase()))?.[1];
-  return { pouchHint, items };
+  const pouchHint = hints.find(([re]) => re.test(src.toLowerCase()))?.[1];
+  return { pouchHint, ...(store ? { store } : {}), ...(service ? { service } : {}), items };
 }
 
 function tokens(s: string): string[] {
