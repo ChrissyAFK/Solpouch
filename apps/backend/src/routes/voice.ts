@@ -41,7 +41,8 @@ export function readback(order: Order): string {
     return `Devnet demo only: ${parts.join("; ")}. Source estimate CAD ${usd(demo.sourceTotal)}, converted at ${demo.usdPerCad} USD per CAD. Pay ${toUsdc(order.total).toFixed(6)} test USDC to ${demo.payTo}. No retailer order will be placed. Do you approve this demo payment?`;
   }
   if (isCheckoutReference(order)) {
-    return `From ${merchant}: ${parts.join("; ")}. Estimated total CAD ${usd(order.total)}. This is a search estimate only. Check current prices and complete checkout with the retailer using the link on the order page. Solpouch has not placed an order.`;
+    const est = order.lines.some((l) => l.product?.estimated);
+    return `From ${merchant}: ${parts.join("; ")}. ${est ? "Estimated total" : "Total"} CAD ${usd(order.total)}. ${est ? "This is a search estimate only. Check current prices and complete" : "Complete"} checkout with the retailer using the link on the order page. Solpouch has not placed an order.`;
   }
   return `From ${merchant}: ${parts.join("; ")}. Total ${usd(order.total)}. Should I place it?`;
 }

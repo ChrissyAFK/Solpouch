@@ -14,4 +14,11 @@ describe("voice readback", () => {
     expect(say).toContain("1 Tenders Combo, $11.99");
     expect(say).toContain("1 Biscuit, about $1.99, estimated");
   });
+  it("calls a web order with no estimated line a plain total", () => {
+    const say = readback(order([line("Tenders Combo", 11_990_000, false)]));
+    expect(say).toContain("Total CAD $11.99.");
+    expect(say).not.toMatch(/Estimated total|search estimate/);
+    expect(say).toContain("checkout with the retailer");
+    expect(readback(order([line("Biscuit", 1_990_000, true)]))).toMatch(/Estimated total CAD .*search estimate only/);
+  });
 });

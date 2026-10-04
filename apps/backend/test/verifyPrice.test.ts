@@ -10,11 +10,11 @@ const item = { name: "Deck Screws 3 inch 100 pack", unitPrice: 12.99, url: "http
 
 describe("isPrivateAddress", () => {
   it("flags private, loopback and link-local; passes public", () => {
-    for (const ip of ["10.0.0.1", "127.0.0.1", "192.168.1.5", "172.16.0.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "fd00::1", "fe80::1", "::ffff:127.0.0.1", "::ffff:7f00:1", "64:ff9b::1", "2002::1", "fec0::1", "::127.0.0.1", "not-an-ip"]) expect(isPrivateAddress(ip), ip).toBe(true);
+    for (const ip of ["10.0.0.1", "127.0.0.1", "192.168.1.5", "172.16.0.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "fd00::1", "fe80::1", "::ffff:127.0.0.1", "::ffff:7f00:1", "64:ff9b::1", "2002::1", "fec0::1", "::127.0.0.1", "not-an-ip", "198.18.0.1", "198.19.255.255", "192.0.0.8", "192.88.99.1"]) expect(isPrivateAddress(ip), ip).toBe(true);
     for (const ip of ["93.184.216.34", "8.8.8.8", "2606:4700::1111"]) expect(isPrivateAddress(ip), ip).toBe(false);
   });
   it("expands IPv6 fully before deciding", () => {
-    for (const ip of ["::", "fec1::1", "febf::1", "fe80::1%eth0", "0:0:0:0:0:0:0:1", "ff02::1", "2001:db8::1", "::7f00:1", "0:0:0:0:0:ffff:a00:1", "::ffff:10.0.0.1", "[::1]", "fc00::1", "64:ff9b::808:808"]) expect(isPrivateAddress(ip), ip).toBe(true);
+    for (const ip of ["::", "fec1::1", "febf::1", "fe80::1%eth0", "0:0:0:0:0:0:0:1", "ff02::1", "2001:db8::1", "::7f00:1", "0:0:0:0:0:ffff:a00:1", "::ffff:10.0.0.1", "[::1]", "fc00::1", "64:ff9b::808:808", "64:ff9b:1::1", "64:ff9b:1:ffff::1", "2001::1", "2001:0:4136:e378:8000:63bf:3fff:fdd2"]) expect(isPrivateAddress(ip), ip).toBe(true);
     for (const ip of ["::ffff:5db8:d822", "::ffff:93.184.216.34", "2001:4860:4860::8888", "2606:4700::1111"]) expect(isPrivateAddress(ip), ip).toBe(false);
   });
 });
@@ -83,6 +83,24 @@ describe("verifyPrice", () => {
     // 13.49 is within range
     const fetch2 = vi.fn(async () => page(ld("Deck Screws 3 inch (100 pack)", 13.49, "CAD")));
     expect(await verifyPrice(item, "store.ca", { fetch: fetch2, resolve: pub })).toEqual({ status: "verified", unitPrice: 13.49 });
+  });
+  const ldMany = (...ps: Array<[string, number, string?]>) =>
+    `<html>${ps.map(([name, price, cur]) => `<script type="application/ld+json">${JSON.stringify({ "@type": "Product", name, offers: { price, ...(cur ? { priceCurrency: cur } : {}) } })}</script>`).join("")}</html>`;
+  const meal = { name: "Big Mac Meal", unitPrice: 11.99, url: "https://store.ca/p/bigmac" };
+  it("does not confirm a meal at the price of the burger", async () => {
+    const fetch = vi.fn(async () => page(ldMany(["Big Mac", 7.49, "CAD"])));
+    expect(await verifyPrice(meal, "store.ca", { fetch, resolve: pub })).toEqual({ status: "estimate", reason: "price not found on the page" });
+  });
+  it("picks the product that has every word of the name", async () => {
+    const fetch = vi.fn(async () => page(ldMany(["Big Mac", 7.49, "CAD"], ["Big Mac Meal", 12.29, "CAD"])));
+    expect(await verifyPrice(meal, "store.ca", { fetch, resolve: pub })).toEqual({ status: "verified", unitPrice: 12.29 });
+  });
+  it("a product with no currency counts as CAD only for a Canadian-looking store", async () => {
+    const html = ldMany(["Deck Screws 3 inch 100 pack", 12.99]);
+    const com = { ...item, url: "https://store.com/p/deck-screws" };
+    expect((await verifyPrice(com, "store.com", { fetch: vi.fn(async () => page(html)), resolve: pub })).status).toBe("estimate");
+    expect((await verifyPrice({ ...item, url: "https://store.ca/p/deck-screws" }, "store.ca", { fetch: vi.fn(async () => page(html)), resolve: pub })).status).toBe("verified");
+    expect((await verifyPrice({ ...item, url: "https://store.com/en-ca/p/deck-screws" }, "store.com", { fetch: vi.fn(async () => page(html)), resolve: pub })).status).toBe("verified");
   });
   it("never fetches a private address or another domain", async () => {
     const fetch = vi.fn(async () => page(ld("Deck Screws 3 inch 100 pack", 12.99)));

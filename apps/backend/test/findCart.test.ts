@@ -48,6 +48,13 @@ describe("findCart", () => {
     await findCart(items, { store: "Elsewhere" }, { find, verify });
     expect(find).toHaveBeenCalledTimes(4);
   });
+  it("keys the cache on quantity", async () => {
+    const find = vi.fn(async () => found());
+    const verify = async () => ({ status: "verified" as const, unitPrice: 5 });
+    await findCart([{ requested: "deck screws", qty: 2 }], { maxTotal: 15 }, { find, verify });
+    await findCart([{ requested: "deck screws", qty: 10 }], { maxTotal: 15 }, { find, verify });
+    expect(find).toHaveBeenCalledTimes(2);
+  });
   it("verified results live 24 h, results with an estimate 1 h", async () => {
     let t = 0;
     const now = () => t;

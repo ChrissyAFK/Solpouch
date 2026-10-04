@@ -13,7 +13,7 @@ export function clearFindCache() { cache.clear(); }
 const norm = (s?: string) => (s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 function cacheKey(items: ParsedItem[], o: FindOpts): string {
   return JSON.stringify([
-    items.map((i) => norm(i.requested)).sort(),
+    items.map((i) => `${norm(i.requested)}|${i.qty}`).sort(),
     norm(o.store), norm(o.service), norm(o.region), o.maxTotal ?? null, o.maxPerItem ?? null, !!o.chooseItems,
     (o.allowedDomains ?? []).map(normalizeDomain).sort(),
   ]);

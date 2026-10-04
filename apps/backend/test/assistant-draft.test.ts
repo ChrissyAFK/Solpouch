@@ -64,6 +64,13 @@ describe("createDraft with the assistant", () => {
     expect(o.merchantId).toBe("mountain-market");
     expect(m.findCart).not.toHaveBeenCalled();
   });
+  it("when every pouch allows only catalog merchants, a catalog draft is made without a search", async () => {
+    for (const p of await store.listPouches(TEST_USER)) await store.savePouch({ ...p, allowedMerchantIds: ["mountain-market"], frozen: false });
+    m.understand.mockResolvedValue({ items: [{ requested: "eggs", qty: 1 }] });
+    const o = await draft("eggs");
+    expect(o.merchantId).toBe("mountain-market");
+    expect(m.findCart).not.toHaveBeenCalled();
+  });
   it("assistant or search down is 503 SearchUnavailable", async () => {
     m.understand.mockRejectedValue(new SearchUnavailableError("down"));
     let e = await fail(draft("milk"));

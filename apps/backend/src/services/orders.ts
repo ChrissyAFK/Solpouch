@@ -185,7 +185,8 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
   // With real search available, a built-in catalog is used only when the user names that merchant,
   // the pouch allows nothing else, or the items come from a saved list. No look-alikes for everyday requests.
   const catalogOnlyPouch = !!pouch && !isAnyStore(pouch) && !webAllowed(pouch);
-  const catalogFallback = !online || catalogOnlyPouch || !!savedItems;
+  const mayGoOnline = pouch ? webAllowed(pouch) : pouches.some((p) => webAllowed(p));
+  const catalogFallback = !online || catalogOnlyPouch || !mayGoOnline || !!savedItems;
   if (!catalogFallback && !parsed.store) candidateIds = [];
   const best = candidateIds
     .map((id) => ({ id, fit: catalogFit(parsed.items, getCatalog(id)) }))
@@ -223,7 +224,6 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
     const all = pouches.flatMap(webDomains);
     if (all.length) allowedDomains = all;
   }
-  const mayGoOnline = pouch ? webAllowed(pouch) : pouches.some((p) => webAllowed(p));
   let found: Awaited<ReturnType<typeof findCart>> = null;
   if (mayGoOnline) {
     try {

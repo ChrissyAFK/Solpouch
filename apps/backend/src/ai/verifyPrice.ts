@@ -20,7 +20,8 @@ export function isPrivateAddress(ip: string): boolean {
   if (v === 4) {
     const [a, b] = ip.split(".").map(Number);
     return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224;
+      (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224 ||
+      (a === 198 && (b === 18 || b === 19)) || (a === 192 && b === 0 && Number(ip.split(".")[2]) === 0) || (a === 192 && b === 88 && Number(ip.split(".")[2]) === 99);
   }
   if (v === 6) {
     let s = ip.toLowerCase().replace(/^\[|\]$/g, "").replace(/%.*$/, "");
@@ -47,6 +48,7 @@ export function isPrivateAddress(ip: string): boolean {
     if (g.slice(0, 5).every((x) => x === 0) && (g[5] === 0xffff || (g[5] === 0 && (g[6] !== 0 || g[7] > 1)))) {
       return isPrivateAddress(`${g[6] >> 8}.${g[6] & 255}.${g[7] >> 8}.${g[7] & 255}`);
     }
+    if ((g[0] === 0x64 && g[1] === 0xff9b && g[2] === 1) || (g[0] === 0x2001 && g[1] === 0)) return true; // 64:ff9b:1::/48, Teredo
     if (firstSixZero && g[6] === 0 && g[7] <= 1) return true; // :: and ::1
     return (g[0] & 0xfe00) === 0xfc00 || (g[0] & 0xff80) === 0xfe80 || (g[0] & 0xffc0) === 0xfec0 || (g[0] & 0xff00) === 0xff00 ||
       g[0] === 0x2002 || (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) || (g[0] === 0x2001 && g[1] === 0xdb8);
@@ -180,7 +182,19 @@ export async function verifyPrice(c: { name: string; unitPrice: number; url?: st
     html = null;
   }
   if (!html) return { status: "estimate", reason: "page could not be read" };
-  const ld = jsonLdProducts(html).find((p) => nameMatches(c.name, p.name) && (!p.currency || p.currency.toUpperCase() === "CAD") && p.price >= c.unitPrice * 0.6 && p.price <= c.unitPrice * 1.6);
+  const want = tokens(c.name);
+  const caStore = domain.toLowerCase().endsWith(".ca") || (() => { try { const u = new URL(c.url!); return /(^|[\/._-])(en|fr)?[-_]?ca([\/._-]|$)/i.test(u.host + u.pathname); } catch { return false; } })();
+  let ld: { price: number } | undefined;
+  let bestCommon = -1;
+  for (const p of jsonLdProducts(html)) {
+    if (p.currency ? p.currency.toUpperCase() !== "CAD" : !caStore) continue;
+    const got = new Set(tokens(p.name));
+    const common = want.filter((t) => got.has(t)).length;
+    const inRatio = p.price >= c.unitPrice * 0.6 && p.price <= c.unitPrice * 1.6;
+    const ok = (want.length > 0 && common === want.length && inRatio) || (nameMatches(c.name, p.name) && Math.abs(p.price - c.unitPrice) <= c.unitPrice * 0.05);
+    if (!ok) continue;
+    if (common > bestCommon || (common === bestCommon && Math.abs(p.price - c.unitPrice) < Math.abs(ld!.price - c.unitPrice))) { ld = p; bestCommon = common; }
+  }
   if (ld) return { status: "verified", unitPrice: ld.price };
   if (textHasPrice(pageText(html), c.name, c.unitPrice)) return { status: "verified", unitPrice: c.unitPrice };
   return { status: "estimate", reason: "price not found on the page" };

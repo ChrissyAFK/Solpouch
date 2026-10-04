@@ -21,17 +21,25 @@ const { ELEVENLABS_API_KEY: key, ELEVENLABS_AGENT_ID: id } = process.env;
 if (!key || !id) throw new Error("ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID must be set in .env");
 const here = (f) => readFileSync(fileURLToPath(new URL(f, import.meta.url)), "utf8");
 const keywords = here("./keywords.txt").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-const body = {
-  conversation_config: {
-    asr: { keywords },
-    turn: { speculative_turn: false, turn_eagerness: "patient" },
-    agent: { prompt: { prompt: here("./prompt.md") } },
-  },
-};
+const promptText = here("./prompt.md");
 const url = `https://api.elevenlabs.io/v1/convai/agents/${id}`;
 if (process.argv.includes("--dry-run")) {
-  console.log(`would PATCH ${url}: ${keywords.length} keywords, speculative_turn=false, turn_eagerness=patient, prompt ${body.conversation_config.agent.prompt.prompt.length} chars`);
+  console.log(`would GET then PATCH ${url}: ${keywords.length} keywords, speculative_turn=false, turn_eagerness=patient, prompt ${promptText.length} chars`);
 } else {
+  // Nested objects may be replaced rather than merged, so start from the agent's current settings.
+  const cur = await fetch(url, { headers: { "xi-api-key": key } }).catch((e) => ({ ok: false, status: e.message }));
+  if (!cur.ok) {
+    console.error(`Aborting: could not read the current agent settings (${cur.status}). Nothing was changed.`);
+    process.exit(1);
+  }
+  const cc = (await cur.json())?.conversation_config ?? {};
+  const body = {
+    conversation_config: {
+      asr: { ...cc.asr, keywords },
+      turn: { ...cc.turn, speculative_turn: false, turn_eagerness: "patient" },
+      agent: { prompt: { ...cc.agent?.prompt, prompt: promptText } },
+    },
+  };
   const res = await fetch(url, { method: "PATCH", headers: { "xi-api-key": key, "content-type": "application/json" }, body: JSON.stringify(body) });
   const text = await res.text();
   if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${text.slice(0, 500)}`);

@@ -25,6 +25,7 @@ export async function claudeJson<T>(opts: {
   name: string;
   maxTokens?: number;
   timeoutMs?: number;
+  maxRetries?: number;
 }): Promise<T> {
   const c = claude();
   if (!c) throw new Error("Claude is not configured");
@@ -37,7 +38,7 @@ export async function claudeJson<T>(opts: {
       tools: [{ name: opts.name, description: "Return the structured result.", input_schema: opts.schema as any }],
       tool_choice: { type: "tool", name: opts.name },
     },
-    opts.timeoutMs ? { timeout: opts.timeoutMs } : undefined,
+    opts.timeoutMs || opts.maxRetries !== undefined ? { ...(opts.timeoutMs ? { timeout: opts.timeoutMs } : {}), ...(opts.maxRetries !== undefined ? { maxRetries: opts.maxRetries } : {}) } : undefined,
   );
   const block = res.content.find((b) => b.type === "tool_use");
   if (!block || block.type !== "tool_use") throw new Error("Claude returned no structured output");
