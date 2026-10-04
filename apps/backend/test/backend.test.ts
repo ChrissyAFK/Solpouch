@@ -113,6 +113,36 @@ describe("HTTP flow", () => {
     expect(order.lines[1].substitution).toBe(false);
   });
 
+  it("finds a chainsaw online on an any-store pouch, then pays the checkout wallet", async () => {
+    const app = mk();
+    const g = (await store.getPouch("groceries"))!;
+    g.maxPerOrder = $(1000);
+    g.dailyLimit = $(1000);
+    g.balance = $(1000);
+    await store.savePouch(g);
+    const res = await post(app, "/orders", { request: "a chainsaw", pouchId: "groceries" });
+    expect(res.status).toBe(201);
+    const order = await res.json();
+    expect(order.store.domain).toBe("example.com");
+    expect(order.lines[0].product.estimated).toBe(true);
+    expect(order.fulfillment.via).toBe("service");
+    expect(order.total).toBe($(299.99));
+    const paid = await (await post(app, `/orders/${order.id}/confirm`)).json();
+    expect(paid.status).toBe("paid");
+    expect(paid.txSignature).toBeTruthy();
+  });
+
+  it("prices orange juice from the offline fallback", async () => {
+    const order = await (await post(mk(), "/orders", { request: "orange juice", pouchId: "groceries" })).json();
+    expect(order.total).toBeGreaterThan(0);
+  });
+
+  it("restricted catalog-only pouch never searches the web", async () => {
+    const res = await post(mk(), "/orders", { request: "a chainsaw", pouchId: "uber-eats" });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("This pouch only allows");
+  });
+
   it("top-up before cooldown fails, after succeeds", async () => {
     const app = mk();
     const t = await (await post(app, "/topups", { pouchId: "uber-eats", amount: $(20), reason: "dinner money" })).json();

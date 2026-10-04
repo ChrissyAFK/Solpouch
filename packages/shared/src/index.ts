@@ -12,7 +12,15 @@ export interface Merchant {
   /** Solana wallet the merchant is paid to. Must be on a pouch's allowlist. */
   payTo: string;
   kind: "grocery" | "food" | "building_supply" | "other";
+  /** "catalog" = built-in store, "web" = found online. */
+  source?: "catalog" | "web";
+  url?: string;
 }
+
+/** Prefix for owner-added web stores in Pouch.allowedMerchantIds, e.g. "web:homedepot.ca". */
+export const WEB_PREFIX = "web:";
+/** An empty allowedMerchantIds list means the pouch may pay any store. */
+export const isAnyStore = (p: Pick<Pouch, "allowedMerchantIds">) => p.allowedMerchantIds.length === 0;
 
 export interface Pouch {
   id: string;
@@ -37,6 +45,9 @@ export interface Product {
   size?: string;
   unitPrice: Micros;
   inStock: boolean;
+  url?: string;
+  /** True when the price came from a web search, not a catalog. */
+  estimated?: boolean;
 }
 
 export interface OrderLine {
@@ -73,6 +84,8 @@ export interface Order {
   rejectReason?: string;
   txSignature?: string;
   createdAt: string;
+  store?: { name: string; domain: string; url?: string };
+  fulfillment?: { via: "direct" | "instacart" | "service"; label: string; checkoutUrl?: string };
 }
 
 export type TopUpStatus = "started" | "cooling_down" | "completed" | "cancelled";

@@ -55,7 +55,7 @@ describe("read-only chat", () => {
     expect(rules.reply).toContain("120.00 USDC per order");
     expect(rules.reply).toContain("Every order currently needs approval");
     const stores = await (await ask("Where can I shop with groceries?")).json();
-    expect(stores.reply).toContain(getMerchant("mountain-market")!.name);
+    expect(stores.reply).toContain("any store");
   });
 
   it("does not mutate orders, pouches, or payments when instructed to pay", async () => {

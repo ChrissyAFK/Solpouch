@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { allowedPayTos } from "./allow.js";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AnchorProvider, BN, Program, Wallet } from "@coral-xyz/anchor";
@@ -109,10 +110,10 @@ export class ChainVaultClient implements VaultClient {
     )[0];
   }
 
+  // web: entries and any-store resolve to the checkout wallet (see allow.ts)
   private merchantKeys(p: Pouch): PublicKey[] {
-    return p.allowedMerchantIds
-      .map((id) => this.payToOf(id))
-      .filter((s): s is string => !!s)
+    return allowedPayTos(p, this.payToOf)
+      .slice(0, 10)
       .map((s) => new PublicKey(s));
   }
 

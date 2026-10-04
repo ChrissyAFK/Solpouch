@@ -33,7 +33,7 @@ export function seedPouches(): Pouch[] {
       maxPerOrder: toMicros(120),
       dailyLimit: toMicros(150),
       confirmAbove: toMicros(30),
-      allowedMerchantIds: ["mountain-market"],
+      allowedMerchantIds: [], // any store
     },
     {
       ...base,

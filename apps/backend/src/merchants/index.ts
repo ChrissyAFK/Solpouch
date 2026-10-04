@@ -36,5 +36,10 @@ const catalogs: Record<string, Product[]> = {
   "thai-express": toProducts("thai-express", thai as RawProduct[]),
 };
 
-export const getMerchant = (id: string) => merchants.find((m) => m.id === id);
+const webMerchants = new Map<string, Merchant>();
+export const registerWebMerchant = (m: Merchant): Merchant => {
+  webMerchants.set(m.id, m);
+  return m;
+};
+export const getMerchant = (id: string) => merchants.find((m) => m.id === id) ?? webMerchants.get(id);
 export const getCatalog = (merchantId: string): Product[] => catalogs[merchantId] ?? [];

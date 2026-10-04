@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { Micros, Pouch } from "@solpouch/shared";
 import type { Store } from "../store/types.js";
 import { fakeAddress } from "../store/memory.js";
+import { allowedPayTos } from "./allow.js";
 import { VaultRejected, type VaultClient } from "./types.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -37,7 +38,7 @@ export class MockVaultClient implements VaultClient {
   async pay(pouch: Pouch, merchantPayTo: string, amount: Micros, orderId: string) {
     const p = await this.mustGet(pouch.id);
     if (p.frozen) throw new VaultRejected("PouchFrozen");
-    const allowed = p.allowedMerchantIds.map((id) => this.payToOf(id));
+    const allowed = allowedPayTos(p, this.payToOf);
     if (!allowed.includes(merchantPayTo)) throw new VaultRejected("MerchantNotAllowed");
     if (amount > p.maxPerOrder) throw new VaultRejected("OverPerOrderLimit");
     const now = this.now();

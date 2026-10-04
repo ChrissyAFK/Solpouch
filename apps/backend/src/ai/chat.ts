@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { toUsdc, type Order, type Pouch } from "@solpouch/shared";
+import { WEB_PREFIX, isAnyStore, toUsdc, type Order, type Pouch } from "@solpouch/shared";
 import { merchants } from "../merchants/index.js";
 
 export interface ChatMessage {
@@ -11,7 +11,9 @@ export interface ChatContext { pouches: Pouch[]; orders: Order[] }
 
 export const chatMode = (): ChatMode => process.env.GEMINI_API_KEY?.trim() ? "gemini" : "demo";
 const money = (micros: number) => `${toUsdc(micros).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC`;
-const merchantName = (id: string) => merchants.find((m) => m.id === id)?.name ?? id;
+const merchantName = (id: string) =>
+  id.startsWith(WEB_PREFIX) ? id.slice(WEB_PREFIX.length) : merchants.find((m) => m.id === id)?.name ?? id;
+const storeList = (p: Pouch) => (isAnyStore(p) ? "any store" : p.allowedMerchantIds.map(merchantName).join(", "));
 
 export function demoReply(messages: ChatMessage[], context: ChatContext): string {
   const query = messages[messages.length - 1].content.toLowerCase();
@@ -22,7 +24,7 @@ export function demoReply(messages: ChatMessage[], context: ChatContext): string
     return prefix + "I can explain your pouches, but I cannot place orders, move money, or change settings. To shop, open New order, choose a pouch, describe your items, then review the exact cart and approve it. To refill or change rules, open the pouch. Every order currently needs approval.";
   }
   if (/\b(store|stores|merchant|merchants|shop|shops|where)\b/.test(query)) {
-    return prefix + (pouches.length ? pouches.map((p) => `${p.name}: ${p.allowedMerchantIds.map(merchantName).join(", ") || "no allowed stores"}.`).join("\n") : "You have no pouches yet. Create one and select its allowed stores.");
+    return prefix + (pouches.length ? pouches.map((p) => `${p.name}: ${storeList(p)}.`).join("\n") : "You have no pouches yet. Create one and select its allowed stores.");
   }
   if (/\b(limit|limits|rule|rules|budget|budgets|control|controls|approval|approve)\b/.test(query)) {
     return prefix + (pouches.length ? pouches.map((p) => `${p.name}: ${money(p.maxPerOrder)} per order; ${money(p.dailyLimit)} daily limit; ${money(p.spentToday)} spent today.${p.frozen ? " This pouch is frozen." : ""}`).join("\n") + "\nEvery order currently needs approval. To change limits or freeze a pouch, open its details." : "Create a pouch to set its per-order limit, daily limit, and allowed stores. Every order currently needs approval.");
@@ -36,7 +38,7 @@ export function demoReply(messages: ChatMessage[], context: ChatContext): string
 export async function geminiReply(messages: ChatMessage[], context: ChatContext): Promise<string> {
   const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   const snapshot = {
-    pouches: context.pouches.map((p) => ({ name: p.name, balanceUSDC: toUsdc(p.balance), perOrderLimitUSDC: toUsdc(p.maxPerOrder), dailyLimitUSDC: toUsdc(p.dailyLimit), spentTodayUSDC: toUsdc(p.spentToday), frozen: p.frozen, allowedStores: p.allowedMerchantIds.map(merchantName) })),
+    pouches: context.pouches.map((p) => ({ name: p.name, balanceUSDC: toUsdc(p.balance), perOrderLimitUSDC: toUsdc(p.maxPerOrder), dailyLimitUSDC: toUsdc(p.dailyLimit), spentTodayUSDC: toUsdc(p.spentToday), frozen: p.frozen, allowedStores: isAnyStore(p) ? ["any store"] : p.allowedMerchantIds.map(merchantName) })),
     recentOrders: context.orders.slice(0, 10).map((o) => ({ store: merchantName(o.merchantId), status: o.status, totalUSDC: toUsdc(o.total), createdAt: o.createdAt })),
   };
   const response = await client.models.generateContent({
