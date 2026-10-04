@@ -104,10 +104,18 @@ function TopUpSection({
       if (version !== restoreVersion.current) return;
       if (recovered.pouchId !== pouch.id)
         throw new Error("Top-up belongs to another pouch");
-      if (recovered.status === "completed" || recovered.status === "cancelled") {
+      if (
+        recovered.status === "completed" ||
+        recovered.status === "cancelled" ||
+        recovered.status === "failed"
+      ) {
         localStorage.removeItem(storageKey);
         setTopup(null);
         setSubmitted(false);
+        if (recovered.status === "failed")
+          setError(
+            `Your last top-up failed (${recovered.failReason ?? "rejected"}). No money was added. You can start a new one.`,
+          );
         if (recovered.status === "completed")
           setAdded(`Added ${usd(toUsdc(recovered.amount))} USDC to ${pouch.name}`);
         await onDone();
@@ -213,6 +221,14 @@ function TopUpSection({
             setSubmitted(false);
             setError(null);
             await onDone();
+          } else if (latest.status === "failed") {
+            // Terminal: drop the request so the form comes back instead of retrying forever.
+            localStorage.removeItem(storageKey);
+            setTopup(null);
+            setSubmitted(false);
+            setError(
+              `This top-up failed (${latest.failReason ?? "rejected"}). No money was added. You can start a new one.`,
+            );
           }
         } catch {
           /* Keep the saved identity for recovery. */

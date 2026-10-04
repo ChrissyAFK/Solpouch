@@ -44,6 +44,20 @@ The historical integration notes below describe the earlier deployment, not the 
 - The site needs `Cross-Origin-Opener-Policy: same-origin-allow-popups`, or the Google popup hangs blank on `/gsi/transform`.
 - Live at https://solpouch.tech through the named Cloudflare tunnel `solpouch` (`api.solpouch.tech` -> :8787, site -> the production `next start` port). Voice tool URLs use `https://api.solpouch.tech/voice/tools/<name>`.
 
+## Audit fixes (2026-10-03, branch `fix/audit`)
+
+Fixes from the whole-project audit. Checks: backend 153 tests and typecheck, web typecheck and CSP test, `cargo test` 10. Not run: Anchor integration tests (need a local validator), Postgres integration tests, and a browser pass over the chat widget and top-up flow.
+
+- Chain client: `CHECKOUT_PAY_TO` must be a real devnet wallet in `.env`. Without it the backend starts with a warning and any-store / web-store orders are rejected. Chain errors that can never succeed (pouch not on chain, wrong AI key, signer out of SOL, failed or expired transaction) now end the order as rejected instead of leaving it `paying`. `freeze_all` and reconcile carry on past a failing pouch. Startup warns when the AI key holds under 0.05 SOL (each receipt costs it about 0.0015 SOL).
+- Orders: Postgres stores `order.store` and `order.fulfillment` (additive columns). A failed AI lookup returns 503 `LookupFailed` instead of an invented draft; this also applies with no AI key at all. Confirm re-checks the pouch's store list. Voice `confirm_order` refuses a draft younger than 4 seconds.
+- Top-ups: new `failed` status with `failReason`; `GET /topups` also lists `processing` and recently failed ones; completing re-checks the linked wallet.
+- Users: profile and wallet-link updates no longer overwrite each other; the in-memory store enforces one wallet per account.
+- AI and voice: store URLs must be https on the found domain, Gemini calls time out, quantities are clamped, voice `create_order` is rate limited, 10 wrong voice secrets lock an IP out for 10 minutes.
+- Web: order page picks up voice-created drafts, top-up cooldown tolerates clock skew, chat widget Talk works after typing and sign-out ends the session. The ElevenLabs audio worklets were tested under the production CSP in headless Chrome and load fine (`apps/web/test/worklet-csp.browser.mjs`, needs `PLAYWRIGHT_MODULE`).
+- Vault program (source only, NOT redeployed): rejects zero amounts, the AI key as an allowed merchant and duplicate merchants (errors 6009-6011); `close_pouch` sweeps leftover tokens to a new `owner_token` account. After a redeploy, regenerate the IDL (`apps/backend/src/vault/idl`), since the `close_pouch` entry there still describes the deployed version.
+
+Still open from the audit: `spentToday` in Postgres resets by calendar day while the chain uses a rolling 24 hours; `confirmAbove` is not enforced; the indexer is a stub; `apps/web/test/auth-voice.browser.mjs` still drives the old wallet-login flow. The production backend runs `tsx watch` from this checkout, so saving a backend file reloads the live API.
+
 ## Not done yet
 
 - Wallet sign-in for owner actions (the backend still signs owner txs for the demo).
