@@ -8,6 +8,8 @@ import { SearchUnavailableError } from "../src/ai/storeMatch.js";
 import { ownedSeed, TEST_USER } from "./helpers.js";
 
 const m = vi.hoisted(() => ({ understand: vi.fn(), findCart: vi.fn() }));
+// The SDK is mocked so the catalog matcher never reaches the network; it falls back to the offline matcher.
+vi.mock("@anthropic-ai/sdk", () => ({ default: class { messages = { create: async () => { throw new Error("offline in tests"); } }; } }));
 vi.mock("../src/ai/understand.js", () => ({ understand: (t: string) => m.understand(t) }));
 vi.mock("../src/ai/findCart.js", () => ({ findCart: (...a: any[]) => m.findCart(...a), clearFindCache: () => {} }));
 

@@ -201,7 +201,7 @@ export async function createDraft(deps: Deps, ownerEmail: string, request: strin
         return {...line,requested:item.requested,requestedQty:item.qty,qty:line.product ? item.qty : 0,lineTotal:line.product ? line.product.unitPrice*item.qty : 0};
       });
     }
-    covered = catalogLines.every((l) => l.product && l.matchScore >= (online ? MATCH_THRESHOLD_ONLINE : MATCH_THRESHOLD));
+    covered = catalogLines.every((l) => l.product && l.matchScore >= (online && !savedItems ? MATCH_THRESHOLD_ONLINE : MATCH_THRESHOLD));
   }
 
   const pickCatalogPouch = (id: string) =>
