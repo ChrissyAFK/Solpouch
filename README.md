@@ -19,7 +19,7 @@ Built at StormHacks 2026 · [solpouch.tech](https://solpouch.tech)
 ## How it works
 
 1. **Create pouches.** Each pouch is an account in the Solpouch vault program, holding its own USDC, with its own rules: what it's for, where it can spend, the max per order, and whether purchases need your confirmation.
-2. **Fill them, deliberately.** Adding money only happens in the app, through a top-up flow with built-in friction: re-authenticate, type the amount, wait out a short cooldown, and say why. The AI's key has no way to add money or move it between pouches.
+2. **Fill them, deliberately.** Adding money only happens in the app, through a top-up flow with built-in friction: link your wallet, type the amount, wait out a short cooldown, and optionally note why. The AI's key has no way to add money or move it between pouches.
 3. **Ask for what you need.** "Get me Thai food under $20." "Restock the usual groceries." "Order the materials list for the Kim job."
 4. **Check what it found.** Before anything is bought, Solpouch shows and reads back each item: name, brand, size, quantity, unit price, total and store, with anything it changed flagged ("oat milk was out, I picked Silk instead").
 5. **Confirm, and it pays.** Say yes and it pays from the right pouch. Every purchase gets a receipt with a Solana Explorer link.
