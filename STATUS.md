@@ -165,3 +165,42 @@ The public product page lives at `/`. The existing demo overview moved to `/dash
 - Overview top area is three stat tiles plus one spending card.
 - Supervisor: the Windows scheduled task "Solpouch Tunnel" runs `~/.cf-solpouch/.cloudflared/tunnel-check.ps1` every minute. It starts cloudflared, the API (8787) and the web server (3019) when they are not running. Create `.deploying` in this checkout during a deploy so it leaves the API and web server alone, and delete it after.
 - After this commit: the indexer was switched on in production (`ENABLE_INDEXER=true` in `.env`); the public devnet RPC rate-limits its backfill (429 lines in `backend-run.log`). PR #1 was closed.
+
+## Android app (`feat/android`, 2026-10-03)
+
+A Trusted Web Activity in `apps/android` (package `tech.solpouch.app`) that opens
+`https://solpouch.tech/dashboard`. The store kit and the owner's steps are in
+`docs/android/PUBLISHING.md`.
+
+Built on this branch:
+
+- The Android project, signed release APK and AAB, lint clean.
+- Web: `/.well-known/assetlinks.json` (upload key fingerprint), a service worker that serves
+  `/offline.html` when a page load fails, the manifest fields the app needs.
+- Account deletion, which Play requires: `DELETE /auth/account`, a Delete account card in Profile,
+  the public `/delete-account` page, and a section in the privacy policy.
+
+Checked on an emulator (Android, Chrome 124):
+
+- The signed APK installs and opens the live site. The first launch crashed on a missing manifest
+  entry; that is fixed and the relaunch works.
+- "Sign in with Google" opens Google's sign-in page for solpouch.tech.
+- The three launcher shortcuts are registered.
+- The offline page appears when a page is opened with no connection (tested against a local
+  production build of this branch).
+- Backend: 352 tests pass, 32 skipped. Backend and web typecheck clean.
+
+Not checked:
+
+- **Full screen mode.** The app shows a browser address bar until `assetlinks.json` is live on
+  solpouch.tech, and this branch is not deployed. After the deploy it needs one more look.
+- Anything behind sign-in, including deleting an account from the app. No test Google account
+  existed.
+- The Postgres account deletion test (`test/postgres.integration.test.ts`); it needs a database
+  and was not run. The in-memory version passes.
+- A real phone.
+
+Known gaps: `POST /topups` takes no lock, so a top-up started in the same instant as an account
+deletion can fail with a 500. Screenshots are signed-out screens only.
+
+Left for the owner: deploy this branch, then the nine steps in `docs/android/PUBLISHING.md`.
