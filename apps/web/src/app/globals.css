@@ -798,6 +798,154 @@ h1 {
 .sp-row-pairs dd {
   margin: 2px 0 0;
 }
+/* Spending insights: two headline figures, then one line per pouch with a daily-limit bar. */
+.si-summary {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--line);
+}
+@media (min-width: 700px) {
+  .si-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 32px;
+  }
+}
+.si-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.si-figure {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.si-figure-accent {
+  color: var(--signal);
+}
+.si-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.si-rows > li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "name available" "today today";
+  gap: 10px 16px;
+  align-items: center;
+  padding: 16px 0;
+}
+.si-rows > li + li {
+  border-top: 1px solid var(--line);
+}
+@media (min-width: 760px) {
+  .si-rows > li {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) minmax(120px, auto);
+    grid-template-areas: "name today available";
+    gap: 24px;
+  }
+}
+.si-name {
+  grid-area: name;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+}
+.si-name > a {
+  font-weight: 600;
+  color: var(--ink);
+}
+.si-name > a:hover {
+  text-decoration: underline;
+}
+.si-name > .si-meta {
+  flex-basis: 100%;
+}
+.si-meta {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.si-badge {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--muted);
+}
+.si-today {
+  grid-area: today;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.si-bar {
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--track);
+}
+.si-bar > div {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--signal);
+  transform-origin: left;
+  transition: transform 0.3s ease;
+}
+.si-bar > .si-bar-mid {
+  background: var(--brand);
+}
+.si-bar > .si-bar-high {
+  background: var(--warn);
+}
+.si-available {
+  grid-area: available;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+.si-available > .num {
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--ink);
+}
+.si-frozen .si-bar > div,
+.si-frozen .si-available > .num {
+  opacity: 0.45;
+}
+.si-notes {
+  margin-top: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+.si-notes summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.si-notes summary:hover {
+  color: var(--ink);
+}
+.si-notes p {
+  margin: 8px 0 0;
+  max-width: 80ch;
+  line-height: 1.5;
+}
 .sp-footnote {
   margin: 16px 0 0;
   max-width: 80ch;
